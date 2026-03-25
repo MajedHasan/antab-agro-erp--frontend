@@ -1,16 +1,10 @@
+// src/app/products/page.tsx
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -19,461 +13,492 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Edit, Trash2, Search, X } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Plus, Trash2, Edit, Search, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 
-type Category = { _id: string; name: string };
-type Warehouse = { _id: string; name: string; location?: string };
+/**
+ * Product Page
+ *
+ * Features:
+ * - List products with pagination/search
+ * - Create / Edit product
+ * - Export CSV
+ * - View per-warehouse product stocks (product-stocks)
+ * - Adjust stock: add or update per-warehouse stock record
+ */
 
-type ProductImage = { url: string; alt?: string };
-type ProductWarehouse = { warehouse: string; qty: number };
-
-type ProductFormType = {
+/* ---------- types ---------- */
+type Product = {
+  _id?: string;
   name: string;
   sku: string;
   code?: string;
-  barcode?: string;
-  category?: string;
-  tags?: string[]; // array of strings
+  category?: string | null;
+  tags?: string[];
   unit?: string;
-  costPrice?: number | string;
-  salePrice?: number | string;
-  taxRate?: number | string;
-  stock?: number | string;
-  reorderLevel?: number | string;
-  warehouses?: ProductWarehouse[];
+  costPrice?: number;
+  salePrice?: number;
+  taxRate?: number;
+  barcode?: string;
+  stock?: number;
+  reorderLevel?: number;
   description?: string;
-  images?: ProductImage[];
-  status?: string; // Active / Inactive / Discontinued
-  weight?: number | string;
-  dimensions?: {
-    length?: number | string;
-    width?: number | string;
-    height?: number | string;
-  };
-  attributes?: Record<string, any>;
+  images?: { url: string; alt?: string }[];
+  status?: string;
 };
 
-type Product = ProductFormType & {
+type Warehouse = { _id: string; name: string; code?: string; type?: string };
+
+type ProductStock = {
   _id?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  productId: string | any;
+  warehouseId: string | any;
+  warehouse?: Warehouse;
+  quantity: number;
+  unit: string;
+  batch?: string;
+  expiryDate?: string;
+  lastUpdated?: string;
 };
 
-const NONE = "none";
+/* ---------- helpers ---------- */
+function idOf(m: any): string | null {
+  if (!m) return null;
+  if (typeof m === "string") return m;
+  if (m._id) return String(m._id);
+  if (m.id) return String(m.id);
+  return null;
+}
+function nameOf(m: any) {
+  if (!m) return "-";
+  if (typeof m === "string") return m;
+  return m.name || m.title || m._id || "-";
+}
+function safeNumber(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
-export default function ProductsSinglePage() {
-  /** ------------------------
-   * list state
-   * -------------------------*/
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+/* standard units for products (you can extend) */
+const UNIT_OPTIONS = ["pcs", "kg", "g", "ltr", "ml"];
 
+export default function ProductsPage() {
+  /* ---------- list state ---------- */
+  const [items, setItems] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(15);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
-
-  const [filterCategory, setFilterCategory] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(false);
 
-  /** ------------------------
-   * modal + form state
-   * -------------------------*/
-  const [open, setOpen] = useState(false);
+  /* ---------- modal: create/edit product ---------- */
+  const [openForm, setOpenForm] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-
-  const defaultForm: ProductFormType = {
+  const [form, setForm] = useState<Product>({
     name: "",
     sku: "",
     code: "",
-    barcode: "",
     category: "",
     tags: [],
     unit: "pcs",
     costPrice: 0,
     salePrice: 0,
     taxRate: 0,
+    barcode: "",
     stock: 0,
     reorderLevel: 0,
-    warehouses: [],
     description: "",
     images: [],
     status: "Active",
-    weight: "",
-    dimensions: { length: "", width: "", height: "" },
-    attributes: {},
-  };
+  });
 
-  const [form, setForm] = useState<ProductFormType>({ ...defaultForm });
+  /* ---------- stock view/adjust ---------- */
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productStocks, setProductStocks] = useState<ProductStock[]>([]);
+  const [stockLoading, setStockLoading] = useState(false);
 
-  const [pageLoading, setPageLoading] = useState(false);
+  // adjust modal (reuse)
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustRecord, setAdjustRecord] = useState<
+    Partial<ProductStock> & { amount?: number }
+  >({});
 
-  const searchTimer = useRef<number | null>(null);
+  /* ---------- warehouses for selector ---------- */
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [refsLoading, setRefsLoading] = useState(false);
 
-  /** ------------------------
-   * loaders: categories / warehouses
-   * -------------------------*/
-  const loadCategories = async () => {
-    try {
-      const res = await api.get("/categories", { params: { limit: 1000 } });
-      setCategories(res.data.data || []);
-    } catch {
-      toast.error("Failed to load categories");
-    }
-  };
-
-  const loadWarehouses = async () => {
-    try {
-      const res = await api.get("/warehouses", { params: { limit: 1000 } });
-      setWarehouses(res.data.data || []);
-    } catch {
-      // ignore if warehouses not available
-    }
-  };
-
-  /** ------------------------
-   * fetch products (list)
-   * -------------------------*/
-  const fetchProducts = async (opts?: { page?: number }) => {
-    try {
-      setPageLoading(true);
-      const params: any = { page: opts?.page ?? page, limit, q };
-      if (filterCategory && filterCategory !== NONE)
-        params.category = filterCategory;
-      if (filterStatus && filterStatus !== NONE) params.status = filterStatus;
-      const res = await api.get("/products", { params });
-      setProducts(res.data.data || []);
-      setTotal(res.data.total ?? 0);
-    } catch {
-      toast.error("Failed to load products");
-    } finally {
-      setPageLoading(false);
-    }
-  };
-
+  /* ---------- fetch references ---------- */
   useEffect(() => {
-    loadCategories();
-    loadWarehouses();
-  }, []);
-
-  // debounce search
-  useEffect(() => {
-    if (searchTimer.current) window.clearTimeout(searchTimer.current);
-    searchTimer.current = window.setTimeout(() => {
-      setPage(1);
-      fetchProducts({ page: 1 });
-    }, 250);
-    return () => {
-      if (searchTimer.current) window.clearTimeout(searchTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, filterCategory, filterStatus, limit]);
-
-  useEffect(() => {
-    fetchProducts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
-
-  /** ------------------------
-   * open modal: create / edit
-   * -------------------------*/
-  const onCreate = () => {
-    setEditing(null);
-    setForm({ ...defaultForm });
-    setOpen(true);
-  };
-
-  const onEdit = async (p: Product) => {
-    setEditing(p);
-    // normalize warehouses/images/tags
-    const prod = await (async () => {
-      // ensure freshest data from backend
+    (async function loadRefs() {
+      setRefsLoading(true);
       try {
-        const res = await api.get(`/products/${p._id}`);
-        return res.data?.data ?? p;
-      } catch {
-        return p;
+        const res = await api.get("/warehouses", {
+          params: { type: "Warehouse", page: 1, limit: 1000 },
+        });
+        setWarehouses(res.data.data || []);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load warehouses");
+      } finally {
+        setRefsLoading(false);
       }
     })();
+  }, []);
 
-    // ensure arrays present
-    const images = prod.images && prod.images.length ? prod.images : [];
-    const warehousesForm =
-      prod.warehouses && prod.warehouses.length
-        ? prod.warehouses.map((w: any) => ({
-            warehouse: String(w.warehouse ?? w.warehouse?._id ?? ""),
-            qty: Number(w.qty ?? 0),
-          }))
-        : [];
-    const tags = Array.isArray(prod.tags)
-      ? prod.tags
-      : typeof prod.tags === "string"
-      ? prod.tags
-          .split(",")
-          .map((t: string) => t.trim())
-          .filter(Boolean)
-      : [];
+  /* ---------- list fetch ---------- */
+  async function fetchList() {
+    try {
+      setLoading(true);
+      const res = await api.get("/products", {
+        params: { page, limit, q },
+      });
+      setItems(res.data.data || []);
+      setTotal(res.data.total || 0);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load products");
+    } finally {
+      setLoading(false);
+    }
+  }
 
+  useEffect(() => {
+    fetchList();
+  }, [page, limit, q]);
+
+  /* ---------- product CRUD ---------- */
+  function openCreate() {
+    setEditing(null);
     setForm({
-      name: prod.name || "",
-      sku: prod.sku || "",
-      code: prod.code || "",
-      barcode: prod.barcode || "",
-      category: prod.category
-        ? typeof prod.category === "string"
-          ? prod.category
-          : (prod.category as any)._id
-        : "",
-      tags,
-      unit: prod.unit || "pcs",
-      costPrice: prod.costPrice ?? 0,
-      salePrice: prod.salePrice ?? 0,
-      taxRate: prod.taxRate ?? 0,
-      stock: prod.stock ?? 0,
-      reorderLevel: prod.reorderLevel ?? 0,
-      warehouses: warehousesForm,
-      description: prod.description || "",
-      images,
-      status: prod.status || "Active",
-      weight: prod.weight ?? "",
-      dimensions: {
-        length: prod.dimensions?.length ?? "",
-        width: prod.dimensions?.width ?? "",
-        height: prod.dimensions?.height ?? "",
-      },
-      attributes: prod.attributes ?? {},
+      name: "",
+      sku: "",
+      code: "",
+      category: "",
+      tags: [],
+      unit: "pcs",
+      costPrice: 0,
+      salePrice: 0,
+      taxRate: 0,
+      barcode: "",
+      stock: 0,
+      reorderLevel: 0,
+      description: "",
+      images: [],
+      status: "Active",
     });
+    setOpenForm(true);
+  }
 
-    setOpen(true);
-  };
+  function openEdit(item: Product) {
+    setEditing(item);
+    setForm({
+      name: item.name,
+      sku: item.sku,
+      code: item.code,
+      category: item.category,
+      tags: item.tags || [],
+      unit: item.unit || "pcs",
+      costPrice: item.costPrice ?? 0,
+      salePrice: item.salePrice ?? 0,
+      taxRate: item.taxRate ?? 0,
+      barcode: item.barcode ?? "",
+      stock: item.stock ?? 0,
+      reorderLevel: item.reorderLevel ?? 0,
+      description: item.description ?? "",
+      images: item.images ?? [],
+      status: item.status ?? "Active",
+    });
+    setOpenForm(true);
+  }
 
-  /** ------------------------
-   * form utilities: tags / images / warehouses
-   * -------------------------*/
-  const addTag = (t?: string) =>
-    setForm((f) => ({ ...f, tags: [...(f.tags || []), (t ?? "").trim()] }));
-
-  const removeTag = (idx: number) =>
-    setForm((f) => ({
-      ...f,
-      tags: (f.tags || []).filter((_, i) => i !== idx),
-    }));
-
-  const addImage = () =>
-    setForm((f) => ({
-      ...f,
-      images: [...(f.images || []), { url: "", alt: "" }],
-    }));
-
-  const removeImage = (idx: number) =>
-    setForm((f) => ({
-      ...f,
-      images: (f.images || []).filter((_, i) => i !== idx),
-    }));
-
-  const addWarehouse = () =>
-    setForm((f) => ({
-      ...f,
-      warehouses: [...(f.warehouses || []), { warehouse: "", qty: 0 }],
-    }));
-
-  const removeWarehouse = (idx: number) =>
-    setForm((f) => ({
-      ...f,
-      warehouses: (f.warehouses || []).filter((_, i) => i !== idx),
-    }));
-
-  /** ------------------------
-   * submit create/update
-   * -------------------------*/
-  const onSubmit = async (ev?: React.FormEvent) => {
-    ev?.preventDefault();
-    // basic validation
-    if (!form.name || !form.sku)
-      return toast.error("Please provide Name and SKU");
+  async function submitForm(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!form.name?.trim()) return toast.error("Name required");
+    if (!form.sku?.trim()) return toast.error("SKU required");
 
     try {
-      const payload = {
-        ...form,
-        // ensure numeric fields are numbers
-        category: form.category || null,
-
-        costPrice: Number(form.costPrice ?? 0),
-        salePrice: Number(form.salePrice ?? 0),
-        taxRate: Number(form.taxRate ?? 0),
-        stock: Number(form.stock ?? 0),
-        reorderLevel: Number(form.reorderLevel ?? 0),
-        warehouses: (form.warehouses || []).map((w) => ({
-          warehouse: w.warehouse,
-          qty: Number(w.qty || 0),
-        })),
-      };
-
       if (editing?._id) {
-        await api.put(`/products/${editing._id}`, payload);
+        await api.put(`/products/${editing._id}`, form);
         toast.success("Product updated");
       } else {
-        await api.post("/products", payload);
+        await api.post("/products", form);
         toast.success("Product created");
       }
-      setOpen(false);
-      fetchProducts({ page: 1 });
-      setPage(1);
+      setOpenForm(false);
+      fetchList();
     } catch (err: any) {
       console.error(err);
-      toast.error("Save failed");
+      toast.error(err?.response?.data?.message || "Save failed");
     }
-  };
+  }
 
-  /** ------------------------
-   * delete
-   * -------------------------*/
-  const onDelete = async (id?: string) => {
+  async function removeItem(id?: string) {
     if (!id) return;
     if (!confirm("Delete product?")) return;
     try {
       await api.delete(`/products/${id}`);
       toast.success("Deleted");
-      fetchProducts();
+      fetchList();
     } catch {
       toast.error("Delete failed");
     }
-  };
+  }
 
+  async function exportCSV() {
+    try {
+      const res = await api.get("/products/export", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "products.csv";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Export failed");
+    }
+  }
+
+  async function toggleStatus(item: Product) {
+    if (!item._id) return;
+    try {
+      const newStatus = item.status === "Active" ? "Inactive" : "Active";
+      await api.put(`/products/${item._id}`, { status: newStatus });
+      toast.success("Status updated");
+      setItems((prev) =>
+        prev.map((p) => (p._id === item._id ? { ...p, status: newStatus } : p)),
+      );
+    } catch {
+      toast.error("Failed to toggle status");
+      fetchList();
+    }
+  }
+
+  /* ---------- product stocks ---------- */
+  async function openStockModal(item: Product) {
+    setSelectedProduct(item);
+    setStockModalOpen(true);
+    await fetchProductStocks(item._id!);
+  }
+
+  async function fetchProductStocks(productId: string) {
+    try {
+      setStockLoading(true);
+      const res = await api.get("/product-stocks", {
+        params: { productId, page: 1, limit: 10000 },
+      });
+      const rows = res.data.data || [];
+      // ensure warehouse denorm name exists if backend populated
+      setProductStocks(rows);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load product stocks");
+      setProductStocks([]);
+    } finally {
+      setStockLoading(false);
+    }
+  }
+
+  /* ---------- adjust stock modal ---------- */
+  // open adjust either from table (create new) or from stock row (edit)
+  function openAdjust(stock?: ProductStock, product?: Product) {
+    setAdjustRecord({
+      _id: stock?._id,
+      productId: stock
+        ? idOf(stock.productId) || String(product?._id)
+        : String(product?._id),
+      warehouseId: stock ? idOf(stock.warehouseId) : "",
+      quantity: stock ? safeNumber(stock.quantity) : 0,
+      unit: stock ? stock.unit : product?.unit || "pcs",
+      batch: stock?.batch || "",
+      expiryDate: stock?.expiryDate ? stock.expiryDate.toString() : "",
+      amount: 0,
+    });
+    setAdjustOpen(true);
+  }
+
+  async function submitAdjust(e?: React.FormEvent) {
+    e?.preventDefault();
+    const rec = adjustRecord as Partial<ProductStock> & { amount?: number };
+    if (!rec.productId) return toast.error("Product missing");
+    if (!rec.warehouseId) return toast.error("Select warehouse");
+
+    try {
+      if (rec._id) {
+        // update existing record: we'll set new quantity (quantity + amount if amount provided)
+        let newQty = safeNumber(rec.quantity);
+        if (rec.amount) newQty = newQty + safeNumber(rec.amount);
+        await api.put(`/product-stocks/${rec._id}`, {
+          quantity: newQty,
+          unit: rec.unit,
+          batch: rec.batch,
+          expiryDate: rec.expiryDate || null,
+        });
+        toast.success("Stock updated");
+      } else {
+        // create: amount becomes initial quantity
+        const qty = safeNumber(rec.amount) || safeNumber(rec.quantity);
+        await api.post("/product-stocks", {
+          productId: rec.productId,
+          warehouseId: rec.warehouseId,
+          quantity: qty,
+          unit: rec.unit || "pcs",
+          batch: rec.batch,
+          expiryDate: rec.expiryDate || null,
+        });
+        toast.success("Stock record created");
+      }
+
+      // refresh stocks and product list snapshot
+      if (rec.productId) await fetchProductStocks(String(rec.productId));
+      fetchList();
+      setAdjustOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || "Stock save failed");
+    }
+  }
+
+  /* ---------- derived helpers ---------- */
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  /** ------------------------
-   * RENDER
-   * -------------------------*/
+  /* ---------- render ---------- */
   return (
     <div className="p-4 space-y-6">
-      {/* Header */}
+      {/* header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Products</h2>
           <p className="text-sm text-muted-foreground">
-            Manage catalog — create, edit, stock & pricing
+            Products catalog — manage SKUs, pricing and warehouse stocks
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Search */}
-          <div className="relative">
-            <div className="flex items-center border rounded px-2 py-1 gap-2 bg-white">
-              <Search className="w-4 h-4 text-gray-500" />
-              <Input
-                placeholder="Search by name, sku or barcode..."
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                }}
-                className="w-64"
-              />
-            </div>
+          <div className="flex items-center border rounded-md px-2 py-1 gap-2">
+            <Search className="w-4 h-4 text-gray-500" />
+            <Input
+              value={q}
+              placeholder="Search name / sku..."
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+              className="border-0 p-0"
+            />
           </div>
 
-          {/* Category filter */}
-          <Select
-            value={filterCategory ?? NONE}
-            onValueChange={(v) => setFilterCategory(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>All Categories</SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c._id} value={c._id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Button onClick={openCreate} className="flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            New
+          </Button>
 
-          {/* Status filter */}
-          <Select
-            value={filterStatus ?? NONE}
-            onValueChange={(v) => setFilterStatus(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>All Status</SelectItem>
-              <SelectItem value="Active">Active</SelectItem>
-              <SelectItem value="Inactive">Inactive</SelectItem>
-              <SelectItem value="Discontinued">Discontinued</SelectItem>
-            </SelectContent>
-          </Select>
+          <Button variant="secondary" onClick={exportCSV}>
+            Export CSV
+          </Button>
 
           <Button
-            onClick={onCreate}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            variant="ghost"
+            onClick={() => {
+              setPage(1);
+              setLimit(15);
+              fetchList();
+            }}
           >
-            <Plus className="w-4 h-4 mr-2" />
-            New Product
+            <RefreshCcw className="w-4 h-4" /> Refresh
           </Button>
         </div>
       </div>
 
-      {/* Table */}
+      {/* table */}
       <div className="bg-card border rounded-lg overflow-hidden">
-        <div className="p-4">
+        <div className="p-4 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>#</TableHead>
-                <TableHead>SKU</TableHead>
+                <TableHead className="w-8">#</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
+                <TableHead>SKU</TableHead>
+                <TableHead>Unit</TableHead>
                 <TableHead>Sale Price</TableHead>
-                <TableHead>Stock</TableHead>
-                <TableHead className="w-40">Action</TableHead>
+                <TableHead>Stock (snapshot)</TableHead>
+                <TableHead>Reorder</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-44">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
-              {products.map((p, i) => (
-                <TableRow key={p._id || i}>
-                  <TableCell>{(page - 1) * limit + i + 1}</TableCell>
-                  <TableCell>{p.sku}</TableCell>
-                  <TableCell>{p.name}</TableCell>
+              {items.map((p, idx) => (
+                <TableRow key={p._id || idx}>
+                  <TableCell>{(page - 1) * limit + idx + 1}</TableCell>
+
                   <TableCell>
-                    {typeof p.category === "string"
-                      ? categories.find((c) => c._id === p.category)?.name || ""
-                      : (p as any).category?.name || ""}
+                    <div className="flex flex-col">
+                      <div className="font-medium">{p.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {p.description}
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell>{p.salePrice}</TableCell>
-                  <TableCell>{p.stock}</TableCell>
+
+                  <TableCell className="text-sm">{p.sku}</TableCell>
+                  <TableCell>{p.unit || "pcs"}</TableCell>
+                  <TableCell>৳ {p.salePrice ?? 0}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium">{p.stock ?? 0}</div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openStockModal(p)}
+                      >
+                        View stocks
+                      </Button>
+                    </div>
+                  </TableCell>
+
+                  <TableCell>{p.reorderLevel ?? 0}</TableCell>
+
+                  <TableCell>
+                    <div className="text-sm">{p.status ?? "Active"}</div>
+                  </TableCell>
+
                   <TableCell>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => onEdit(p)}
+                        onClick={() => openEdit(p)}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
+
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => onDelete(p._id)}
+                        onClick={() => removeItem(p._id)}
                       >
                         <Trash2 className="w-4 h-4" />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openAdjust(undefined, p)}
+                      >
+                        Adjust Stock
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
 
-              {products.length === 0 && (
+              {items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-6">
-                    {pageLoading ? "Loading..." : "No products found"}
+                  <TableCell colSpan={9} className="text-center py-6">
+                    {loading ? "Loading..." : "No products found"}
                   </TableCell>
                 </TableRow>
               )}
@@ -481,11 +506,13 @@ export default function ProductsSinglePage() {
           </Table>
         </div>
 
-        {/* Pagination */}
-        <div className="p-4 flex items-center justify-between border-t">
-          <div className="text-sm text-muted-foreground">
-            Showing {(page - 1) * limit + 1} - {Math.min(page * limit, total)}{" "}
-            of {total}
+        {/* pagination */}
+        <div className="flex items-center justify-between p-4 border-t">
+          <div>
+            <span className="text-sm text-muted-foreground">
+              Showing {(page - 1) * limit + 1} - {Math.min(page * limit, total)}{" "}
+              of {total}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -499,7 +526,7 @@ export default function ProductsSinglePage() {
             >
               {[10, 15, 25, 50].map((l) => (
                 <option key={l} value={l}>
-                  {l}/page
+                  {l} / page
                 </option>
               ))}
             </select>
@@ -525,39 +552,23 @@ export default function ProductsSinglePage() {
         </div>
       </div>
 
-      {/* Product Modal */}
-      <Dialog
-        open={open}
-        onOpenChange={(v) => {
-          if (!v) {
-            setEditing(null);
-            setForm({ ...defaultForm });
-          }
-          setOpen(v);
-        }}
-      >
-        <DialogContent className="!w-full !max-w-[95vw] max-h-[90vh] overflow-y-auto p-6 rounded-xl shadow-2xl bg-background border">
-          <form onSubmit={onSubmit} className="space-y-6">
-            {/* header */}
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">
-                {editing?._id ? "Edit Product" : "New Product"}
-              </h3>
-              <div className="text-sm text-muted-foreground">
-                {editing?._id ? `ID: ${editing._id}` : ""}
-              </div>
+      {/* Create / Edit Modal */}
+      <Dialog open={openForm} onOpenChange={setOpenForm}>
+        <DialogContent>
+          <form onSubmit={submitForm} className="space-y-4">
+            <h3 className="text-lg font-semibold">
+              {editing?._id ? "Edit Product" : "New Product"}
+            </h3>
+
+            <div>
+              <label className="text-sm">Name</label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </div>
 
-            {/* two-column grid rows for predictable tab order */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm">Name</label>
-                <Input
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-sm">SKU</label>
                 <Input
@@ -565,393 +576,350 @@ export default function ProductsSinglePage() {
                   onChange={(e) => setForm({ ...form, sku: e.target.value })}
                 />
               </div>
-
               <div>
                 <label className="text-sm">Code</label>
                 <Input
-                  value={form.code}
+                  value={form.code || ""}
                   onChange={(e) => setForm({ ...form, code: e.target.value })}
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="text-sm">Barcode</label>
-                <Input
-                  value={form.barcode}
-                  onChange={(e) =>
-                    setForm({ ...form, barcode: e.target.value })
-                  }
-                />
-              </div>
-
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-sm">Category</label>
-                <Select
-                  value={form.category || NONE}
-                  onValueChange={(v) =>
-                    setForm({ ...form, category: v === NONE ? "" : v })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>None</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c._id} value={c._id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-sm">Unit</label>
                 <Input
-                  value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                  value={form.category || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, category: e.target.value })
+                  }
                 />
               </div>
+              <div>
+                <label className="text-sm">Unit</label>
+                <select
+                  value={form.unit}
+                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                  className="border rounded px-2 py-1 w-full"
+                >
+                  {UNIT_OPTIONS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-sm">Cost Price</label>
                 <Input
                   type="number"
-                  value={String(form.costPrice ?? "")}
+                  value={form.costPrice ?? 0}
                   onChange={(e) =>
-                    setForm({ ...form, costPrice: e.target.value })
+                    setForm({ ...form, costPrice: Number(e.target.value) })
                   }
                 />
               </div>
-
               <div>
                 <label className="text-sm">Sale Price</label>
                 <Input
                   type="number"
-                  value={String(form.salePrice ?? "")}
+                  value={form.salePrice ?? 0}
                   onChange={(e) =>
-                    setForm({ ...form, salePrice: e.target.value })
+                    setForm({ ...form, salePrice: Number(e.target.value) })
                   }
                 />
               </div>
-
               <div>
-                <label className="text-sm">Tax Rate (%)</label>
+                <label className="text-sm">Tax %</label>
                 <Input
                   type="number"
-                  value={String(form.taxRate ?? "")}
+                  value={form.taxRate ?? 0}
                   onChange={(e) =>
-                    setForm({ ...form, taxRate: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-sm">Stock</label>
-                <Input
-                  type="number"
-                  value={String(form.stock ?? "")}
-                  onChange={(e) => setForm({ ...form, stock: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="text-sm">Reorder Level</label>
-                <Input
-                  type="number"
-                  value={String(form.reorderLevel ?? "")}
-                  onChange={(e) =>
-                    setForm({ ...form, reorderLevel: e.target.value })
+                    setForm({ ...form, taxRate: Number(e.target.value) })
                   }
                 />
               </div>
             </div>
 
-            {/* warehouses (array) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold">Warehouses</label>
-                <Button size="sm" onClick={addWarehouse}>
-                  <Plus className="w-4 h-4" /> Add
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {(form.warehouses || []).map((w, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center"
-                  >
-                    <Select
-                      value={w.warehouse || NONE}
-                      onValueChange={(v) => {
-                        const arr = [...(form.warehouses || [])];
-                        arr[idx] = {
-                          ...arr[idx],
-                          warehouse: v === NONE ? "" : v,
-                        };
-                        setForm({ ...form, warehouses: arr });
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Warehouse" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>Choose</SelectItem>
-                        {warehouses.map((wh) => (
-                          <SelectItem key={wh._id} value={wh._id}>
-                            {wh.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    <Input
-                      type="number"
-                      value={String(w.qty ?? "")}
-                      onChange={(e) => {
-                        const arr = [...(form.warehouses || [])];
-                        arr[idx] = {
-                          ...arr[idx],
-                          qty: Number(e.target.value) || 0,
-                        };
-                        setForm({ ...form, warehouses: arr });
-                      }}
-                    />
-
-                    <div className="flex gap-2">
-                      <Button
-                        variant="destructive"
-                        onClick={() => removeWarehouse(idx)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {!(form.warehouses || []).length && (
-                  <div className="text-xs text-muted-foreground">
-                    No warehouse allocations
-                  </div>
-                )}
-              </div>
+            <div>
+              <label className="text-sm">Reorder Level</label>
+              <Input
+                type="number"
+                value={form.reorderLevel ?? 0}
+                onChange={(e) =>
+                  setForm({ ...form, reorderLevel: Number(e.target.value) })
+                }
+              />
             </div>
 
-            {/* tags */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold">Tags</label>
-                <div className="flex items-center gap-2">
-                  <Input id="new-tag" placeholder="new tag" />
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      // read input value by id (small helper without extra state)
-                      const el = document.getElementById(
-                        "new-tag"
-                      ) as HTMLInputElement | null;
-                      if (!el) return;
-                      const v = el.value.trim();
-                      if (!v) return;
-                      addTag(v);
-                      el.value = "";
-                    }}
-                  >
-                    Add
-                  </Button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(form.tags || []).map((t, idx) => (
-                  <div
-                    key={idx}
-                    className="px-2 py-1 bg-muted rounded-full flex items-center gap-2"
-                  >
-                    <span className="text-sm">{t}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeTag(idx)}
-                      className="p-1"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-                {!(form.tags || []).length && (
-                  <div className="text-xs text-muted-foreground">No tags</div>
-                )}
-              </div>
-            </div>
-
-            {/* images */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold">Images (url)</label>
-                <Button size="sm" onClick={addImage}>
-                  <Plus className="w-4 h-4" /> Add
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {(form.images || []).map((img, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center"
-                  >
-                    <Input
-                      placeholder="Image URL"
-                      value={img.url}
-                      onChange={(e) => {
-                        const arr = [...(form.images || [])];
-                        arr[idx] = { ...arr[idx], url: e.target.value };
-                        setForm({ ...form, images: arr });
-                      }}
-                    />
-                    <Input
-                      placeholder="Alt text"
-                      value={img.alt}
-                      onChange={(e) => {
-                        const arr = [...(form.images || [])];
-                        arr[idx] = { ...arr[idx], alt: e.target.value };
-                        setForm({ ...form, images: arr });
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        variant="destructive"
-                        onClick={() => removeImage(idx)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {!(form.images || []).length && (
-                  <div className="text-xs text-muted-foreground">No images</div>
-                )}
-              </div>
-            </div>
-
-            {/* description */}
             <div>
               <label className="text-sm">Description</label>
               <Input
-                value={form.description}
+                value={form.description || ""}
                 onChange={(e) =>
                   setForm({ ...form, description: e.target.value })
                 }
               />
             </div>
 
-            {/* dimensions + weight */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-sm">Weight</label>
-                <Input
-                  value={String(form.weight ?? "")}
-                  onChange={(e) => setForm({ ...form, weight: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm">Length</label>
-                <Input
-                  value={String(form.dimensions?.length ?? "")}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      dimensions: {
-                        ...form.dimensions,
-                        length: e.target.value,
-                      },
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="text-sm">Width</label>
-                <Input
-                  value={String(form.dimensions?.width ?? "")}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      dimensions: { ...form.dimensions, width: e.target.value },
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="text-sm">Height</label>
-                <Input
-                  value={String(form.dimensions?.height ?? "")}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      dimensions: {
-                        ...form.dimensions,
-                        height: e.target.value,
-                      },
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            {/* attributes (simple JSON textarea) */}
-            <div>
-              <label className="text-sm">Attributes (JSON)</label>
-              <Input
-                value={JSON.stringify(form.attributes || {})}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value || "{}");
-                    setForm({ ...form, attributes: parsed });
-                  } catch {
-                    // don't update if invalid JSON, but keep raw string visible
-                    // optional: show a validation error
-                    setForm({ ...form, attributes: form.attributes });
-                  }
-                }}
-              />
-              <div className="text-xs text-muted-foreground mt-1">
-                Provide a JSON object for custom attributes (e.g. {"{"}
-                color:"red","size":"M"{"}"})
-              </div>
-            </div>
-
-            {/* status */}
             <div>
               <label className="text-sm">Status</label>
-              <Select
-                value={form.status || NONE}
-                onValueChange={(v) =>
-                  setForm({ ...form, status: v === NONE ? "" : v })
-                }
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="border rounded px-2 py-1 w-full"
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Select Status</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                  <SelectItem value="Discontinued">Discontinued</SelectItem>
-                </SelectContent>
-              </Select>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
             </div>
 
-            {/* actions */}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => setOpenForm(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editing?._id ? "Save changes" : "Create"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stocks Modal */}
+      <Dialog
+        open={stockModalOpen}
+        onOpenChange={() => {
+          setStockModalOpen(false);
+          setSelectedProduct(null);
+        }}
+      >
+        <DialogContent className="!max-w-4xl">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">
+                Stocks — {selectedProduct?.name}
+              </h3>
+              <div>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    openAdjust(undefined, selectedProduct || undefined)
+                  }
+                >
+                  Add Stock
+                </Button>
+              </div>
+            </div>
+
+            {stockLoading ? (
+              <div>Loading stocks…</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Warehouse</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead>Batch</TableHead>
+                      <TableHead>Expiry</TableHead>
+                      <TableHead>Updated</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {productStocks.map((s, i) => (
+                      <TableRow key={s._id || i}>
+                        <TableCell>{i + 1}</TableCell>
+                        <TableCell>
+                          {nameOf(s.warehouse || s.warehouseId)}
+                        </TableCell>
+                        <TableCell>{s.quantity}</TableCell>
+                        <TableCell>{s.unit}</TableCell>
+                        <TableCell>{s.batch || "-"}</TableCell>
+                        <TableCell>
+                          {s.expiryDate
+                            ? new Date(s.expiryDate).toLocaleDateString()
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          {s.lastUpdated
+                            ? new Date(s.lastUpdated).toLocaleString()
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                openAdjust(s, selectedProduct || undefined)
+                              }
+                            >
+                              Adjust
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+
+                    {productStocks.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-4">
+                          No stock records
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setOpen(false);
-                  setEditing(null);
-                  setForm({ ...defaultForm });
+                  setStockModalOpen(false);
+                  setSelectedProduct(null);
                 }}
-                type="button"
               >
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Adjust Stock Modal */}
+      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+        <DialogContent>
+          <form onSubmit={submitAdjust} className="space-y-4">
+            <h3 className="text-lg font-semibold">Adjust Stock</h3>
+
+            <div>
+              <label className="text-sm">Product</label>
+              <div className="py-2">
+                {nameOf(
+                  items.find((p) => p._id === adjustRecord.productId) ||
+                    selectedProduct ||
+                    adjustRecord.productId,
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm">Warehouse</label>
+              <select
+                required
+                value={String(adjustRecord.warehouseId ?? "")}
+                onChange={(e) =>
+                  setAdjustRecord({
+                    ...adjustRecord,
+                    warehouseId: e.target.value,
+                  })
+                }
+                className="border rounded px-2 py-1 w-full"
+              >
+                <option value="">Select warehouse</option>
+                {warehouses.map((w) => (
+                  <option key={w._id} value={w._id}>
+                    {w.name} {w.code ? `(${w.code})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm">Current Quantity (if editing)</label>
+              <Input
+                type="number"
+                value={adjustRecord.quantity ?? 0}
+                onChange={(e) =>
+                  setAdjustRecord({
+                    ...adjustRecord,
+                    quantity: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+
+            <div>
+              <label className="text-sm">
+                Amount (positive to add, negative to subtract)
+              </label>
+              <Input
+                type="number"
+                value={adjustRecord.amount ?? 0}
+                onChange={(e) =>
+                  setAdjustRecord({
+                    ...adjustRecord,
+                    amount: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+
+            <div>
+              <label className="text-sm">Unit</label>
+              <select
+                value={adjustRecord.unit ?? selectedProduct?.unit ?? "pcs"}
+                onChange={(e) =>
+                  setAdjustRecord({ ...adjustRecord, unit: e.target.value })
+                }
+                className="border rounded px-2 py-1 w-full"
+              >
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm">Batch</label>
+              <Input
+                value={adjustRecord.batch ?? ""}
+                onChange={(e) =>
+                  setAdjustRecord({ ...adjustRecord, batch: e.target.value })
+                }
+              />
+            </div>
+
+            <div>
+              <label className="text-sm">Expiry Date</label>
+              <Input
+                type="date"
+                value={
+                  adjustRecord.expiryDate
+                    ? new Date(adjustRecord.expiryDate)
+                        .toISOString()
+                        .slice(0, 10)
+                    : ""
+                }
+                onChange={(e) =>
+                  setAdjustRecord({
+                    ...adjustRecord,
+                    expiryDate: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setAdjustOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editing?._id ? "Save" : "Create"}</Button>
+              <Button type="submit">Save</Button>
             </div>
           </form>
         </DialogContent>

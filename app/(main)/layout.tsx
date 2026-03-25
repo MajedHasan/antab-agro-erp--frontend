@@ -74,19 +74,22 @@ const menuItems: MenuItem[] = [
     icon: <ShoppingCartIcon className="w-5 h-5" />,
     badge: 3,
     submenu: [
-      { key: "Work Order", href: "/inventory/workorder" },
       { key: "Supplier", href: "/inventory/supplier" },
-      { key: "categories", href: "/inventory/categories" },
+      { key: "Work Order", href: "/inventory/workorder" },
+      { key: "G.R.N", href: "/inventory/good-receipt" },
       {
-        key: "suppliers",
+        key: "Products in Factory",
+        // href: "/inventory/products-in-factory",
         submenu: [
-          { key: "localSuppliers", href: "/inventory/suppliers/local" },
-          {
-            key: "internationalSuppliers",
-            href: "/inventory/suppliers/international",
-          },
+          { key: "Raw Materials", href: "/inventory/raw-materials" },
+          { key: "Packing Materials", href: "/inventory/packing-materials" },
+          { key: "Finished Goods", href: "/inventory/products-in-factory" },
         ],
       },
+
+      { key: "BOM", href: "/inventory/bom" },
+      { key: "Production", href: "/inventory/production" },
+      { key: "WIP", href: "/inventory/wip" },
     ],
   },
   {
@@ -100,16 +103,28 @@ const menuItems: MenuItem[] = [
         permissions: ["salesdashboard.view"],
       },
       {
-        key: "Sales Entry",
-        href: "/sales/create",
+        key: "Sales",
         permissions: ["sales.create"],
+        submenu: [
+          {
+            key: "Sales Entry",
+            href: "/sales/create",
+            permissions: ["sales.create"],
+          },
+          {
+            key: "Sales List",
+            href: "/sales/list",
+            permissions: ["sales.view", "sales.edit"],
+          },
+          {
+            key: "Sales Invoice",
+            href: "/sales/invoice",
+            permissions: ["sales.view", "sales.edit"],
+          },
+          { key: "D.C", href: "/sales/delivery/status" },
+        ],
       },
-      {
-        key: "Sales List",
-        href: "/sales/list",
-        permissions: ["sales.view", "sales.edit"],
-      },
-      { key: "D.C", href: "/sales/delivery/status" },
+
       { key: "T.C (Transfer)", href: "/sales/transfer/status" },
       { key: "Sales Ledger", href: "/sales/ledger" },
       { key: "Order & List", href: "/sales/order/list" },
@@ -174,8 +189,8 @@ const menuItems: MenuItem[] = [
             ],
           },
           {
-            key: "Warehouse",
-            href: "/sales/dealer/warehouse",
+            key: "Warehouse Or Factory",
+            href: "/sales/dealer/warehouseOrFactory",
             permissions: [
               "warehouse.view",
               "warehouse.create",
@@ -186,6 +201,8 @@ const menuItems: MenuItem[] = [
         ],
       },
       { key: "Products", href: "/sales/products" },
+      { key: "Products Promotion", href: "/sales/product-promotion" },
+      { key: "Special Offers", href: "/sales/special-offers" },
       { key: "Damages", href: "/sales/damage" },
       { key: "Return", href: "/sales/return" },
       { key: "Incentive", href: "/sales/incentive" },
@@ -206,9 +223,90 @@ const menuItems: MenuItem[] = [
     icon: <CurrencyDollarIcon className="w-5 h-5" />,
     badge: 2,
     submenu: [
-      { key: "receivables", href: "/accounts/receivables" },
-      { key: "payables", href: "/accounts/payables" },
-      { key: "financialReports", href: "/accounts/reports" },
+      {
+        key: "Chart Of Accounts",
+        href: "/accounts/chart-of-accounts",
+        // submenu: [
+        //   // {
+        //   //   key: "Receive Voucher",
+        //   //   href: "",
+        //   //   submenu: [
+        //   //     { key: "Bank Receive", href: "" },
+        //   //     { key: "Cash Receive", href: "" },
+        //   //   ],
+        //   // },
+        //   { key: "View", href: "/accounts/chart-of-accounts/view" },
+        //   { key: "Create Individual Accounts", href: "" },
+        //   { key: "Sub Individual Accounts", href: "" },
+        // ],
+      },
+      {
+        key: "Vouchers",
+        href: "/accounts/vouchers",
+        submenu: [
+          { key: "Voucher Admin", href: "/accounts/vouchers/admin" },
+          {
+            key: "Receive Voucher",
+            href: "",
+            submenu: [
+              { key: "Bank Receive", href: "/accounts/vouchers/receive/bank" },
+              { key: "Cash Receive", href: "/accounts/vouchers/receive/cash" },
+            ],
+          },
+          {
+            key: "Payment Voucher",
+            href: "",
+            submenu: [
+              { key: "Bank Payment", href: "/accounts/vouchers/payment/bank" },
+              { key: "Cash Payment", href: "/accounts/vouchers/payment/cash" },
+            ],
+          },
+          { key: "Journal Voucher", href: "/accounts/vouchers/journal" },
+          { key: "Contra Voucher", href: "/accounts/vouchers/contra" },
+        ],
+      },
+      {
+        key: "Reports",
+        href: "/accounts/reports",
+        submenu: [
+          // {
+          //   key: "Receive Voucher",
+          //   href: "",
+          //   submenu: [
+          //     { key: "Bank Receive", href: "" },
+          //     { key: "Cash Receive", href: "" },
+          //   ],
+          // },
+          {
+            key: "Financial Reports",
+            href: "",
+            submenu: [
+              {
+                key: "Financial Notes",
+                href: "/accounts/reports/financial/financial-notes",
+              },
+              {
+                key: "Statement Of Financial Position",
+                href: "/accounts/reports/financial/financial-position",
+              },
+              {
+                key: "Statement Of Profit or Loss & Other Comprehensive Income",
+                href: "/accounts/reports/financial/profit-loss",
+              },
+              {
+                key: "Statement Of Changes in Equity",
+                href: "/accounts/reports/financial/changes-equity",
+              },
+            ],
+          },
+          {
+            key: "Individual Account / Ledger",
+            href: "/accounts/reports/ledger",
+          },
+          { key: "Trial Balance", href: "/accounts/reports/trial-balance" },
+          { key: "Other Reports", href: "" },
+        ],
+      },
     ],
   },
   {
@@ -349,7 +447,7 @@ function SidebarItem({
           active
             ? "bg-gradient-to-r from-indigo-50 to-white dark:from-indigo-900/30"
             : "hover:bg-gray-50 dark:hover:bg-gray-700/40",
-          active ? "ring-1 ring-[#3aa838] dark:ring-[#97c560]" : ""
+          active ? "ring-1 ring-[#3aa838] dark:ring-[#97c560]" : "",
         )}
         style={{ paddingLeft: indent + 8 }}
       >
@@ -371,7 +469,7 @@ function SidebarItem({
             <span
               className={classNames(
                 "text-sm truncate",
-                collapsed ? "hidden" : "block"
+                collapsed ? "hidden" : "block",
               )}
             >
               {t(item.key)}
@@ -385,7 +483,7 @@ function SidebarItem({
               className={classNames(
                 "inline-flex items-center justify-center w-4 h-4 text-[10px] font-semibold rounded-full",
                 collapsed ? "hidden" : "inline-flex",
-                "bg-red-500 text-white"
+                "bg-red-500 text-white",
               )}
             >
               {item.badge}
@@ -458,7 +556,7 @@ export default function DashboardLayout({
 
   // contexts
   const { error, success, currentUser, ...user } = useSelector(
-    (state: RootState) => state.user
+    (state: RootState) => state.user,
   );
   const { t } = useTranslation();
   const pathname = usePathname();
@@ -586,12 +684,12 @@ export default function DashboardLayout({
         transition={{ type: "spring", stiffness: 260, damping: 24 }}
         className={classNames(
           "z-50 fixed inset-y-0 left-0 transform bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto",
-          "md:static md:translate-x-0"
+          "md:static md:translate-x-0",
         )}
         style={{ boxSizing: "border-box" }}
         aria-label="Primary navigation"
       >
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 sticky top-0 bg-white">
           <Link href="/" className="flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-[#3aa838] to-[#16351d] text-white font-extrabold">
               A
@@ -660,7 +758,7 @@ export default function DashboardLayout({
             <div className="text-xs text-gray-500 mb-2">Quick Actions</div>
             <div className="flex gap-2">
               <Link
-                href="/sales/item"
+                href="/sales/create"
                 className={`flex-1 px-3 py-2 rounded-md bg-[#16351d] dark:bg-[#3aa838] text-white text-sm text-center hover:bg-[#3aa838] ${
                   hasAccess({ permissions: "product.create" })
                     ? "bg-green-500"
@@ -672,7 +770,7 @@ export default function DashboardLayout({
                     : "You don't have access"
                 }
               >
-                + Product
+                + Sales Entry
               </Link>
               <Link
                 href="/sales/orders/new"
@@ -697,7 +795,7 @@ export default function DashboardLayout({
       {/* Main content area (with left margin to account for sidebar) */}
       <div
         className={classNames(
-          "flex-1 flex flex-col min-w-0 transition-all"
+          "flex-1 flex flex-col min-w-0 transition-all",
           // collapsed ? "md:ml-[72px]" : "md:ml-[288px]"
         )}
       >
@@ -769,7 +867,7 @@ export default function DashboardLayout({
                           className="text-xs text-indigo-600"
                           onClick={() => {
                             setNotifications((n) =>
-                              n.map((x) => ({ ...x, unread: false }))
+                              n.map((x) => ({ ...x, unread: false })),
                             );
                           }}
                         >
@@ -784,7 +882,9 @@ export default function DashboardLayout({
                           key={n.id}
                           className={classNames(
                             "px-4 py-3 flex items-start gap-3",
-                            n.unread ? "bg-indigo-50 dark:bg-indigo-900/10" : ""
+                            n.unread
+                              ? "bg-indigo-50 dark:bg-indigo-900/10"
+                              : "",
                           )}
                         >
                           <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700">
@@ -876,7 +976,7 @@ export default function DashboardLayout({
                 <ChevronDownIcon
                   className={classNames(
                     "w-4 h-4 transition-transform",
-                    userMenuOpen ? "rotate-180" : "rotate-0"
+                    userMenuOpen ? "rotate-180" : "rotate-0",
                   )}
                 />
               </button>

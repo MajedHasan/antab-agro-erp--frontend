@@ -50,6 +50,15 @@ function StatusBadge({ status }: { status?: string }) {
   return <span className={cls}>{s}</span>;
 }
 
+function TypeBadge({ type }: { type?: string }) {
+  const t = (type || "Warehouse").toLowerCase();
+  const cls =
+    t === "factory"
+      ? "bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs"
+      : "bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full text-xs";
+  return <span className={cls}>{type}</span>;
+}
+
 type UserShort = {
   _id: string;
   name: string;
@@ -61,6 +70,7 @@ type Warehouse = {
   _id?: string;
   name: string;
   code: string;
+  type?: "Factory" | "Warehouse";
   address?: string;
   status?: string;
   notes?: string;
@@ -81,6 +91,7 @@ export default function WarehousesPage() {
   const [form, setForm] = useState<Warehouse>({
     name: "",
     code: "",
+    type: "Warehouse",
     address: "",
     notes: "",
     status: "Active",
@@ -120,6 +131,7 @@ export default function WarehousesPage() {
     setForm({
       name: "",
       code: "",
+      type: "Warehouse",
       address: "",
       notes: "",
       status: "Active",
@@ -133,6 +145,7 @@ export default function WarehousesPage() {
     setForm({
       name: w.name,
       code: w.code,
+      type: w.type || "Warehouse",
       address: w.address || "",
       notes: w.notes || "",
       status: w.status || "Active",
@@ -255,9 +268,9 @@ export default function WarehousesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Warehouses</h2>
+          <h2 className="text-2xl font-bold">Warehouses & Factories</h2>
           <p className="text-sm text-muted-foreground">
-            Manage warehouses and assigned users
+            Manage warehouses/factories and assigned users
           </p>
         </div>
 
@@ -295,6 +308,7 @@ export default function WarehousesPage() {
                 <TableHead className="w-8">#</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Code</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Address</TableHead>
                 <TableHead className="w-44">Assigned Users</TableHead>
                 <TableHead>Status</TableHead>
@@ -317,6 +331,11 @@ export default function WarehousesPage() {
                   </TableCell>
 
                   <TableCell className="text-sm">{w.code}</TableCell>
+
+                  <TableCell>
+                    <TypeBadge type={w.type} />
+                  </TableCell>
+
                   <TableCell className="text-sm">{w.address}</TableCell>
 
                   {/* Assigned users - avatars */}
@@ -418,7 +437,7 @@ export default function WarehousesPage() {
 
               {warehouses.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-6">
+                  <TableCell colSpan={8} className="text-center py-6">
                     {loading ? "Loading..." : "No warehouses found"}
                   </TableCell>
                 </TableRow>
@@ -478,7 +497,9 @@ export default function WarehousesPage() {
         <DialogContent>
           <form onSubmit={onSubmit} className="space-y-4">
             <h3 className="text-lg font-semibold">
-              {editing?._id ? "Edit Warehouse" : "New Warehouse"}
+              {editing?._id
+                ? "Edit Warehouse / Factory"
+                : "New Warehouse / Factory"}
             </h3>
 
             <div>
@@ -495,6 +516,24 @@ export default function WarehousesPage() {
                 value={form.code}
                 onChange={(e) => setForm({ ...form, code: e.target.value })}
               />
+            </div>
+
+            <div>
+              <label className="text-sm">Type</label>
+              <select
+                value={form.type}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    type:
+                      e.target.value === "Factory" ? "Factory" : "Warehouse",
+                  })
+                }
+                className="border rounded px-2 py-1 w-full"
+              >
+                <option value="Warehouse">Warehouse</option>
+                <option value="Factory">Factory</option>
+              </select>
             </div>
 
             <div>
@@ -592,10 +631,7 @@ export default function WarehousesPage() {
                         variant="destructive"
                         onClick={() =>
                           selectedWarehouse &&
-                          removeAssignedUser(
-                            selectedWarehouse._id!,
-                            u._1 || u._id
-                          )
+                          removeAssignedUser(selectedWarehouse._id!, u._id)
                         }
                       >
                         Remove

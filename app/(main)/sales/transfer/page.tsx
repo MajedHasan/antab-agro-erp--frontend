@@ -55,7 +55,7 @@ export default function TransferListPage() {
   const updateProductRow = (
     index: number,
     field: keyof TransferProduct,
-    value: string
+    value: string,
   ) => {
     const updated = [...transferProducts];
     updated[index][field] = value;

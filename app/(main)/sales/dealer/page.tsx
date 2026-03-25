@@ -20,52 +20,51 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, Edit, Trash2, Search, Eye } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import DealerAddEditModal from "./_components/DealerAddEditModal";
 import DealerViewModal from "./_components/DealerViewModal";
+
+/* =========================
+   Types / Media model
+   ========================= */
 
 interface IUser {
   _id: string;
   name: string;
 }
 
-interface IAttachmentFiles {
-  bankCheque?: string;
-  tradeLicense?: string;
-  nidCard?: string;
-  informationDeed?: string;
-  pesticideLicense?: string;
+/** Media shape returned by /media endpoints (frontend expects this) */
+interface IMedia {
+  _id: string;
+  url?: string;
+  originalName?: string;
+  fileType?: string;
+  module?: string;
+  folder?: string;
+  size?: number;
+  createdAt?: string;
 }
 
-interface IAttachments {
-  required?: IAttachmentFiles;
-  optional?: {
-    agreements?: string[];
-    others?: string[];
+/** Attachment shapes stored in dealer form state (media objects or string ids) */
+type Attachments = {
+  required: {
+    bankCheque?: IMedia | string;
+    tradeLicense?: IMedia | string;
+    nidCard?: IMedia | string;
+    informationDeed?: IMedia | string;
+    pesticideLicense?: IMedia | string;
   };
-}
+  optional: {
+    agreements?: (IMedia | string)[];
+    others?: (IMedia | string)[];
+  };
+};
 
-// --- Types ---
 type Zone = { _id: string; name: string };
 type Region = { _id: string; name: string; zone?: string | Zone };
 type Area = { _id: string; name: string; region?: string | Region };
 type Territory = { _id: string; name: string; area?: string | Area };
 type Warehouse = { _id: string; name: string };
-
-type Attachments = {
-  required: {
-    bankCheque?: string;
-    tradeLicense?: string;
-    nidCard?: string;
-    informationDeed?: string;
-    pesticideLicense?: string;
-  };
-  optional: {
-    agreements?: string[];
-    others?: string[];
-  };
-};
 
 type DealerForm = {
   name: string;
@@ -100,19 +99,32 @@ type Dealer = DealerForm & {
   warehouse?: any;
 };
 
-// sentinel value for Select placeholder/none
+/* sentinel value for Select placeholder/none */
 const NONE = "none";
 
-// API origin to build image URLs for preview
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL
-  ? process.env.NEXT_PUBLIC_API_URL
-  : "http://localhost:5001";
+/* API origin to build image URLs for preview */
+const API_ORIGIN =
+  typeof window !== "undefined" && process.env.NEXT_PUBLIC_API_URL
+    ? process.env.NEXT_PUBLIC_API_URL
+    : "http://localhost:5001";
 
+/* small helper to get id */
 function getId(v?: any) {
   if (!v) return "";
   if (typeof v === "string") return v;
   return v._id ?? "";
 }
+
+/* Helper: convert a media-like value to id (string) */
+function toMediaId(v?: IMedia | string | null | undefined) {
+  if (!v) return undefined;
+  if (typeof v === "string") return v;
+  return v._id;
+}
+
+/* =========================
+   Component
+   ========================= */
 
 export default function DealersPage() {
   // region data
@@ -121,7 +133,7 @@ export default function DealersPage() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [users, setUsers] = useState<{ _id: string; name: string }[]>([]); // for assignedSalesManager
+  const [users, setUsers] = useState<IUser[]>([]); // for assignedSalesManager
 
   // table data & UI
   const [dealers, setDealers] = useState<Dealer[]>([]);
@@ -158,7 +170,7 @@ export default function DealersPage() {
     opMonth: "",
     openingBalance: "0",
     warehouse: "",
-    status: "pending", // default pending
+    status: "pending",
     assignedSalesManager: "",
     notes: "",
     lastPurchaseDate: "",
@@ -184,12 +196,12 @@ export default function DealersPage() {
   // code-generation debounce
   const codeTimer = useRef<number | null>(null);
 
-  // track temp uploaded files during modal session so we can cleanup when modal closed without saving
+  // track temp uploaded file ids during modal session so we can cleanup when modal closed without saving
   const [tempFiles, setTempFiles] = useState<string[]>([]);
 
-  /** ------------------------
-   * Loaders
-   * -------------------------*/
+  /* ------------------------
+     Loaders
+  -------------------------*/
   const loadZones = async () => {
     try {
       const res = await api.get("/zones", { params: { limit: 1000 } });
@@ -234,7 +246,9 @@ export default function DealersPage() {
 
   const loadWarehouses = async () => {
     try {
-      const res = await api.get("/warehouses", { params: { limit: 1000 } });
+      const res = await api.get("/warehouses?type=Warehouse", {
+        params: { limit: 1000 },
+      });
       setWarehouses(res.data.data || []);
     } catch {
       // ignore
@@ -250,9 +264,9 @@ export default function DealersPage() {
     }
   };
 
-  /** ------------------------
-   * Fetch dealers table
-   * -------------------------*/
+  /* ------------------------
+     Fetch dealers table
+  -------------------------*/
   const fetchDealers = async (opts?: { page?: number }) => {
     try {
       setLoading(true);
@@ -295,9 +309,9 @@ export default function DealersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit, q, filterZone, filterRegion, filterArea]);
 
-  /** ------------------------
-   * Suggestions (search) — debounce
-   * -------------------------*/
+  /* ------------------------
+     Suggestions (search) — debounce
+  -------------------------*/
   const fetchSuggestions = (term: string) => {
     if (suggestTimer.current) window.clearTimeout(suggestTimer.current);
     suggestTimer.current = window.setTimeout(async () => {
@@ -325,9 +339,9 @@ export default function DealersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  /** ------------------------
-   * Modal open/create/edit/reset
-   * -------------------------*/
+  /* ------------------------
+     Modal open/create/edit/reset
+  -------------------------*/
   const resetModalForm = () => {
     setForm({ ...defaultForm });
     setEditing(null);
@@ -335,7 +349,6 @@ export default function DealersPage() {
     setModalRegion(NONE);
     setModalArea(NONE);
     setTerritories([]);
-    // cleanup tempFiles for previous session (should already be cleaned)
     setTempFiles([]);
   };
 
@@ -345,12 +358,12 @@ export default function DealersPage() {
   };
 
   const onView = async (d: Dealer) => {
-    // ensure fully populated
     try {
       if (!d._id) return;
       const res = await api.get(`/dealers/${d._id}`, {
         params: {
-          populate: "warehouse,assignedSalesManager,zone,region,area,territory",
+          populate:
+            "warehouse,assignedSalesManager,zone,region,area,territory,attachments.required,attachments.optional",
         },
       });
       setViewing(res.data.data || d);
@@ -386,6 +399,13 @@ export default function DealersPage() {
     setModalArea(areaId || NONE);
     await loadTerritories(areaId === NONE ? undefined : areaId);
 
+    // normalize attachments:
+    const rawAttachments = (d as any).attachments || {
+      required: {},
+      optional: { agreements: [], others: [] },
+    };
+
+    // Keep whatever the server provided (strings or populated media objects).
     setForm({
       name: d.name || "",
       code: d.code || "",
@@ -404,27 +424,20 @@ export default function DealersPage() {
       openingBalance: d.openingBalance ?? "0",
       warehouse: getId(d.warehouse) || "",
       status: d.status || "pending",
-      // assignedSalesManager: d.assignedSalesManager
-      //   ? String(d.assignedSalesManager)
-      //   : "",
       assignedSalesManager: d.assignedSalesManager?._id || "",
       notes: d.notes || "",
       lastPurchaseDate: d.lastPurchaseDate
         ? new Date(d.lastPurchaseDate).toISOString().slice(0, 10)
         : "",
-      attachments: (d as any).attachments || {
-        required: {},
-        optional: { agreements: [], others: [] },
-      },
+      attachments: rawAttachments,
     });
 
-    // ensure any pre-existing attachments (already saved) are NOT auto-removed.
     setOpen(true);
   };
 
-  /** ------------------------
-   * Modal cascade handlers
-   * -------------------------*/
+  /* ------------------------
+     Modal cascade handlers
+  -------------------------*/
   const onModalZoneChange = async (v: string) => {
     setModalZone(v);
     setModalRegion(NONE);
@@ -454,14 +467,14 @@ export default function DealersPage() {
     await loadTerritories(v === NONE ? undefined : v);
   };
 
-  /** ------------------------
-   * Code generation preview (auto)
-   * -------------------------*/
+  /* ------------------------
+     Code generation preview (auto)
+  -------------------------*/
   const generateCodePreview = async (
     zoneId?: string,
     regionId?: string,
     areaId?: string,
-    territoryId?: string
+    territoryId?: string,
   ) => {
     try {
       if (!zoneId || !regionId || !areaId || !territoryId) {
@@ -484,7 +497,6 @@ export default function DealersPage() {
     }
   };
 
-  // watch cascade selects and generate code (debounced)
   useEffect(() => {
     if (editing && editing._id) return; // don't overwrite code when editing existing record
 
@@ -507,62 +519,64 @@ export default function DealersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalZone, modalRegion, modalArea, form.territory, editing]);
 
-  /** ------------------------
-   * File upload helper (POST /api/uploads)
-   * returns URL string (e.g. /uploads/filename.jpg)
-   * - stores uploaded file urls in tempFiles state for cleanup
-   * -------------------------*/
-  const uploadFile = async (file: File) => {
+  /* ------------------------
+     File upload + delete helpers
+  -------------------------*/
+  const uploadFile = async (file: File, key?: string) => {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      // IMPORTANT: using axios (api) so response is res.data
-      const res = await api.post("/uploads", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const data = res.data;
-      if (!data || !data.url) throw new Error(data?.message || "Upload failed");
-      // track temp file so we can delete if user cancels
-      setTempFiles((prev) => [...prev, data.url]);
-      return data.url as string;
+
+      const res = await api.post(
+        `/media/upload?module=dealers${key ? `&folder=${key}` : ""}`,
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+
+      const media = res.data.data as IMedia;
+      if (!media || !media._id) throw new Error("Upload failed");
+
+      // remember uploaded media id so we can cleanup if modal cancelled
+      setTempFiles((prev) => [...prev, media._id]);
+
+      return media;
     } catch (err: any) {
       throw new Error(
-        err?.response?.data?.message || err?.message || "Upload failed"
+        err?.response?.data?.message || err?.message || "Upload failed",
       );
     }
   };
 
-  /** ------------------------
-   * Delete a single file on server (DELETE /api/uploads?url=...)
-   * returns true if success
-   * -------------------------*/
-  const deleteFileOnServer = async (url?: string) => {
-    if (!url) return false;
+  const deleteFileOnServer = async (id?: string) => {
+    if (!id) return false;
     try {
-      await api.delete("/uploads", { params: { url } });
-      // also remove from tempFiles list if present
-      setTempFiles((prev) => prev.filter((u) => u !== url));
+      await api.delete(`/media/${id}?hard=true`);
+      setTempFiles((prev) => prev.filter((x) => x !== id));
       return true;
     } catch {
+      // swallow - deletion might fail if file is referenced elsewhere
       return false;
     }
   };
 
-  /** ------------------------
-   * Attachment handlers
-   * -------------------------*/
+  /* ------------------------
+     Attachment handlers
+  -------------------------*/
+
   // set required attachment (single file fields)
   const setRequiredAttachment = async (
     key: keyof Attachments["required"],
-    file?: File | null
+    file?: File | null,
   ) => {
-    // if user clears, remove file from server if it was uploaded in this session or attempt delete always
+    const prev = form.attachments?.required?.[key];
+
+    // clearing/removing file
     if (!file) {
-      const prevUrl = form.attachments?.required?.[key];
-      if (prevUrl) {
-        // attempt deletion on server
-        await deleteFileOnServer(prevUrl);
+      const prevId = typeof prev === "string" ? prev : prev?._id;
+      if (prevId) {
+        await deleteFileOnServer(prevId);
       }
+
       setForm((f) => ({
         ...f,
         attachments: {
@@ -573,38 +587,38 @@ export default function DealersPage() {
       return;
     }
 
-    // if replacing existing file, delete previous one first (safe to attempt)
-    const prev = form.attachments?.required?.[key];
-    if (prev) {
-      await deleteFileOnServer(prev);
+    // if replacing existing file, attempt delete first
+    const prevId = typeof prev === "string" ? prev : prev?._id;
+    if (prevId) {
+      await deleteFileOnServer(prevId);
     }
 
     try {
-      const url = await uploadFile(file);
+      const media = await uploadFile(file, String(key));
       setForm((f) => ({
         ...f,
         attachments: {
           ...(f.attachments || defaultForm.attachments),
-          required: { ...(f.attachments?.required || {}), [key]: url },
+          required: { ...(f.attachments?.required || {}), [key]: media },
         },
       }));
       toast.success("Uploaded");
-    } catch (err) {
-      toast.error((err as any)?.message || "Upload failed");
+    } catch (err: any) {
+      toast.error(err?.message || "Upload failed");
     }
   };
 
   // add optional files (agreements / others)
   const addOptionalFiles = async (
     key: keyof Attachments["optional"],
-    files: FileList | null
+    files: FileList | null,
   ) => {
     if (!files || files.length === 0) return;
     try {
-      const urls: string[] = [];
+      const uploaded: (IMedia | string)[] = [];
       for (const file of Array.from(files)) {
-        const url = await uploadFile(file);
-        urls.push(url);
+        const media = await uploadFile(file, String(key));
+        uploaded.push(media);
       }
       setForm((f) => {
         const prev = f.attachments?.optional?.[key] ?? [];
@@ -614,7 +628,7 @@ export default function DealersPage() {
             ...(f.attachments || defaultForm.attachments),
             optional: {
               ...(f.attachments?.optional || { agreements: [], others: [] }),
-              [key]: [...prev, ...urls],
+              [key]: [...prev, ...uploaded],
             },
           },
         };
@@ -627,11 +641,12 @@ export default function DealersPage() {
 
   const removeOptionalAttachment = async (
     key: keyof Attachments["optional"],
-    index: number
+    index: number,
   ) => {
-    const url = form.attachments?.optional?.[key]?.[index];
-    if (url) {
-      await deleteFileOnServer(url);
+    const media = form.attachments?.optional?.[key]?.[index];
+    const id = typeof media === "string" ? media : media?._id;
+    if (id) {
+      await deleteFileOnServer(id);
     }
     setForm((f) => {
       const prev = f.attachments?.optional?.[key] ?? [];
@@ -650,21 +665,21 @@ export default function DealersPage() {
     });
   };
 
-  /** ------------------------
-   * When user closes modal without saving -> cleanup temporary uploaded files
-   * -------------------------*/
+  /* ------------------------
+     When user closes modal without saving -> cleanup temporary uploaded files
+  -------------------------*/
   const cleanupTempFiles = async () => {
-    // clone list then clear state immediately to avoid double deletion
     const toDelete = [...tempFiles];
     setTempFiles([]);
-    for (const u of toDelete) {
-      await deleteFileOnServer(u);
+    for (const id of toDelete) {
+      await deleteFileOnServer(id);
     }
   };
 
-  /** ------------------------
-   * Submit create/update
-   * -------------------------*/
+  /* ------------------------
+     Submit create/update
+     Convert attachments to ids before sending
+  -------------------------*/
   const onSubmit = async (ev?: React.FormEvent) => {
     ev?.preventDefault();
 
@@ -672,6 +687,31 @@ export default function DealersPage() {
     if (!form.phoneNumber) return toast.error("Phone is required");
 
     try {
+      const attachmentsPayload: any = {
+        required: {},
+        optional: { agreements: [], others: [] },
+      };
+
+      // required
+      const required = form.attachments?.required || {};
+      for (const k of Object.keys(required)) {
+        const v = (required as any)[k];
+        const id = toMediaId(v);
+        if (id) (attachmentsPayload.required as any)[k] = id;
+      }
+
+      // optional
+      const optional = form.attachments?.optional || {
+        agreements: [],
+        others: [],
+      };
+      attachmentsPayload.optional.agreements = (optional.agreements || [])
+        .map((m) => toMediaId(m))
+        .filter(Boolean) as string[];
+      attachmentsPayload.optional.others = (optional.others || [])
+        .map((m) => toMediaId(m))
+        .filter(Boolean) as string[];
+
       const payload: any = {
         name: form.name,
         proprietor: form.proprietor,
@@ -692,7 +732,7 @@ export default function DealersPage() {
         assignedSalesManager: form.assignedSalesManager || undefined,
         notes: form.notes || undefined,
         lastPurchaseDate: form.lastPurchaseDate || undefined,
-        attachments: form.attachments,
+        attachments: attachmentsPayload,
         code: form.code,
       };
 
@@ -708,22 +748,21 @@ export default function DealersPage() {
         }
       }
 
-      // on successful save, we can clear tempFiles array (files are now persisted or old ones were deleted)
+      // on successful save, clear tempFiles (these are now referenced by DB or older files were deleted)
       setTempFiles([]);
       setOpen(false);
       resetModalForm();
       fetchDealers({ page: 1 });
       setPage(1);
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.message || (err as any).message || "Save failed";
+      const msg = err?.response?.data?.message || err?.message || "Save failed";
       toast.error(msg);
     }
   };
 
-  /** ------------------------
-   * Delete dealer (calls backend — which should also delete attachments server-side)
-   * -------------------------*/
+  /* ------------------------
+     Delete dealer (calls backend — which should also delete attachments server-side)
+  -------------------------*/
   const onDelete = async (id?: string) => {
     if (!id) return;
     if (!confirm("Delete dealer? This will remove associated files too."))
@@ -737,29 +776,35 @@ export default function DealersPage() {
     }
   };
 
-  /** ------------------------
-   * helpers
-   * -------------------------*/
+  /* ------------------------
+     helpers
+  -------------------------*/
   const phoneDisplay = (d: Dealer) =>
     (d as any).phoneNumber ?? (d as any).phone ?? "";
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   /* -------------------------
-     Small render helpers for attachments
+     filePreview helper accepts IMedia object or string id or urls
   -------------------------*/
-  const filePreview = (url?: string) => {
-    if (!url) return "";
-    if (url.startsWith("http")) return url;
-    // url probably like "/uploads/xxx". prefix with API origin if provided
-    if (url.startsWith("/")) {
-      if (API_ORIGIN) return `${API_ORIGIN}${url}`;
-      // fallback: use same host but remove /api if present in api.defaults.baseURL
-      return url;
+  const filePreview = (mediaOrId?: IMedia | string | null | undefined) => {
+    if (!mediaOrId) return "";
+    // if full media object with url
+    if (typeof mediaOrId === "object" && (mediaOrId as IMedia).url) {
+      const u = (mediaOrId as IMedia).url!;
+      if (u.startsWith("http")) return u;
+      if (u.startsWith("/")) return `${API_ORIGIN}${u}`;
+      return `${API_ORIGIN}/${u}`;
     }
-    // else treat as relative filename
-    if (API_ORIGIN) return `${API_ORIGIN}/uploads/${url}`;
-    return `/uploads/${url}`;
+    // if string but looks like a path (/uploads/...) or full url
+    if (typeof mediaOrId === "string") {
+      const s = mediaOrId;
+      if (s.startsWith("http")) return s;
+      if (s.startsWith("/")) return `${API_ORIGIN}${s}`;
+      // maybe it's a media id — fallback to a media download endpoint
+      return `${API_ORIGIN}/media/${s}`;
+    }
+    return "";
   };
 
   const statusBadge = (s?: string) => {
@@ -781,9 +826,7 @@ export default function DealersPage() {
     );
   };
 
-  {
-    /* Helper Components */
-  }
+  /* Helper small components */
   const Section = ({
     title,
     children,
@@ -810,6 +853,9 @@ export default function DealersPage() {
     return obj.name || "-";
   }
 
+  /* =========================
+     Render
+  ========================= */
   return (
     <div className="p-4 space-y-6">
       {/* Header + Controls */}
@@ -836,7 +882,6 @@ export default function DealersPage() {
                 className="w-64"
               />
             </div>
-            {/* optional suggestions dropdown omitted for brevity */}
           </div>
 
           {/* Filters */}
@@ -972,7 +1017,6 @@ export default function DealersPage() {
 
                     <TableCell>
                       <div className="flex gap-2">
-                        {/* VIEW always available */}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -981,7 +1025,6 @@ export default function DealersPage() {
                           <Eye className="w-4 h-4" />
                         </Button>
 
-                        {/* EDIT */}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -990,7 +1033,6 @@ export default function DealersPage() {
                           <Edit className="w-4 h-4" />
                         </Button>
 
-                        {/* DELETE */}
                         <Button
                           size="sm"
                           variant="destructive"
@@ -1068,7 +1110,6 @@ export default function DealersPage() {
         filePreview={filePreview}
       />
 
-      {/* Dealer Modal */}
       <DealerAddEditModal
         open={open}
         cleanupTempFiles={cleanupTempFiles}
