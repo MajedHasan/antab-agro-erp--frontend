@@ -84,6 +84,9 @@ const menuItems: MenuItem[] = [
           { key: "Raw Materials", href: "/inventory/raw-materials" },
           { key: "Packing Materials", href: "/inventory/packing-materials" },
           { key: "Finished Goods", href: "/inventory/products-in-factory" },
+          { key: "Other Products", href: "/inventory/other-products" },
+          { key: "Product Transfer", href: "/inventory/product-transfer" },
+          { key: "Inventory Report", href: "/inventory/report" },
         ],
       },
 
