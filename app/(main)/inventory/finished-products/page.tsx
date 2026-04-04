@@ -126,7 +126,7 @@ export default function ProductsPage() {
   >({});
 
   /* ---------- warehouses for selector ---------- */
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [factories, setFactories] = useState<Warehouse[]>([]);
   const [refsLoading, setRefsLoading] = useState(false);
 
   /* ---------- fetch references ---------- */
@@ -135,12 +135,12 @@ export default function ProductsPage() {
       setRefsLoading(true);
       try {
         const res = await api.get("/warehouses", {
-          params: { type: "Warehouse", page: 1, limit: 1000 },
+          params: { type: "Factory", page: 1, limit: 1000 },
         });
-        setWarehouses(res.data.data || []);
+        setFactories(res.data.data || []);
       } catch (err) {
         console.error(err);
-        toast.error("Failed to load warehouses");
+        toast.error("Failed to load factories");
       } finally {
         setRefsLoading(false);
       }
@@ -152,7 +152,7 @@ export default function ProductsPage() {
     try {
       setLoading(true);
       const res = await api.get("/products", {
-        params: { page, limit, q, locationType: "warehouse" },
+        params: { page, limit, q, locationType: "factory" },
       });
       setItems(res.data.data || []);
       setTotal(res.data.total || 0);
@@ -286,7 +286,7 @@ export default function ProductsPage() {
     try {
       setStockLoading(true);
       const res = await api.get("/product-stocks", {
-        params: { productId, page: 1, limit: 10000, locationType: "warehouse" },
+        params: { productId, page: 1, limit: 10000, locationType: "factory" },
       });
       const rows = res.data.data || [];
       // ensure warehouse denorm name exists if backend populated
@@ -830,7 +830,7 @@ export default function ProductsPage() {
                 className="border rounded px-2 py-1 w-full"
               >
                 <option value="">Select warehouse</option>
-                {warehouses.map((w) => (
+                {factories.map((w) => (
                   <option key={w._id} value={w._id}>
                     {w.name} {w.code ? `(${w.code})` : ""}
                   </option>

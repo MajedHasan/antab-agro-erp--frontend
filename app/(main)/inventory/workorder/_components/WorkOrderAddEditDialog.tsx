@@ -26,9 +26,11 @@ type LookupItem = {
 
 type RawMaterial = LookupItem;
 type PackagingItem = LookupItem;
+type FinishedItem = LookupItem;
+type OtherItem = LookupItem;
 
 type ItemForm = {
-  itemType?: "RawMaterial" | "PackagingItem";
+  itemType?: "RawMaterial" | "PackagingItem" | "FinishedItem" | "OtherItem";
   itemId?: string | LookupItem;
   name?: string;
   description?: string;
@@ -379,10 +381,12 @@ type ItemRowProps = {
   item: ItemForm;
   rawMaterials: RawMaterial[];
   packagingItems: PackagingItem[];
+  finishedItems: FinishedItem[];
+  otherItems: OtherItem[];
   onUpdate: (index: number, patch: Partial<ItemForm>) => void;
   onSelectItem: (
     index: number,
-    itemType: "RawMaterial" | "PackagingItem",
+    itemType: "RawMaterial" | "PackagingItem" | "FinishedItem" | "OtherItem",
     itemId: string,
   ) => void;
   onRemove: (index: number) => void;
@@ -393,6 +397,8 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
   item,
   rawMaterials,
   packagingItems,
+  finishedItems,
+  otherItems,
   onUpdate,
   onSelectItem,
   onRemove,
@@ -424,6 +430,8 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
             <SelectContent>
               <SelectItem value="RawMaterial">Raw Material</SelectItem>
               <SelectItem value="PackagingItem">Packaging</SelectItem>
+              <SelectItem value="FinishedItem">Finished Product</SelectItem>
+              <SelectItem value="OtherItem">Other Product</SelectItem>
             </SelectContent>
           </Select>
 
@@ -437,7 +445,7 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
                 getLabel={itemLabel}
                 emptyText="No raw materials"
               />
-            ) : (
+            ) : currentType === "PackagingItem" ? (
               <LocalSearchSelect
                 options={packagingItems}
                 value={selectedId}
@@ -445,6 +453,24 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
                 placeholder="Search packaging..."
                 getLabel={itemLabel}
                 emptyText="No packaging items"
+              />
+            ) : currentType === "FinishedItem" ? (
+              <LocalSearchSelect
+                options={finishedItems}
+                value={selectedId}
+                onChange={(v) => onSelectItem(index, "FinishedItem", v || "")}
+                placeholder="Search finished product..."
+                getLabel={itemLabel}
+                emptyText="No Finished Product"
+              />
+            ) : (
+              <LocalSearchSelect
+                options={otherItems}
+                value={selectedId}
+                onChange={(v) => onSelectItem(index, "OtherItem", v || "")}
+                placeholder="Search other product..."
+                getLabel={itemLabel}
+                emptyText="No Other Products"
               />
             )}
           </div>
@@ -536,6 +562,8 @@ function WorkOrderAddEditDialog({
 }: WorkOrderDialogProps) {
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [packagingItems, setPackagingItems] = useState<PackagingItem[]>([]);
+  const [finishedItems, setFinishedItems] = useState<PackagingItem[]>([]);
+  const [otherItems, setOtherItems] = useState<PackagingItem[]>([]);
   const [templates, setTemplates] = useState<TermsTemplate[]>([]);
 
   const rawMap = useLookupMap(rawMaterials);
@@ -549,11 +577,14 @@ function WorkOrderAddEditDialog({
 
     (async () => {
       try {
-        const [rawRes, packRes, tmplRes] = await Promise.allSettled([
-          api.get("/raw-materials", { params: { limit: 1000 } }),
-          api.get("/packaging-items", { params: { limit: 1000 } }),
-          api.get("/settings/workorder-terms"),
-        ]);
+        const [rawRes, packRes, finishedRes, otherRes, tmplRes] =
+          await Promise.allSettled([
+            api.get("/raw-materials", { params: { limit: 1000 } }),
+            api.get("/packaging-items", { params: { limit: 1000 } }),
+            api.get("/products", { params: { limit: 1000 } }),
+            api.get("/other-products", { params: { limit: 1000 } }),
+            api.get("/settings/workorder-terms"),
+          ]);
 
         if (!alive) return;
 
@@ -562,6 +593,16 @@ function WorkOrderAddEditDialog({
         );
         setPackagingItems(
           packRes.status === "fulfilled" ? packRes.value?.data?.data || [] : [],
+        );
+        setFinishedItems(
+          finishedRes.status === "fulfilled"
+            ? finishedRes.value?.data?.data || []
+            : [],
+        );
+        setOtherItems(
+          otherRes.status === "fulfilled"
+            ? otherRes.value?.data?.data || []
+            : [],
         );
 
         const serverTemplates =
@@ -576,6 +617,8 @@ function WorkOrderAddEditDialog({
         if (!alive) return;
         setRawMaterials([]);
         setPackagingItems([]);
+        setFinishedItems([]);
+        setOtherItems([]);
         setTemplates(DEFAULT_TEMPLATES);
       }
     })();
@@ -633,7 +676,7 @@ function WorkOrderAddEditDialog({
   const selectItemForRow = useCallback(
     (
       index: number,
-      itemType: "RawMaterial" | "PackagingItem",
+      itemType: "RawMaterial" | "PackagingItem" | "FinishedItem" | "OtherItem",
       itemId: string,
     ) => {
       setForm((prev) => {
@@ -1010,6 +1053,8 @@ function WorkOrderAddEditDialog({
                             item={it}
                             rawMaterials={rawMaterials}
                             packagingItems={packagingItems}
+                            finishedItems={finishedItems}
+                            otherItems={otherItems}
                             onUpdate={updateItemField}
                             onSelectItem={selectItemForRow}
                             onRemove={removeItemRow}
