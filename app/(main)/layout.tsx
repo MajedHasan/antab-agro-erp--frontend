@@ -78,7 +78,7 @@ const menuItems: MenuItem[] = [
       { key: "Work Order", href: "/inventory/workorder" },
       { key: "G.R.N", href: "/inventory/good-receipt" },
       {
-        key: "Products in Factory",
+        key: "Inventories",
         // href: "/inventory/products-in-factory",
         submenu: [
           { key: "Raw Materials", href: "/inventory/raw-materials" },

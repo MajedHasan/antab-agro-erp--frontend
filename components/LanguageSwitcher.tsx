@@ -19,7 +19,8 @@ export default function LanguageSwitcher() {
         onClick={() => setOpen(!open)}
         className="inline-flex items-center justify-center w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none"
       >
-        {locale === "en" ? "🇺🇸 English" : "🇧🇩 বাংলা"}
+        {/* {locale === "en" ? "🇺🇸 English" : "🇧🇩 বাংলা"} */}
+        {locale === "en" ? "English" : "🇧🇩 বাংলা"}
         <FaChevronDown className="ml-2 h-3 w-3 text-gray-500" />
       </button>
 
@@ -32,7 +33,8 @@ export default function LanguageSwitcher() {
                 locale === "en" ? "bg-gray-100" : ""
               } block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100`}
             >
-              🇺🇸 English
+              {/* 🇺🇸 */}
+              English
             </button>
             <button
               onClick={() => handleChange("bn")}

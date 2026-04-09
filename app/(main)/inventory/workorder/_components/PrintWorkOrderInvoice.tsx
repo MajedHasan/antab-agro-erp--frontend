@@ -1,94 +1,97 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
-import { toast } from "sonner";
-import { buildPrintHtml, type WorkOrderView } from "./workOrderShared";
+import { buildTemplate } from "./templates";
+import { buildHtmlDocument } from "../utils/buildHtmlDocument";
+import { injectWatermark } from "../utils/injectWatermark";
 
-type Props = {
-  viewing: WorkOrderView | null;
-  label?: string;
-  className?: string;
-  companyName?: string;
-  companyAddress?: string;
-  companyPhone?: string;
-  companyEmail?: string;
-};
+export default function PrintWorkOrderInvoice({ viewing }: any) {
+  const [printing, setPrinting] = useState(false);
 
-export default function PrintWorkOrderInvoice({
-  viewing,
-  label = "Print",
-  className,
-  companyName = "Antag Agro",
-  companyAddress = "Company address, city, country",
-  companyPhone = "Phone: +000 000 000",
-  companyEmail = "Email: info@company.com",
-}: Props) {
   const handlePrint = useCallback(() => {
     if (!viewing) return;
 
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.left = "0";
-    iframe.style.top = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    iframe.style.opacity = "0";
-    iframe.style.pointerEvents = "none";
+    setPrinting(true);
 
-    const html = buildPrintHtml(viewing, {
-      name: companyName,
-      address: companyAddress,
-      phone: companyPhone,
-      email: companyEmail,
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+
+    let selectedTemplateType;
+
+    viewing.items.forEach((item: any) => {
+      selectedTemplateType = item.itemType;
+      console.log(item);
+
+      if (item.itemType === "RawMaterial") {
+        selectedTemplateType = "RawMaterial";
+      } else if (item.itemType === "PackagingItem") {
+        if (item.name.toLowerCase().includes("pouch")) {
+          selectedTemplateType = "pouch";
+        }
+        if (item.name.toLowerCase().includes("carton")) {
+          selectedTemplateType = "carton";
+        }
+        if (item.name.toLowerCase().includes("bottle")) {
+          selectedTemplateType = "bottle";
+        }
+      } else if (item.itemType === "Product") {
+        selectedTemplateType = "Product";
+      } else if (item.itemType === "OtherProduct") {
+        selectedTemplateType = "OtherProduct";
+      }
     });
 
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    console.log("Product Type: ", selectedTemplateType);
 
-    const cleanup = () => {
-      URL.revokeObjectURL(url);
-      if (iframe.parentNode) iframe.remove();
-    };
+    const content = buildTemplate(
+      { ...viewing, selectedTemplateId: selectedTemplateType },
+      {
+        name: "Antab Agro LTD",
+      },
+    );
+
+    const html = buildHtmlDocument(content);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
 
     iframe.onload = () => {
       const win = iframe.contentWindow;
-      if (!win) {
-        cleanup();
-        toast.error("Printing failed");
-        return;
+      const doc = win?.document;
+
+      if (!win || !doc) return;
+
+      injectWatermark(
+        doc,
+        "Antab Agro LTD",
+        window.location.origin + "/images/logo-green.png",
+      );
+
+      const img = doc.querySelector("img");
+
+      const printNow = () => {
+        win.focus();
+        win.print();
+        setPrinting(false);
+      };
+
+      if (img) {
+        img.onload = printNow;
+        img.onerror = printNow;
+      } else {
+        printNow();
       }
-
-      win.onafterprint = cleanup;
-
-      setTimeout(() => {
-        try {
-          win.focus();
-          win.print();
-        } catch {
-          cleanup();
-          toast.error("Printing failed");
-        }
-      }, 300);
-
-      setTimeout(cleanup, 3000);
     };
 
     iframe.src = url;
     document.body.appendChild(iframe);
-  }, [companyAddress, companyEmail, companyName, companyPhone, viewing]);
+  }, [viewing]);
 
   return (
-    <Button
-      variant="outline"
-      onClick={handlePrint}
-      className={className}
-      disabled={!viewing}
-    >
-      <Printer className="mr-2 h-4 w-4" />
-      {label}
+    <Button onClick={handlePrint} disabled={printing}>
+      <Printer className="w-4 h-4 mr-2" />
+      Print Invoice
     </Button>
   );
 }

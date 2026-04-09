@@ -26,11 +26,26 @@ type LookupItem = {
 
 type RawMaterial = LookupItem;
 type PackagingItem = LookupItem;
-type FinishedItem = LookupItem;
-type OtherItem = LookupItem;
+type ProductItem = LookupItem;
+type OtherProductItem = LookupItem;
+
+type WorkOrderItemType =
+  | "RawMaterial"
+  | "PackagingItem"
+  | "Product"
+  | "OtherProducts";
+
+type WorkOrderStatus =
+  | "Pending"
+  | "Processing"
+  | "UnderReview"
+  | "Approved"
+  | "Completed"
+  | "Cancelled"
+  | string;
 
 type ItemForm = {
-  itemType?: "RawMaterial" | "PackagingItem" | "FinishedItem" | "OtherItem";
+  itemType?: WorkOrderItemType;
   itemId?: string | LookupItem;
   name?: string;
   description?: string;
@@ -55,13 +70,7 @@ type WorkOrderForm = {
   warehouseOrFactory?: string | LookupItem;
   issueDate?: string;
   expectedDeliveryDate?: string;
-  status?:
-    | "Pending"
-    | "Processing"
-    | "Approved"
-    | "Completed"
-    | "Cancelled"
-    | string;
+  status?: WorkOrderStatus;
   items?: ItemForm[];
   discountPercent?: number;
   taxPercent?: number;
@@ -74,6 +83,7 @@ type WorkOrderForm = {
   notes?: string;
   footerNote?: string;
   createdBy?: string | LookupItem;
+  updatedBy?: string | LookupItem;
   approvedBy?: string | LookupItem;
 };
 
@@ -91,13 +101,47 @@ type WorkOrderDialogProps = {
 };
 
 const NONE = "none";
-const STATUS_OPTIONS = [
+
+const STATUS_OPTIONS: WorkOrderStatus[] = [
   "Pending",
   "Processing",
+  "UnderReview",
   "Approved",
   "Completed",
   "Cancelled",
-] as const;
+];
+
+const ITEM_TYPE_OPTIONS: {
+  value: WorkOrderItemType;
+  label: string;
+  emptyText: string;
+  placeholder: string;
+}[] = [
+  {
+    value: "RawMaterial",
+    label: "Raw Material",
+    emptyText: "No raw materials",
+    placeholder: "Search raw material...",
+  },
+  {
+    value: "PackagingItem",
+    label: "Packaging",
+    emptyText: "No packaging items",
+    placeholder: "Search packaging...",
+  },
+  {
+    value: "Product",
+    label: "Product",
+    emptyText: "No products",
+    placeholder: "Search product...",
+  },
+  {
+    value: "OtherProducts",
+    label: "Other Product",
+    emptyText: "No other products",
+    placeholder: "Search other product...",
+  },
+];
 
 const DEFAULT_TEMPLATES: TermsTemplate[] = [
   {
@@ -125,6 +169,10 @@ function getId(v?: any) {
   return v._id ?? "";
 }
 
+function round2(n: number) {
+  return Math.round(Number(n || 0) * 100) / 100;
+}
+
 function createEmptyItem(): ItemForm {
   return {
     itemType: "RawMaterial",
@@ -139,17 +187,9 @@ function createEmptyItem(): ItemForm {
   };
 }
 
-function safeMultiply(a: number, b: number) {
-  return Math.round(a * b * 100) / 100;
-}
-
-function safeAdd(a: number, b: number) {
-  return Math.round((a + b) * 100) / 100;
-}
-
 function formatCurrency(n?: number | null) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return "-";
-  return moneyFormatter.format(Math.round(Number(n) * 100) / 100);
+  return moneyFormatter.format(round2(Number(n)));
 }
 
 function numberToWords(num: number) {
@@ -230,17 +270,15 @@ function computeTotals(
   for (let i = 0; i < cloned.length; i++) {
     const q = Number(cloned[i].quantity || 0);
     const p = Number(cloned[i].unitPrice || 0);
-    const line = safeMultiply(q, p);
+    const line = round2(q * p);
     cloned[i].lineTotal = line;
-    sub = safeAdd(sub, line);
+    sub = round2(sub + line);
   }
 
-  const discountAmount =
-    Math.round(sub * (Number(discountPercent || 0) / 100) * 100) / 100;
-  const taxedBase = Math.round((sub - discountAmount) * 100) / 100;
-  const taxAmount =
-    Math.round(taxedBase * (Number(taxPercent || 0) / 100) * 100) / 100;
-  const grand = Math.round((taxedBase + taxAmount) * 100) / 100;
+  const discountAmount = round2(sub * (Number(discountPercent || 0) / 100));
+  const taxedBase = round2(sub - discountAmount);
+  const taxAmount = round2(taxedBase * (Number(taxPercent || 0) / 100));
+  const grand = round2(taxedBase + taxAmount);
 
   return {
     items: cloned,
@@ -381,12 +419,12 @@ type ItemRowProps = {
   item: ItemForm;
   rawMaterials: RawMaterial[];
   packagingItems: PackagingItem[];
-  finishedItems: FinishedItem[];
-  otherItems: OtherItem[];
+  products: ProductItem[];
+  otherProducts: OtherProductItem[];
   onUpdate: (index: number, patch: Partial<ItemForm>) => void;
   onSelectItem: (
     index: number,
-    itemType: "RawMaterial" | "PackagingItem" | "FinishedItem" | "OtherItem",
+    itemType: WorkOrderItemType,
     itemId: string,
   ) => void;
   onRemove: (index: number) => void;
@@ -397,14 +435,18 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
   item,
   rawMaterials,
   packagingItems,
-  finishedItems,
-  otherItems,
+  products,
+  otherProducts,
   onUpdate,
   onSelectItem,
   onRemove,
 }: ItemRowProps) {
   const currentType = item.itemType || "RawMaterial";
   const selectedId = getId(item.itemId) || "";
+
+  const itemConfig =
+    ITEM_TYPE_OPTIONS.find((t) => t.value === currentType) ??
+    ITEM_TYPE_OPTIONS[0];
 
   return (
     <tr className="border-t">
@@ -416,22 +458,24 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
             value={currentType}
             onValueChange={(v) =>
               onUpdate(index, {
-                itemType: v as "RawMaterial" | "PackagingItem",
+                itemType: v as WorkOrderItemType,
                 itemId: "",
+                name: "",
                 unit: "",
                 unitPrice: 0,
                 lineTotal: 0,
+                remarks: "",
               })
             }
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="RawMaterial">Raw Material</SelectItem>
               <SelectItem value="PackagingItem">Packaging</SelectItem>
-              <SelectItem value="FinishedItem">Finished Product</SelectItem>
-              <SelectItem value="OtherItem">Other Product</SelectItem>
+              <SelectItem value="Product">Product</SelectItem>
+              <SelectItem value="OtherProducts">Other Product</SelectItem>
             </SelectContent>
           </Select>
 
@@ -441,36 +485,36 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
                 options={rawMaterials}
                 value={selectedId}
                 onChange={(v) => onSelectItem(index, "RawMaterial", v || "")}
-                placeholder="Search raw material..."
+                placeholder={itemConfig.placeholder}
                 getLabel={itemLabel}
-                emptyText="No raw materials"
+                emptyText={itemConfig.emptyText}
               />
             ) : currentType === "PackagingItem" ? (
               <LocalSearchSelect
                 options={packagingItems}
                 value={selectedId}
                 onChange={(v) => onSelectItem(index, "PackagingItem", v || "")}
-                placeholder="Search packaging..."
+                placeholder={itemConfig.placeholder}
                 getLabel={itemLabel}
-                emptyText="No packaging items"
+                emptyText={itemConfig.emptyText}
               />
-            ) : currentType === "FinishedItem" ? (
+            ) : currentType === "Product" ? (
               <LocalSearchSelect
-                options={finishedItems}
+                options={products}
                 value={selectedId}
-                onChange={(v) => onSelectItem(index, "FinishedItem", v || "")}
-                placeholder="Search finished product..."
+                onChange={(v) => onSelectItem(index, "Product", v || "")}
+                placeholder={itemConfig.placeholder}
                 getLabel={itemLabel}
-                emptyText="No Finished Product"
+                emptyText={itemConfig.emptyText}
               />
             ) : (
               <LocalSearchSelect
-                options={otherItems}
+                options={otherProducts}
                 value={selectedId}
-                onChange={(v) => onSelectItem(index, "OtherItem", v || "")}
-                placeholder="Search other product..."
+                onChange={(v) => onSelectItem(index, "OtherProducts", v || "")}
+                placeholder={itemConfig.placeholder}
                 getLabel={itemLabel}
-                emptyText="No Other Products"
+                emptyText={itemConfig.emptyText}
               />
             )}
           </div>
@@ -523,9 +567,27 @@ const WorkOrderItemRow = memo(function WorkOrderItemRow({
       <td className="p-2 align-top text-right font-medium">
         {formatCurrency(item.lineTotal)}
       </td>
+      <td className="p-2 align-top text-right font-medium">
+        <Input
+          type="text"
+          min={0}
+          value={String(item.remarks ?? "")}
+          onChange={(e) =>
+            onUpdate(index, {
+              remarks: e.target.value,
+            })
+          }
+          className="w-28"
+        />
+      </td>
 
       <td className="p-2 align-top">
-        <Button size="sm" variant="destructive" onClick={() => onRemove(index)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          onClick={() => onRemove(index)}
+        >
           <Trash2 className="h-4 w-4" />
         </Button>
       </td>
@@ -548,6 +610,21 @@ const Section = memo(function Section({
   );
 });
 
+function LabelField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 function WorkOrderAddEditDialog({
   openEdit,
   setOpenEdit,
@@ -562,12 +639,14 @@ function WorkOrderAddEditDialog({
 }: WorkOrderDialogProps) {
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [packagingItems, setPackagingItems] = useState<PackagingItem[]>([]);
-  const [finishedItems, setFinishedItems] = useState<PackagingItem[]>([]);
-  const [otherItems, setOtherItems] = useState<PackagingItem[]>([]);
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [otherProducts, setOtherProducts] = useState<OtherProductItem[]>([]);
   const [templates, setTemplates] = useState<TermsTemplate[]>([]);
 
   const rawMap = useLookupMap(rawMaterials);
   const packMap = useLookupMap(packagingItems);
+  const productMap = useLookupMap(products);
+  const otherProductMap = useLookupMap(otherProducts);
   const supplierMap = useLookupMap(suppliers);
   const warehouseMap = useLookupMap(warehouses);
   const templateMap = useLookupMap(templates);
@@ -577,7 +656,7 @@ function WorkOrderAddEditDialog({
 
     (async () => {
       try {
-        const [rawRes, packRes, finishedRes, otherRes, tmplRes] =
+        const [rawRes, packRes, productRes, otherRes, tmplRes] =
           await Promise.allSettled([
             api.get("/raw-materials", { params: { limit: 1000 } }),
             api.get("/packaging-items", { params: { limit: 1000 } }),
@@ -594,12 +673,12 @@ function WorkOrderAddEditDialog({
         setPackagingItems(
           packRes.status === "fulfilled" ? packRes.value?.data?.data || [] : [],
         );
-        setFinishedItems(
-          finishedRes.status === "fulfilled"
-            ? finishedRes.value?.data?.data || []
+        setProducts(
+          productRes.status === "fulfilled"
+            ? productRes.value?.data?.data || []
             : [],
         );
-        setOtherItems(
+        setOtherProducts(
           otherRes.status === "fulfilled"
             ? otherRes.value?.data?.data || []
             : [],
@@ -617,8 +696,8 @@ function WorkOrderAddEditDialog({
         if (!alive) return;
         setRawMaterials([]);
         setPackagingItems([]);
-        setFinishedItems([]);
-        setOtherItems([]);
+        setProducts([]);
+        setOtherProducts([]);
         setTemplates(DEFAULT_TEMPLATES);
       }
     })();
@@ -627,6 +706,31 @@ function WorkOrderAddEditDialog({
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!openEdit || editing?._id) return;
+    if (!form || form.workOrderNo) return;
+
+    let alive = true;
+
+    (async () => {
+      try {
+        const res = await api.get("/workorders/generate-no");
+        if (!alive) return;
+
+        const nextNo = res?.data?.data;
+        if (nextNo) {
+          setForm((prev) => (prev ? { ...prev, workOrderNo: nextNo } : prev));
+        }
+      } catch {
+        // silent fallback
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [editing?._id, form, openEdit, setForm]);
 
   const closeDialog = useCallback(() => {
     setOpenEdit(false);
@@ -674,16 +778,29 @@ function WorkOrderAddEditDialog({
   );
 
   const selectItemForRow = useCallback(
-    (
-      index: number,
-      itemType: "RawMaterial" | "PackagingItem" | "FinishedItem" | "OtherItem",
-      itemId: string,
-    ) => {
+    (index: number, itemType: WorkOrderItemType, itemId: string) => {
       setForm((prev) => {
         if (!prev) return prev;
 
-        const source = itemType === "RawMaterial" ? rawMap : packMap;
-        const picked = source.get(itemId);
+        let sourceMap: Map<string, LookupItem>;
+        switch (itemType) {
+          case "RawMaterial":
+            sourceMap = rawMap;
+            break;
+          case "PackagingItem":
+            sourceMap = packMap;
+            break;
+          case "Product":
+            sourceMap = productMap;
+            break;
+          case "OtherProducts":
+            sourceMap = otherProductMap;
+            break;
+          default:
+            sourceMap = new Map();
+        }
+
+        const picked = sourceMap.get(itemId);
 
         const nextItems = (prev.items || []).map((it, i) =>
           i === index
@@ -700,6 +817,7 @@ function WorkOrderAddEditDialog({
                     it.unitPrice ??
                     0,
                 ),
+                remarks: it.remarks || picked?.remarks || "",
               }
             : it,
         );
@@ -707,7 +825,7 @@ function WorkOrderAddEditDialog({
         return withTotals(prev, nextItems);
       });
     },
-    [packMap, rawMap, setForm],
+    [otherProductMap, packMap, productMap, rawMap, setForm],
   );
 
   const updateDiscountTax = useCallback(
@@ -726,6 +844,7 @@ function WorkOrderAddEditDialog({
             : Number(prev.taxPercent || 0);
 
         const totals = computeTotals(prev.items || [], nextDiscount, nextTax);
+
         return {
           ...prev,
           discountPercent: nextDiscount,
@@ -780,15 +899,17 @@ function WorkOrderAddEditDialog({
       if (!current.supplier) return toast.error("Select supplier");
       if (!current.warehouseOrFactory)
         return toast.error("Select warehouse/factory");
+      if (!current.issueDate) return toast.error("Select issue date");
 
       const items = current.items || [];
       if (items.length === 0) return toast.error("Add at least one item");
 
-      for (const it of items) {
-        if (!it.itemType) return toast.error("Select item type for each row");
-        if (!it.itemId) return toast.error("Select item for each row");
+      for (const [idx, it] of items.entries()) {
+        if (!it.itemType)
+          return toast.error(`Row ${idx + 1}: select item type`);
+        if (!it.itemId) return toast.error(`Row ${idx + 1}: select item`);
         if (!it.quantity || Number(it.quantity) <= 0)
-          return toast.error("Item quantity must be > 0");
+          return toast.error(`Row ${idx + 1}: quantity must be > 0`);
       }
 
       const totals = computeTotals(
@@ -802,7 +923,11 @@ function WorkOrderAddEditDialog({
         supplier: getId(current.supplier),
         warehouseOrFactory: getId(current.warehouseOrFactory),
         issueDate: current.issueDate,
-        expectedDeliveryDate: current.expectedDeliveryDate,
+        expectedDeliveryDate: current.expectedDeliveryDate || undefined,
+        subject: current.subject || "",
+        reference: current.reference || "",
+        attention: current.attention || "",
+        salutation: current.salutation || "",
         items: totals.items.map((it) => ({
           itemType: it.itemType,
           itemId: getId(it.itemId),
@@ -814,18 +939,16 @@ function WorkOrderAddEditDialog({
           lineTotal: Number(it.lineTotal || 0),
           remarks: it.remarks || "",
         })),
-        status: current.status,
-        notes: current.notes,
-        terms: current.terms,
+        status: current.status || "Pending",
+        notes: current.notes || "",
+        terms: current.terms || "",
         discountPercent: Number(current.discountPercent || 0),
         taxPercent: Number(current.taxPercent || 0),
         subTotal: totals.subTotal,
         discountAmount: totals.discountAmount,
         taxTotal: totals.taxTotal,
         grandTotal: totals.grandTotal,
-        footerNote: current.footerNote,
-        createdBy: getId(current.createdBy),
-        approvedBy: current.approvedBy ? getId(current.approvedBy) : undefined,
+        footerNote: current.footerNote || "",
       };
 
       if (editing?._id) {
@@ -842,7 +965,7 @@ function WorkOrderAddEditDialog({
       console.error(err);
       toast.error(err?.response?.data?.message || "Save failed");
     }
-  }, [closeDialog, editing, form, loadWorkOrders]);
+  }, [closeDialog, editing?._id, form, loadWorkOrders]);
 
   const selectedSupplierName = useMemo(() => {
     const id = getId(form?.supplier);
@@ -858,10 +981,30 @@ function WorkOrderAddEditDialog({
 
   const selectedWarehouseName = useMemo(() => {
     const id = getId(form?.warehouseOrFactory);
-    return warehouseMap.get(id)?.name || "";
+    const found = warehouseMap.get(id);
+    return found?.name || "";
   }, [form?.warehouseOrFactory, warehouseMap]);
 
   const itemCount = form?.items?.length || 0;
+
+  const getItemName = useCallback(
+    (it: ItemForm) => {
+      const id = getId(it.itemId);
+      switch (it.itemType) {
+        case "RawMaterial":
+          return rawMap.get(id)?.name || it.name || "-";
+        case "PackagingItem":
+          return packMap.get(id)?.name || it.name || "-";
+        case "Product":
+          return productMap.get(id)?.name || it.name || "-";
+        case "OtherProducts":
+          return otherProductMap.get(id)?.name || it.name || "-";
+        default:
+          return it.name || "-";
+      }
+    },
+    [otherProductMap, packMap, productMap, rawMap],
+  );
 
   return (
     <Dialog
@@ -884,10 +1027,10 @@ function WorkOrderAddEditDialog({
               </div>
 
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={saveDraft}>
+                <Button type="button" variant="ghost" onClick={saveDraft}>
                   Save Draft
                 </Button>
-                <Button onClick={submitForm}>
+                <Button type="button" onClick={submitForm}>
                   {editing ? "Save" : "Create"}
                 </Button>
               </div>
@@ -895,30 +1038,33 @@ function WorkOrderAddEditDialog({
           </div>
 
           <div className="grid flex-1 grid-cols-1 overflow-hidden xl:grid-cols-[42%_58%]">
-            {/* LEFT: FORM */}
             <div className="overflow-y-auto border-r bg-slate-50 p-4 lg:p-6">
               <div className="space-y-4">
                 <Section title="Reference & Subject">
                   <div className="grid grid-cols-1 gap-3">
-                    <Input
-                      label="Subject"
-                      value={form?.subject || ""}
-                      onChange={(e) => setField({ subject: e.target.value })}
-                      placeholder="Subject / Title"
-                    />
-                    <Input
-                      label="Reference"
-                      value={form?.reference || ""}
-                      onChange={(e) => setField({ reference: e.target.value })}
-                      placeholder="Reference / PO #"
-                    />
+                    <LabelField label="Subject">
+                      <Input
+                        value={form?.subject || ""}
+                        onChange={(e) => setField({ subject: e.target.value })}
+                        placeholder="Subject / Title"
+                      />
+                    </LabelField>
+
+                    <LabelField label="Reference">
+                      <Input
+                        value={form?.reference || ""}
+                        onChange={(e) =>
+                          setField({ reference: e.target.value })
+                        }
+                        placeholder="Reference / PO #"
+                      />
+                    </LabelField>
                   </div>
                 </Section>
 
                 <Section title="Recipient">
                   <div className="grid grid-cols-1 gap-3">
-                    <div>
-                      <label className="mb-1 block text-sm">Supplier</label>
+                    <LabelField label="Supplier">
                       <LocalSearchSelect
                         options={suppliers}
                         value={getId(form?.supplier) || ""}
@@ -927,52 +1073,60 @@ function WorkOrderAddEditDialog({
                         getLabel={supplierLabel}
                         emptyText="No suppliers found"
                       />
-                    </div>
+                    </LabelField>
 
-                    <Input
-                      label="Attention (To)"
-                      value={form?.attention || ""}
-                      onChange={(e) => setField({ attention: e.target.value })}
-                      placeholder="Contact person / department"
-                    />
+                    <LabelField label="Attention (To)">
+                      <Input
+                        value={form?.attention || ""}
+                        onChange={(e) =>
+                          setField({ attention: e.target.value })
+                        }
+                        placeholder="Contact person / department"
+                      />
+                    </LabelField>
 
-                    <Input
-                      label="Salutation"
-                      value={form?.salutation || ""}
-                      onChange={(e) => setField({ salutation: e.target.value })}
-                      placeholder="Dear Sir / Madam,"
-                    />
+                    <LabelField label="Salutation">
+                      <Input
+                        value={form?.salutation || ""}
+                        onChange={(e) =>
+                          setField({ salutation: e.target.value })
+                        }
+                        placeholder="Dear Sir / Madam,"
+                      />
+                    </LabelField>
                   </div>
                 </Section>
 
                 <Section title="Logistics & Dates">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="md:col-span-2">
-                      <label className="mb-1 block text-sm">
-                        Select Factory
-                      </label>
-                      <Select
-                        value={getId(form?.warehouseOrFactory) || NONE}
-                        onValueChange={(v) =>
-                          setField({ warehouseOrFactory: v === NONE ? "" : v })
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select Warehouse/Factory" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>Select Factory</SelectItem>
-                          {warehouses.map((w) => (
-                            <SelectItem key={w._id} value={w._id}>
-                              {w.name}
+                      <LabelField label="Select Factory OR Warehouse">
+                        <Select
+                          value={getId(form?.warehouseOrFactory) || NONE}
+                          onValueChange={(v) =>
+                            setField({
+                              warehouseOrFactory: v === NONE ? "" : v,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select Warehouse/Factory" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE}>
+                              Select Factory OR Warehouse
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                            {warehouses.map((w) => (
+                              <SelectItem key={w._id} value={w._id}>
+                                {w.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </LabelField>
                     </div>
 
-                    <div>
-                      <label className="mb-1 block text-sm">Issue Date</label>
+                    <LabelField label="Issue Date">
                       <Input
                         type="date"
                         value={form?.issueDate?.slice(0, 10) || ""}
@@ -980,12 +1134,9 @@ function WorkOrderAddEditDialog({
                           setField({ issueDate: e.target.value })
                         }
                       />
-                    </div>
+                    </LabelField>
 
-                    <div>
-                      <label className="mb-1 block text-sm">
-                        Expected Delivery
-                      </label>
+                    <LabelField label="Expected Delivery">
                       <Input
                         type="date"
                         value={form?.expectedDeliveryDate?.slice(0, 10) || ""}
@@ -993,25 +1144,26 @@ function WorkOrderAddEditDialog({
                           setField({ expectedDeliveryDate: e.target.value })
                         }
                       />
-                    </div>
+                    </LabelField>
 
                     <div className="md:col-span-2">
-                      <label className="mb-1 block text-sm">Status</label>
-                      <Select
-                        value={form?.status || "Pending"}
-                        onValueChange={(v) => setField({ status: v as any })}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STATUS_OPTIONS.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <LabelField label="Status">
+                        <Select
+                          value={form?.status || "Pending"}
+                          onValueChange={(v) => setField({ status: v as any })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUS_OPTIONS.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </LabelField>
                     </div>
                   </div>
                 </Section>
@@ -1021,7 +1173,7 @@ function WorkOrderAddEditDialog({
                     <div className="text-sm text-muted-foreground">
                       {itemCount} item{itemCount === 1 ? "" : "s"}
                     </div>
-                    <Button size="sm" onClick={addItemRow}>
+                    <Button type="button" size="sm" onClick={addItemRow}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Item
                     </Button>
@@ -1042,6 +1194,7 @@ function WorkOrderAddEditDialog({
                             Unit Price
                           </th>
                           <th className="border-b p-2 text-right">Total</th>
+                          <th className="border-b p-2 text-left">Remarks</th>
                           <th className="border-b p-2 text-left">Action</th>
                         </tr>
                       </thead>
@@ -1053,8 +1206,8 @@ function WorkOrderAddEditDialog({
                             item={it}
                             rawMaterials={rawMaterials}
                             packagingItems={packagingItems}
-                            finishedItems={finishedItems}
-                            otherItems={otherItems}
+                            products={products}
+                            otherProducts={otherProducts}
                             onUpdate={updateItemField}
                             onSelectItem={selectItemForRow}
                             onRemove={removeItemRow}
@@ -1078,10 +1231,7 @@ function WorkOrderAddEditDialog({
 
                 <Section title="Totals & Calculations">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">
-                        Discount (%)
-                      </label>
+                    <LabelField label="Discount (%)">
                       <Input
                         type="number"
                         min={0}
@@ -1093,12 +1243,9 @@ function WorkOrderAddEditDialog({
                           )
                         }
                       />
-                    </div>
+                    </LabelField>
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">
-                        Tax (%)
-                      </label>
+                    <LabelField label="Tax (%)">
                       <Input
                         type="number"
                         min={0}
@@ -1110,7 +1257,7 @@ function WorkOrderAddEditDialog({
                           )
                         }
                       />
-                    </div>
+                    </LabelField>
                   </div>
 
                   <div className="mt-4 rounded-lg border bg-slate-50 p-4">
@@ -1141,49 +1288,45 @@ function WorkOrderAddEditDialog({
 
                 <Section title="Terms & Notes">
                   <div className="grid grid-cols-1 gap-3">
-                    <Select
-                      value={(form?.selectedTemplateId as string) || NONE}
-                      onValueChange={(v) =>
-                        applyTemplate(v === NONE ? null : v)
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select template" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>
-                          -- Choose Template --
-                        </SelectItem>
-                        {templates.map((t) => (
-                          <SelectItem key={t._id} value={t._id}>
-                            {t.title}
+                    <LabelField label="Template">
+                      <Select
+                        value={(form?.selectedTemplateId as string) || NONE}
+                        onValueChange={(v) =>
+                          applyTemplate(v === NONE ? null : v)
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE}>
+                            -- Choose Template --
                           </SelectItem>
-                        ))}
-                        <SelectItem value="custom">Custom / Empty</SelectItem>
-                      </SelectContent>
-                    </Select>
+                          {templates.map((t) => (
+                            <SelectItem key={t._id} value={t._id}>
+                              {t.title}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="custom">Custom / Empty</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </LabelField>
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">
-                        Terms & Conditions
-                      </label>
+                    <LabelField label="Terms & Conditions">
                       <textarea
                         value={form?.terms || ""}
                         onChange={(e) => setField({ terms: e.target.value })}
                         className="min-h-[120px] w-full rounded-md border bg-white p-3 outline-none focus:ring-2 focus:ring-slate-300"
                       />
-                    </div>
+                    </LabelField>
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">
-                        Notes
-                      </label>
+                    <LabelField label="Notes">
                       <textarea
                         value={form?.notes || ""}
                         onChange={(e) => setField({ notes: e.target.value })}
                         className="min-h-[80px] w-full rounded-md border bg-white p-3 outline-none focus:ring-2 focus:ring-slate-300"
                       />
-                    </div>
+                    </LabelField>
                   </div>
                 </Section>
 
@@ -1197,16 +1340,16 @@ function WorkOrderAddEditDialog({
               </div>
             </div>
 
-            {/* RIGHT: PREVIEW */}
             <div className="overflow-y-auto bg-slate-50 p-4 lg:p-6">
               <div className="rounded-2xl border bg-white p-6 shadow-sm">
                 <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="flex items-center gap-3">
-                      <div className="flex h-16 w-20 items-center justify-center rounded-xl bg-slate-200 text-sm font-medium text-slate-600 p-1">
+                      <div className="flex h-16 w-20 items-center justify-center rounded-xl bg-slate-200 p-1 text-sm font-medium text-slate-600">
                         <img
-                          src={"/images/logo-green.png"}
-                          className="w-full h-full object-fit rounded-lg"
+                          src="/images/logo-green.png"
+                          className="h-full w-full rounded-lg object-cover"
+                          alt="Logo"
                         />
                       </div>
                       <div>
@@ -1245,7 +1388,9 @@ function WorkOrderAddEditDialog({
                     </div>
                   </div>
                   <div className="rounded-lg border bg-slate-50 p-4">
-                    <div className="text-sm text-muted-foreground">Factory</div>
+                    <div className="text-sm text-muted-foreground">
+                      Factory OR Warehouse (Destination)
+                    </div>
                     <div className="mt-1 font-medium">
                       {selectedWarehouseName || "-"}
                     </div>
@@ -1269,38 +1414,34 @@ function WorkOrderAddEditDialog({
                         <th className="border-b p-2 text-right">Unit</th>
                         <th className="border-b p-2 text-right">Unit Price</th>
                         <th className="border-b p-2 text-right">Total</th>
+                        <th className="border-b p-2 text-right">Remarks</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(form?.items || []).map((it, idx) => {
-                        const id = getId(it.itemId);
-                        const itemName =
-                          it.itemType === "RawMaterial"
-                            ? rawMap.get(id)?.name || "-"
-                            : packMap.get(id)?.name || "-";
-
-                        return (
-                          <tr key={it._id || idx} className="border-t">
-                            <td className="p-2 align-top">{idx + 1}</td>
-                            <td className="p-2 align-top">{itemName}</td>
-                            <td className="p-2 align-top">
-                              {it.description || "-"}
-                            </td>
-                            <td className="p-2 align-top text-right">
-                              {it.quantity ?? 0}
-                            </td>
-                            <td className="p-2 align-top text-right">
-                              {it.unit || "-"}
-                            </td>
-                            <td className="p-2 align-top text-right">
-                              {formatCurrency(it.unitPrice)}
-                            </td>
-                            <td className="p-2 align-top text-right">
-                              {formatCurrency(it.lineTotal)}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {(form?.items || []).map((it, idx) => (
+                        <tr key={it._id || idx} className="border-t">
+                          <td className="p-2 align-top">{idx + 1}</td>
+                          <td className="p-2 align-top">{getItemName(it)}</td>
+                          <td className="p-2 align-top">
+                            {it.description || "-"}
+                          </td>
+                          <td className="p-2 align-top text-right">
+                            {it.quantity ?? 0}
+                          </td>
+                          <td className="p-2 align-top text-right">
+                            {it.unit || "-"}
+                          </td>
+                          <td className="p-2 align-top text-right">
+                            {formatCurrency(it.unitPrice)}
+                          </td>
+                          <td className="p-2 align-top text-right">
+                            {formatCurrency(it.lineTotal)}
+                          </td>
+                          <td className="p-2 align-top text-right">
+                            {it?.remarks}
+                          </td>
+                        </tr>
+                      ))}
 
                       {itemCount === 0 && (
                         <tr>

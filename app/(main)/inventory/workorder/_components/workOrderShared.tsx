@@ -198,7 +198,7 @@ export function esc(s?: string) {
 export function buildPrintHtml(
   viewing: WorkOrderView,
   company = {
-    name: "Your Company Name",
+    name: "Antab Agro LDT",
     address: "Company address, city, country",
     phone: "Phone: +000 000 000",
     email: "Email: info@company.com",
@@ -215,6 +215,7 @@ export function buildPrintHtml(
           <td class="right">${esc(it.unit || "-")}</td>
           <td class="right">${fmtMoney(it.unitPrice)}</td>
           <td class="right">${fmtMoney(it.lineTotal)}</td>
+          <td class="right">${it.remarks}</td>
         </tr>
       `,
     )
@@ -240,6 +241,12 @@ export function buildPrintHtml(
         .chip { display:inline-block; margin-top:8px; padding:5px 10px; border-radius:999px; background:#f3f4f6; font-size:11px; font-weight:700; text-transform:uppercase; }
         .meta { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
         .box { border:1px solid #d1d5db; border-radius:12px; padding:12px; }
+        .metabox{
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: 20px;
+        }
         .lab { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
         .val { font-weight:700; }
         .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
@@ -275,40 +282,39 @@ export function buildPrintHtml(
           <div class="no">${esc(viewing.workOrderNo || "-")}</div>
           <div class="m">Issue: ${esc(fmtDate(viewing.issueDate))}</div>
           <div class="m">Expected: ${esc(fmtDate(viewing.expectedDeliveryDate))}</div>
-          <div class="chip">${esc(viewing.status || "Pending")}</div>
         </div>
-      </div>
-
-      <div class="meta">
-        <div class="box"><div class="lab">Reference</div><div class="val">${esc(viewing.reference || "-")}</div></div>
-        <div class="box"><div class="lab">Subject</div><div class="val">${esc(viewing.subject || "-")}</div></div>
-        <div class="box"><div class="lab">Attention</div><div class="val">${esc(viewing.attention || "-")}</div></div>
-        <div class="box"><div class="lab">Salutation</div><div class="val">${esc(viewing.salutation || "-")}</div></div>
       </div>
 
       <div class="two">
-        <div class="card">
-          <div class="t">Bill To</div>
+        <div class="">
+          <div class="t">WO To</div>
           <div class="val">${esc(safeName(viewing.supplier))}</div>
           <div class="m">${esc(safeAddress(viewing.supplier))}</div>
         </div>
-        <div class="card">
+        <div class="">
           <div class="t">Factory / Ship To</div>
           <div class="val">${esc(safeName(viewing.warehouseOrFactory))}</div>
           <div class="m">${esc(safeAddress(viewing.warehouseOrFactory))}</div>
         </div>
       </div>
 
+      <div class="metabox">
+        <div><strong>Ref:</strong> ${esc(viewing.reference)}</div>
+        <div><strong>Subject:</strong> ${esc(viewing.subject)}</div>
+        <div> Dear Sir / Madam, <br/> ${esc(viewing.salutation)}</div>
+      </div>
+
       <table>
         <thead>
           <tr>
-            <th style="width:44px;">#</th>
-            <th>Item</th>
-            <th>Description</th>
-            <th class="right" style="width:78px;">Qty</th>
-            <th class="right" style="width:88px;">Unit</th>
-            <th class="right" style="width:110px;">Unit Price</th>
-            <th class="right" style="width:120px;">Line Total</th>
+            <th style="width:20px;">#</th>
+            <th style="width:170px;">Item</th>
+            <th >Description</th>
+            <th class="right" style="width:40px;">Qty</th>
+            <th class="right" style="width:40px;">Unit</th>
+            <th class="right" style="width:90px;">Unit Price</th>
+            <th class="right" style="width:90px;">Line Total</th>
+            <th class="right" style="width:130px;">Remarks</th>
           </tr>
         </thead>
         <tbody>

@@ -113,20 +113,12 @@ type GR = {
     itemId: string;
     workOrderItemId?: string;
     receivedQty: number;
-    inventoryQty?: number;
-    workOrderUnit?: string;
-    inventoryUnit?: string;
-    conversionFactor?: number;
-    convertedQty?: number;
     unit?: string;
-    unitPrice?: number;
     remarks?: string;
     itemName?: string;
     transportCost?: number;
     transportPaymentSource?: string;
     transportNotes?: string;
-    lineTotal?: number;
-    transportVoucherId?: string;
   }>;
   attachments?: Array<{
     _id?: string;
@@ -151,24 +143,18 @@ const ITEM_SOURCES: Record<
   RawMaterial: { endpoint: "/raw-materials", label: "Raw Material" },
   PackagingItem: { endpoint: "/packaging-items", label: "Packaging Item" },
   Product: { endpoint: "/products", label: "Product" },
-  FinishedProduct: { endpoint: "/products", label: "Finished Product" },
+  FinishedProduct: { endpoint: "/products", label: "Finished Product" }, // optional if you still have FP
   OtherProducts: { endpoint: "/other-products", label: "Other Product" },
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-
 const n = (v: any) => {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
 };
-
 const round = (v: number) => Math.round(v * 10000) / 10000;
-
 const fmt = (v?: number) =>
   typeof v === "number" && Number.isFinite(v) ? Number(v).toFixed(2) : "-";
-
-const qtyFmt = (v?: number) =>
-  typeof v === "number" && Number.isFinite(v) ? String(round(v)) : "-";
 
 const normalizeType = (t?: string): ItemType => {
   switch (t) {
@@ -180,7 +166,7 @@ const normalizeType = (t?: string): ItemType => {
     case "FinishedProduct":
       return "FinishedProduct";
     case "OtherProduct":
-    case "OtherProducts":
+    case "OtherProducts": // handle both
       return "OtherProducts";
     default:
       return "RawMaterial";
@@ -273,9 +259,7 @@ function useDebounced<T>(value: T, delay = 300) {
 function Badge({ value }: { value?: string }) {
   return (
     <span
-      className={`inline-flex rounded px-2 py-1 text-xs font-medium text-white ${statusClass(
-        value,
-      )}`}
+      className={`inline-flex rounded px-2 py-1 text-xs font-medium text-white ${statusClass(value)}`}
     >
       {value || "-"}
     </span>
@@ -303,9 +287,8 @@ function AsyncSelect({
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (ref.current && !ref.current.contains(e.target as Node))
         setOpen(false);
-      }
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -343,13 +326,12 @@ function AsyncSelect({
         const res = await api.get(`${endpoint}/${value}`);
         if (!mounted) return;
         const obj = res?.data?.data ?? res?.data ?? null;
-        if (obj) {
+        if (obj)
           setItems((prev) =>
             prev.some((p) => String(p._id) === String(obj._id))
               ? prev
               : [obj, ...prev],
           );
-        }
       } catch {}
     })();
     return () => {
@@ -557,32 +539,6 @@ export default function GoodsReceiptPage() {
     [form.workOrderId, workOrderMap],
   );
 
-  const viewingWorkOrderItems = useMemo(() => {
-    const wo = viewing?.workOrderId;
-    return typeof wo === "object" && Array.isArray(wo.items) ? wo.items : [];
-  }, [viewing]);
-
-  const findViewingWorkOrderItem = useCallback(
-    (grItem: any) => {
-      const id = String(grItem?.workOrderItemId || "");
-      if (!id) return null;
-      return (
-        viewingWorkOrderItems.find((w: any) => String(w._id) === id) || null
-      );
-    },
-    [viewingWorkOrderItems],
-  );
-
-  const formatConversionText = useCallback((it: any) => {
-    const woUnit = it.workOrderUnit || it.unit || "";
-    const invUnit = it.inventoryUnit || it.unit || "";
-    if (sameUnit(woUnit, invUnit)) return "Same unit";
-    const factor = n(it.conversionFactor || 1);
-    return `1 ${woUnit || "WO unit"} = ${round(factor)} ${
-      invUnit || "inventory unit"
-    }`;
-  }, []);
-
   const filePreviews = useMemo(
     () => files.map((f) => ({ file: f, url: URL.createObjectURL(f) })),
     [files],
@@ -631,8 +587,8 @@ export default function GoodsReceiptPage() {
         setItemMaps({
           RawMaterial: buildMap(rmRes.data.data || []),
           PackagingItem: buildMap(pkRes.data.data || []),
-          Product: buildMap(fpRes.data.data || []),
-          FinishedProduct: buildMap(fpRes.data.data || []),
+          Product: buildMap(fpRes.data.data || []), // use `/products` API
+          FinishedProduct: buildMap(fpRes.data.data || []), // optional
           OtherProducts: buildMap(opRes.data.data || []),
         });
       } catch (err) {
@@ -645,8 +601,8 @@ export default function GoodsReceiptPage() {
     RawMaterial: "RawMaterial",
     PackagingItem: "PackagingItem",
     Product: "Product",
-    FinishedProduct: "Product",
-    OtherProducts: "OtherProducts",
+    FinishedProduct: "Product", // optional if you still have FP
+    OtherProducts: "OtherProducts", // 🔥 backend expects this exact enum
   };
 
   const resolveItem = useCallback(
@@ -742,6 +698,7 @@ export default function GoodsReceiptPage() {
           return toLine({
             workOrderItemId: it._id,
             itemType: type,
+            // itemType: ITEM_TYPE_MAP[type] || type,
             itemId,
             itemName,
             workOrderUnit,
@@ -843,13 +800,11 @@ export default function GoodsReceiptPage() {
             `Conversion factor required for ${it.itemName || it.itemId}`,
           );
         }
-        // if (it.receiveQty > it.remainingQty) {
-        //   return toast.error(
-        //     `Cannot receive more than remaining quantity for ${
-        //       it.itemName || it.itemId
-        //     }`,
-        //   );
-        // }
+        if (it.receiveQty > it.remainingQty) {
+          return toast.error(
+            `Cannot receive more than remaining quantity for ${it.itemName || it.itemId}`,
+          );
+        }
       }
 
       const payload = {
@@ -863,10 +818,10 @@ export default function GoodsReceiptPage() {
           workOrderItemId: it.workOrderItemId
             ? String(it.workOrderItemId)
             : undefined,
-          itemType: ITEM_TYPE_MAP[it.itemType] || it.itemType,
+          itemType: ITEM_TYPE_MAP[it.itemType] || it.itemType, // ✅ map to backend enum
           itemId: String(it.itemId),
-          receivedQty: n(it.receiveQty),
-          inventoryQty: n(it.inventoryQty),
+          receivedQty: n(it.receiveQty), // WO quantity
+          inventoryQty: n(it.inventoryQty), // converted inventory quantity
           unit: it.inventoryUnit || it.workOrderUnit || "",
           remarks: it.remarks || "",
           transportCost: n(it.transportCost),
@@ -1125,10 +1080,7 @@ export default function GoodsReceiptPage() {
           <div className="text-sm text-muted-foreground">
             {total === 0
               ? "Showing 0 records"
-              : `Showing ${(page - 1) * limit + 1} - ${Math.min(
-                  page * limit,
-                  total,
-                )} of ${total}`}
+              : `Showing ${(page - 1) * limit + 1} - ${Math.min(page * limit, total)} of ${total}`}
           </div>
 
           <div className="flex items-center gap-2">
@@ -1359,8 +1311,11 @@ export default function GoodsReceiptPage() {
                           it.inventoryUnit,
                         );
                         return (
-                          <React.Fragment key={`${it.itemId}-${idx}`}>
-                            <tr className="border-t">
+                          <>
+                            <tr
+                              key={`${it.itemId}-${idx}`}
+                              className="border-t"
+                            >
                               <td className="align-top p-3">{idx + 1}</td>
                               <td className="align-top p-3">
                                 <div className="font-medium">
@@ -1380,6 +1335,12 @@ export default function GoodsReceiptPage() {
                                     Completed
                                   </div>
                                 )}
+                                {/* {mismatch && (
+                                <ConversionBox
+                                  line={it}
+                                  onChange={(patch) => updateLine(idx, patch)}
+                                />
+                              )} */}
                               </td>
                               <td className="align-top p-3 text-right">
                                 {it.expectedQty}
@@ -1454,7 +1415,7 @@ export default function GoodsReceiptPage() {
                                 )}
                               </td>
                             </tr>
-                          </React.Fragment>
+                          </>
                         );
                       })}
                       {form.items.length === 0 && (
@@ -1497,61 +1458,44 @@ export default function GoodsReceiptPage() {
                   </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-3">
-                    {filePreviews.length > 0 && (
-                      <div className="mt-2 grid grid-cols-3 gap-2">
-                        {filePreviews.map((f, idx) => {
-                          const isImage = f.file.type.startsWith("image/");
-                          const isPdf = f.file.type === "application/pdf";
-
-                          return (
-                            <div
-                              key={idx}
-                              className="relative rounded border p-2 text-xs text-center flex flex-col items-center justify-center"
-                            >
-                              {isImage ? (
-                                <img
-                                  src={f.url}
-                                  alt={f.file.name}
-                                  className="h-20 w-full object-contain"
-                                />
-                              ) : isPdf ? (
-                                <div className="flex h-20 w-full items-center justify-center bg-red-100 text-red-600 text-xs">
-                                  PDF: {f.file.name}
-                                </div>
-                              ) : (
-                                <div className="flex h-20 w-full items-center justify-center bg-gray-100 text-gray-600 text-xs">
-                                  {f.file.name}
-                                </div>
-                              )}
-
-                              <div className="mt-1 text-xs">
-                                {(f.file.size / 1024).toFixed(1)} KB
+                    {filePreviews.map((p, i) => {
+                      const isImage = p.file.type.startsWith("image/");
+                      return (
+                        <div
+                          key={`${p.file.name}-${i}`}
+                          className="flex items-start gap-2 rounded border p-2"
+                        >
+                          <div className="flex h-14 w-14 items-center justify-center bg-gray-50">
+                            {isImage ? (
+                              <img
+                                src={p.url}
+                                alt={p.file.name}
+                                className="max-h-full max-w-full"
+                              />
+                            ) : (
+                              <div className="px-1 text-xs text-muted-foreground">
+                                {p.file.name}
                               </div>
-
-                              <div className="flex gap-1 mt-1">
-                                {f.url && (
-                                  <a
-                                    href={f.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:underline text-xs"
-                                  >
-                                    View
-                                  </a>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => removeFile(idx)}
-                                  className="text-red-600 hover:underline text-xs"
-                                >
-                                  Remove
-                                </button>
-                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium">
+                              {p.file.name}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                            <div className="text-xs text-muted-foreground">
+                              {(p.file.size / 1024).toFixed(1)} KB
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeFile(i)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
                     {files.length === 0 && (
                       <div className="text-sm text-muted-foreground">
                         No files attached
@@ -1753,7 +1697,7 @@ export default function GoodsReceiptPage() {
           if (!o) setViewing(null);
         }}
       >
-        <DialogContent className="!w-[90vw] !max-w-[1200px] p-0">
+        <DialogContent className="!w-[90vw] !max-w-[1100px] p-0">
           {viewing && (
             <div className="rounded-lg bg-white p-6">
               <div className="mb-4 flex items-start justify-between">
@@ -1787,7 +1731,7 @@ export default function GoodsReceiptPage() {
                 </div>
               </div>
 
-              <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <div className="text-sm text-muted-foreground">Supplier</div>
                   <div className="font-medium">
@@ -1819,13 +1763,6 @@ export default function GoodsReceiptPage() {
                       : "-"}
                   </div>
                 </div>
-
-                <div>
-                  <div className="text-sm text-muted-foreground">
-                    Payment Status
-                  </div>
-                  <Badge value={viewing.paymentStatus} />
-                </div>
               </div>
 
               <div className="mb-4 overflow-x-auto">
@@ -1834,99 +1771,35 @@ export default function GoodsReceiptPage() {
                     <tr>
                       <th className="border-b p-2 text-left">#</th>
                       <th className="border-b p-2 text-left">Item</th>
-                      <th className="border-b p-2 text-right">WO Qty</th>
-                      <th className="border-b p-2 text-right">Inventory Qty</th>
-                      <th className="border-b p-2 text-left">Units</th>
-                      <th className="border-b p-2 text-left">Conversion</th>
+                      <th className="border-b p-2 text-right">Qty</th>
+                      <th className="border-b p-2">Unit</th>
+                      <th className="border-b p-2">Remarks</th>
                       <th className="border-b p-2 text-right">Transport</th>
-                      <th className="border-b p-2 text-left">
-                        Transport Notes
-                      </th>
+                      <th className="border-b p-2">Transport Notes</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(viewing.items || []).map((it, idx) => {
-                      const woItem = findViewingWorkOrderItem(it);
-                      const woUnit =
-                        it.workOrderUnit ||
-                        woItem?.unit ||
-                        woItem?.itemId?.unit ||
-                        it.unit ||
-                        "-";
-                      const invUnit =
-                        it.inventoryUnit ||
-                        it.unit ||
-                        woItem?.itemId?.unit ||
-                        woUnit ||
-                        "-";
-                      const isMismatch = !sameUnit(woUnit, invUnit);
-                      const convFactor = n(it.conversionFactor || 1);
-
-                      return (
-                        <tr key={it._id || idx}>
-                          <td className="p-2">{idx + 1}</td>
-                          <td className="p-2 font-medium">
-                            <div>{resolveItemName(it)}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {ITEM_SOURCES[normalizeType(it.itemType)]
-                                ?.label || it.itemType}
-                            </div>
-                            {woItem && (
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                Ordered: {qtyFmt(woItem.quantity)}{" "}
-                                {woItem.unit || woUnit}
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-2 text-right">
-                            <div>{qtyFmt(it.receivedQty)}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {woUnit}
-                            </div>
-                          </td>
-                          <td className="p-2 text-right">
-                            <div>
-                              {qtyFmt(it.inventoryQty ?? it.convertedQty)}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {invUnit}
-                            </div>
-                          </td>
-                          <td className="p-2">
-                            <div className="text-sm">
-                              WO: <span className="font-medium">{woUnit}</span>
-                            </div>
-                            <div className="text-sm">
-                              Inv:{" "}
-                              <span className="font-medium">{invUnit}</span>
-                            </div>
-                          </td>
-                          <td className="p-2">
-                            {isMismatch ? (
-                              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-                                <div className="font-medium text-amber-800">
-                                  1 {woUnit} = {round(convFactor)} {invUnit}
-                                </div>
-                                <div className="text-xs text-amber-700">
-                                  Converted qty:{" "}
-                                  {qtyFmt(it.inventoryQty ?? it.convertedQty)}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-sm text-muted-foreground">
-                                Same unit
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-2 text-right">
-                            {it.transportCost != null
-                              ? fmt(Number(it.transportCost))
-                              : "-"}
-                          </td>
-                          <td className="p-2">{it.transportNotes || "-"}</td>
-                        </tr>
-                      );
-                    })}
+                    {(viewing.items || []).map((it, idx) => (
+                      <tr key={idx}>
+                        <td className="p-2">{idx + 1}</td>
+                        <td className="p-2 font-medium">
+                          {resolveItemName(it)}
+                          <div className="text-xs text-muted-foreground">
+                            {ITEM_SOURCES[normalizeType(it.itemType)]?.label ||
+                              it.itemType}
+                          </div>
+                        </td>
+                        <td className="p-2 text-right">{it.receivedQty}</td>
+                        <td className="p-2">{it.unit || "-"}</td>
+                        <td className="p-2">{it.remarks || "-"}</td>
+                        <td className="p-2 text-right">
+                          {it.transportCost != null
+                            ? fmt(Number(it.transportCost))
+                            : "-"}
+                        </td>
+                        <td className="p-2">{it.transportNotes || "-"}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1935,52 +1808,37 @@ export default function GoodsReceiptPage() {
                 <div>
                   <div className="mb-2 font-semibold">Attachments</div>
                   <div className="space-y-2">
-                    {(viewing.attachments || []).length > 0 ? (
-                      viewing?.attachments.map((a, i) => {
-                        const isImage = a?.mimeType?.startsWith("image/");
-                        const isPdf = a?.mimeType === "application/pdf";
-
-                        return (
-                          <div
-                            key={i}
-                            className="flex flex-col items-center justify-center rounded border p-2 text-xs"
-                          >
-                            {isImage ? (
+                    {(viewing.attachments || []).length ? (
+                      viewing.attachments!.map((a, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between gap-3 rounded border p-2"
+                        >
+                          <div className="flex items-center gap-3">
+                            {a.url ? (
                               <img
                                 src={a.url}
                                 alt={a.originalName || a.name || "attachment"}
-                                className="h-20 w-full object-contain"
+                                className="max-h-[80px] max-w-[120px]"
                               />
-                            ) : isPdf ? (
-                              <div className="flex h-20 w-full items-center justify-center bg-red-100 text-red-600 text-xs text-center px-1">
-                                PDF: {a.originalName || a.name || a._id}
-                              </div>
                             ) : (
-                              <div className="flex h-20 w-full items-center justify-center bg-gray-100 text-gray-600 text-xs text-center px-1">
+                              <div className="text-sm text-muted-foreground">
                                 {a.originalName || a.name || a._id}
                               </div>
                             )}
-
-                            <div className="mt-1 text-xs text-center">
-                              {(a.size / 1024).toFixed(1)} KB
-                            </div>
-
-                            {a.url && (
-                              <button
-                                onClick={() =>
-                                  window.open(
-                                    `http://localhost:5001${a.url}`,
-                                    "_blank",
-                                  )
-                                }
-                                className="mt-1 text-blue-600 hover:underline text-xs"
-                              >
-                                View
-                              </button>
-                            )}
                           </div>
-                        );
-                      })
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              a.url && window.open(a.url, "_blank")
+                            }
+                            disabled={!a.url}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
                     ) : (
                       <div className="text-sm text-muted-foreground">
                         No attachments
