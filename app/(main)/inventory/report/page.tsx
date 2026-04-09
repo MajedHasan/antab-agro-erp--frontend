@@ -24,42 +24,70 @@ import {
   Warehouse as WarehouseIcon,
 } from "lucide-react";
 
-type Warehouse = { _id: string; name?: string; code?: string; type?: string };
-
-type RawMaterial = { _id: string; name: string; sku: string; unit?: string };
-type RawMaterialStock = {
-  _id?: string;
-  rawMaterialId: string | any;
-  factoryId: string | any;
-  quantity: number;
-  unit?: string;
+type Warehouse = {
+  _id: string;
+  name?: string;
+  code?: string;
+  type?: string;
 };
 
-type PackagingItem = { _id: string; name: string; sku: string; unit?: string };
-type PackagingStock = {
-  _id?: string;
-  packagingItemId: string | any;
-  factoryId: string | any;
-  quantity: number;
-  unit?: string;
-};
-
-type Product = {
+type BaseItem = {
   _id: string;
   name: string;
   sku: string;
   unit?: string;
-  category?: string | null;
 };
+
+type RawMaterial = BaseItem;
+type PackagingItem = BaseItem;
+type Product = BaseItem;
+type OtherProduct = BaseItem;
+
+type RawMaterialStock = {
+  _id?: string;
+  rawMaterialId: string | any;
+  factoryId?: string | any;
+  warehouseId?: string | any;
+  locationId?: string | any;
+  warehouseOrFactoryId?: string | any;
+  quantity: number;
+  unit?: string;
+};
+
+type PackagingStock = {
+  _id?: string;
+  packagingItemId: string | any;
+  factoryId?: string | any;
+  warehouseId?: string | any;
+  locationId?: string | any;
+  warehouseOrFactoryId?: string | any;
+  quantity: number;
+  unit?: string;
+};
+
 type ProductStock = {
   _id?: string;
   productId: string | any;
-  warehouseId: string | any;
+  warehouseId?: string | any;
+  factoryId?: string | any;
+  locationId?: string | any;
+  warehouseOrFactoryId?: string | any;
   quantity: number;
   unit?: string;
   reservedForSales?: number;
   reservedForTransfer?: number;
   incomingTransfer?: number;
+};
+
+type OtherProductStock = {
+  _id?: string;
+  otherProductId: string | any;
+  warehouseId?: string | any;
+  factoryId?: string | any;
+  locationId?: string | any;
+  warehouseOrFactoryId?: string | any;
+  quantity: number;
+  unit?: string;
 };
 
 type ReportKind = "RAW" | "PACK" | "OTHER" | "FINISHED";
@@ -71,7 +99,7 @@ type ReportRow = {
   name: string;
   sku: string;
   unit: string;
-  totals: Record<string, number>; // locationId -> qty
+  totals: Record<string, number>;
   totalFactory: number;
   totalWarehouse: number;
   grandTotal: number;
@@ -92,16 +120,47 @@ function safeNum(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeKindFromProductCategory(category?: string | null): ReportKind {
-  const c = String(category ?? "").toLowerCase();
-  if (c.includes("finish") || c.includes("fg") || c.includes("goods"))
-    return "FINISHED";
-  return "OTHER";
-}
-
 function csvEscape(s: any) {
   if (s === null || s === undefined) return "";
   return `"${String(s).replace(/"/g, '""')}"`;
+}
+
+function stockLocationId(s: any) {
+  return idOf(
+    s?.warehouseId ||
+      s?.factoryId ||
+      s?.locationId ||
+      s?.warehouseOrFactoryId ||
+      s?.location ||
+      s?.warehouseOrFactory,
+  );
+}
+
+function stockItemId(s: any, field: string) {
+  return idOf(s?.[field]);
+}
+
+function makeTotalsMap(stocks: any[], itemField: string) {
+  const map = new Map<string, number>();
+  for (const s of stocks) {
+    const iid = stockItemId(s, itemField);
+    const lid = stockLocationId(s);
+    if (!iid || !lid) continue;
+    const key = `${iid}_${lid}`;
+    map.set(key, (map.get(key) || 0) + safeNum(s.quantity));
+  }
+  return map;
+}
+
+function sameUnit(a?: string, b?: string) {
+  return (
+    String(a || "")
+      .trim()
+      .toUpperCase() ===
+    String(b || "")
+      .trim()
+      .toUpperCase()
+  );
 }
 
 export default function InventoryReportPage() {
@@ -118,6 +177,11 @@ export default function InventoryReportPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productStocks, setProductStocks] = useState<ProductStock[]>([]);
+
+  const [otherProducts, setOtherProducts] = useState<OtherProduct[]>([]);
+  const [otherProductStocks, setOtherProductStocks] = useState<
+    OtherProductStock[]
+  >([]);
 
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -152,29 +216,66 @@ export default function InventoryReportPage() {
         pksRes,
         prRes,
         prsRes,
+        opRes,
+        opsRes,
       ] = await Promise.all([
-        api.get("/warehouses", { params: { type: "Warehouse", page: 1, limit: 5000 } }),
-        api.get("/warehouses", { params: { type: "Factory", page: 1, limit: 5000 } }),
-        api.get("/raw-materials", { params: { page: 1, limit: 10000 } }),
-        api.get("/raw-material-stocks", { params: { page: 1, limit: 100000 } }),
-        api.get("/packaging-items", { params: { page: 1, limit: 10000 } }),
-        api.get("/packaging-stocks", { params: { page: 1, limit: 100000 } }),
-        api.get("/products", { params: { page: 1, limit: 10000 } }),
-        api.get("/product-stocks", { params: { page: 1, limit: 200000 } }),
+        api
+          .get("/warehouses", {
+            params: { type: "Warehouse", page: 1, limit: 5000 },
+          })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/warehouses", {
+            params: { type: "Factory", page: 1, limit: 5000 },
+          })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/raw-materials", { params: { page: 1, limit: 10000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/raw-material-stocks", { params: { page: 1, limit: 100000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/packaging-items", { params: { page: 1, limit: 10000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/packaging-stocks", { params: { page: 1, limit: 100000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/products", { params: { page: 1, limit: 10000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/product-stocks", { params: { page: 1, limit: 200000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/other-products", { params: { page: 1, limit: 10000 } })
+          .catch(() => ({ data: { data: [] } })),
+        api
+          .get("/other-product-stocks", { params: { page: 1, limit: 200000 } })
+          .catch(() => ({ data: { data: [] } })),
       ]);
 
       if (!mounted.current) return;
+
       setWarehouses(wRes.data?.data || []);
       setFactories(fRes.data?.data || []);
+
       setRawMaterials(rmRes.data?.data || []);
       setRawStocks(rmsRes.data?.data || []);
+
       setPackagingItems(pkRes.data?.data || []);
       setPackStocks(pksRes.data?.data || []);
+
       setProducts(prRes.data?.data || []);
       setProductStocks(prsRes.data?.data || []);
+
+      setOtherProducts(opRes.data?.data || []);
+      setOtherProductStocks(opsRes.data?.data || []);
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Failed to load inventory report");
+      toast.error(
+        err?.response?.data?.message || "Failed to load inventory report",
+      );
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -188,6 +289,7 @@ export default function InventoryReportPage() {
   const locations = useMemo(() => {
     const cols: { id: string; label: string; kind: "Factory" | "Warehouse" }[] =
       [];
+
     if (showFactories) {
       for (const f of factories) {
         cols.push({
@@ -197,6 +299,7 @@ export default function InventoryReportPage() {
         });
       }
     }
+
     if (showWarehouses) {
       for (const w of warehouses) {
         cols.push({
@@ -206,6 +309,7 @@ export default function InventoryReportPage() {
         });
       }
     }
+
     return cols;
   }, [factories, warehouses, showFactories, showWarehouses]);
 
@@ -214,41 +318,38 @@ export default function InventoryReportPage() {
     const match = (name?: string, sku?: string) => {
       if (!search) return true;
       return (
-        String(name ?? "").toLowerCase().includes(search) ||
-        String(sku ?? "").toLowerCase().includes(search)
+        String(name ?? "")
+          .toLowerCase()
+          .includes(search) ||
+        String(sku ?? "")
+          .toLowerCase()
+          .includes(search)
       );
     };
 
     const result: ReportRow[] = [];
 
-    // --- RAW MATERIALS (factories only; warehouses will remain 0) ---
+    // RAW MATERIALS
     {
-      const totalsByMaterialFactory = new Map<string, number>(); // `${materialId}_${factoryId}`
-      for (const s of rawStocks) {
-        const mid = idOf(s.rawMaterialId);
-        const fid = idOf(s.factoryId);
-        if (!mid || !fid) continue;
-        const key = `${mid}_${fid}`;
-        totalsByMaterialFactory.set(
-          key,
-          (totalsByMaterialFactory.get(key) || 0) + safeNum(s.quantity),
-        );
-      }
+      const map = makeTotalsMap(rawStocks, "rawMaterialId");
 
       for (const m of rawMaterials) {
         if (!match(m.name, m.sku)) continue;
+
         const totals: Record<string, number> = {};
         let totalFactory = 0;
-        for (const f of factories) {
-          const qty = totalsByMaterialFactory.get(`${m._id}_${f._id}`) || 0;
-          totals[f._id] = qty;
-          totalFactory += qty;
-        }
-        // keep warehouse columns for unified table (0 by default)
-        for (const w of warehouses) totals[w._id] = totals[w._id] ?? 0;
+        let totalWarehouse = 0;
 
-        const grandTotal = totalFactory;
+        for (const loc of locations) {
+          const qty = map.get(`${m._id}_${loc.id}`) || 0;
+          totals[loc.id] = qty;
+          if (loc.kind === "Factory") totalFactory += qty;
+          if (loc.kind === "Warehouse") totalWarehouse += qty;
+        }
+
+        const grandTotal = totalFactory + totalWarehouse;
         if (onlyNonZero && grandTotal === 0) continue;
+
         result.push({
           key: `RAW_${m._id}`,
           kind: "RAW",
@@ -257,39 +358,33 @@ export default function InventoryReportPage() {
           unit: m.unit || "kg",
           totals,
           totalFactory,
-          totalWarehouse: 0,
+          totalWarehouse,
           grandTotal,
         });
       }
     }
 
-    // --- PACKING MATERIALS (factories only; warehouses will remain 0) ---
+    // PACKAGING ITEMS
     {
-      const totalsByItemFactory = new Map<string, number>();
-      for (const s of packStocks) {
-        const pid = idOf(s.packagingItemId);
-        const fid = idOf(s.factoryId);
-        if (!pid || !fid) continue;
-        const key = `${pid}_${fid}`;
-        totalsByItemFactory.set(
-          key,
-          (totalsByItemFactory.get(key) || 0) + safeNum(s.quantity),
-        );
-      }
+      const map = makeTotalsMap(packStocks, "packagingItemId");
 
       for (const it of packagingItems) {
         if (!match(it.name, it.sku)) continue;
+
         const totals: Record<string, number> = {};
         let totalFactory = 0;
-        for (const f of factories) {
-          const qty = totalsByItemFactory.get(`${it._id}_${f._id}`) || 0;
-          totals[f._id] = qty;
-          totalFactory += qty;
-        }
-        for (const w of warehouses) totals[w._id] = totals[w._id] ?? 0;
+        let totalWarehouse = 0;
 
-        const grandTotal = totalFactory;
+        for (const loc of locations) {
+          const qty = map.get(`${it._id}_${loc.id}`) || 0;
+          totals[loc.id] = qty;
+          if (loc.kind === "Factory") totalFactory += qty;
+          if (loc.kind === "Warehouse") totalWarehouse += qty;
+        }
+
+        const grandTotal = totalFactory + totalWarehouse;
         if (onlyNonZero && grandTotal === 0) continue;
+
         result.push({
           key: `PACK_${it._id}`,
           kind: "PACK",
@@ -298,60 +393,36 @@ export default function InventoryReportPage() {
           unit: it.unit || "pcs",
           totals,
           totalFactory,
-          totalWarehouse: 0,
+          totalWarehouse,
           grandTotal,
         });
       }
     }
 
-    // --- PRODUCTS (warehouses + factories via product-stocks) ---
+    // FINISHED PRODUCTS
     {
-      const totalsByProductLocation = new Map<string, number>(); // `${productId}_${warehouseId}`
-      for (const s of productStocks) {
-        const pid = idOf(s.productId);
-        const wid = idOf(s.warehouseId);
-        if (!pid || !wid) continue;
-        totalsByProductLocation.set(
-          `${pid}_${wid}`,
-          (totalsByProductLocation.get(`${pid}_${wid}`) || 0) + safeNum(s.quantity),
-        );
-      }
-
-      const factoryIds = new Set(factories.map((f) => f._id));
-      const warehouseIds = new Set(warehouses.map((w) => w._id));
+      const map = makeTotalsMap(productStocks, "productId");
 
       for (const p of products) {
-        const kind = normalizeKindFromProductCategory(p.category);
         if (!match(p.name, p.sku)) continue;
 
         const totals: Record<string, number> = {};
         let totalFactory = 0;
         let totalWarehouse = 0;
 
-        // Always compute both (even if columns are hidden)
-        for (const f of factories) {
-          const qty = totalsByProductLocation.get(`${p._id}_${f._id}`) || 0;
-          totals[f._id] = qty;
-          totalFactory += qty;
-        }
-        for (const w of warehouses) {
-          const qty = totalsByProductLocation.get(`${p._id}_${w._id}`) || 0;
-          totals[w._id] = qty;
-          totalWarehouse += qty;
-        }
-
-        // sanity (in case you store product stocks for unknown locations)
-        for (const [locId, qty] of Object.entries(totals)) {
-          if (factoryIds.has(locId)) totalFactory += 0;
-          if (warehouseIds.has(locId)) totalWarehouse += 0;
-          totals[locId] = safeNum(qty);
+        for (const loc of locations) {
+          const qty = map.get(`${p._id}_${loc.id}`) || 0;
+          totals[loc.id] = qty;
+          if (loc.kind === "Factory") totalFactory += qty;
+          if (loc.kind === "Warehouse") totalWarehouse += qty;
         }
 
         const grandTotal = totalFactory + totalWarehouse;
         if (onlyNonZero && grandTotal === 0) continue;
+
         result.push({
-          key: `${kind}_${p._id}`,
-          kind,
+          key: `FINISHED_${p._id}`,
+          kind: "FINISHED",
           name: p.name,
           sku: p.sku,
           unit: p.unit || "pcs",
@@ -363,7 +434,41 @@ export default function InventoryReportPage() {
       }
     }
 
-    // stable sort by name, then sku
+    // OTHER PRODUCTS
+    {
+      const map = makeTotalsMap(otherProductStocks, "otherProductId");
+
+      for (const p of otherProducts) {
+        if (!match(p.name, p.sku)) continue;
+
+        const totals: Record<string, number> = {};
+        let totalFactory = 0;
+        let totalWarehouse = 0;
+
+        for (const loc of locations) {
+          const qty = map.get(`${p._id}_${loc.id}`) || 0;
+          totals[loc.id] = qty;
+          if (loc.kind === "Factory") totalFactory += qty;
+          if (loc.kind === "Warehouse") totalWarehouse += qty;
+        }
+
+        const grandTotal = totalFactory + totalWarehouse;
+        if (onlyNonZero && grandTotal === 0) continue;
+
+        result.push({
+          key: `OTHER_${p._id}`,
+          kind: "OTHER",
+          name: p.name,
+          sku: p.sku,
+          unit: p.unit || "pcs",
+          totals,
+          totalFactory,
+          totalWarehouse,
+          grandTotal,
+        });
+      }
+    }
+
     result.sort((a, b) => {
       const n = a.name.localeCompare(b.name);
       if (n !== 0) return n;
@@ -373,8 +478,7 @@ export default function InventoryReportPage() {
     return result;
   }, [
     debouncedQ,
-    factories,
-    warehouses,
+    locations,
     onlyNonZero,
     rawMaterials,
     rawStocks,
@@ -382,6 +486,8 @@ export default function InventoryReportPage() {
     packStocks,
     products,
     productStocks,
+    otherProducts,
+    otherProductStocks,
   ]);
 
   const visibleRows = useMemo(() => {
@@ -389,29 +495,7 @@ export default function InventoryReportPage() {
     return rows.filter((r) => r.kind === activeTab);
   }, [rows, activeTab]);
 
-  const effectiveColumns = useMemo(() => {
-    const cols: { id: string; label: string; kind: "Factory" | "Warehouse" }[] =
-      [];
-    if (showFactories) {
-      for (const f of factories) {
-        cols.push({
-          id: f._id,
-          label: `${f.name ?? "Factory"}${f.code ? ` (${f.code})` : ""}`,
-          kind: "Factory",
-        });
-      }
-    }
-    if (showWarehouses) {
-      for (const w of warehouses) {
-        cols.push({
-          id: w._id,
-          label: `${w.name ?? "Warehouse"}${w.code ? ` (${w.code})` : ""}`,
-          kind: "Warehouse",
-        });
-      }
-    }
-    return cols;
-  }, [factories, warehouses, showFactories, showWarehouses]);
+  const effectiveColumns = locations;
 
   const countsByKind = useMemo(() => {
     const c = { RAW: 0, PACK: 0, OTHER: 0, FINISHED: 0 } as Record<
@@ -425,9 +509,11 @@ export default function InventoryReportPage() {
   const totalsByColumn = useMemo(() => {
     const colTotals: Record<string, number> = {};
     for (const col of effectiveColumns) colTotals[col.id] = 0;
+
     let totalFactory = 0;
     let totalWarehouse = 0;
     let grandTotal = 0;
+
     for (const r of visibleRows) {
       for (const col of effectiveColumns) {
         colTotals[col.id] += safeNum(r.totals[col.id] ?? 0);
@@ -436,6 +522,7 @@ export default function InventoryReportPage() {
       totalWarehouse += safeNum(r.totalWarehouse);
       grandTotal += safeNum(r.grandTotal);
     }
+
     return { colTotals, totalFactory, totalWarehouse, grandTotal };
   }, [effectiveColumns, visibleRows]);
 
@@ -446,9 +533,9 @@ export default function InventoryReportPage() {
     return "Other Product";
   }
 
-  function kindBadgeVariant(k: ReportKind): React.ComponentProps<
-    typeof Badge
-  >["variant"] {
+  function kindBadgeVariant(
+    k: ReportKind,
+  ): React.ComponentProps<typeof Badge>["variant"] {
     if (k === "FINISHED") return "default";
     if (k === "RAW") return "secondary";
     if (k === "PACK") return "outline";
@@ -457,6 +544,7 @@ export default function InventoryReportPage() {
 
   function exportCsv() {
     if (!visibleRows.length) return toast.error("No rows to export");
+
     const headers = [
       "type",
       "name",
@@ -487,9 +575,7 @@ export default function InventoryReportPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `inventory_report_${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
+    a.download = `inventory_report_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -500,6 +586,7 @@ export default function InventoryReportPage() {
     () => effectiveColumns.filter((c) => c.kind === "Factory"),
     [effectiveColumns],
   );
+
   const warehouseCols = useMemo(
     () => effectiveColumns.filter((c) => c.kind === "Warehouse"),
     [effectiveColumns],
@@ -507,16 +594,25 @@ export default function InventoryReportPage() {
 
   const groupedRows = useMemo(() => {
     if (activeTab !== "ALL") return [{ label: "", rows: visibleRows }];
-    const groups: Array<{ label: string; kind: ReportKind; rows: ReportRow[] }> =
-      [
-        { label: "Raw Materials", kind: "RAW", rows: [] },
-        { label: "Packing Materials", kind: "PACK", rows: [] },
-        { label: "Finished Goods", kind: "FINISHED", rows: [] },
-        { label: "Other Products", kind: "OTHER", rows: [] },
-      ];
+
+    const groups: Array<{
+      label: string;
+      kind: ReportKind;
+      rows: ReportRow[];
+    }> = [
+      { label: "Raw Materials", kind: "RAW", rows: [] },
+      { label: "Packing Materials", kind: "PACK", rows: [] },
+      { label: "Finished Goods", kind: "FINISHED", rows: [] },
+      { label: "Other Products", kind: "OTHER", rows: [] },
+    ];
+
     const map = new Map<ReportKind, (typeof groups)[number]>();
     for (const g of groups) map.set(g.kind, g);
-    for (const r of visibleRows) map.get(r.kind)?.rows.push(r);
+
+    for (const r of visibleRows) {
+      map.get(r.kind)?.rows.push(r);
+    }
+
     return groups.map((g) => ({
       label: g.label,
       rows: g.rows,
@@ -524,13 +620,14 @@ export default function InventoryReportPage() {
   }, [activeTab, visibleRows]);
 
   return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+    <div className="space-y-6 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inventory Report</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Inventory Report
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Fast, readable stock matrix across factories and warehouses.
+            Fast stock matrix across factories and warehouses.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5">
@@ -549,19 +646,28 @@ export default function InventoryReportPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => loadRefsAndData()} disabled={loading}>
-            <RefreshCcw className="w-4 h-4 mr-2" />
+          <Button
+            variant="outline"
+            onClick={() => loadRefsAndData()}
+            disabled={loading}
+          >
+            <RefreshCcw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
-          <Button onClick={exportCsv} disabled={loading || visibleRows.length === 0}>
-            <Download className="w-4 h-4 mr-2" />
+          <Button
+            onClick={exportCsv}
+            disabled={loading || visibleRows.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
         </div>
       </div>
 
-      {/* tabs + controls */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReportTab)}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as ReportTab)}
+      >
         <div className="flex flex-col gap-3">
           <TabsList className="w-full">
             <TabsTrigger value="ALL" className="gap-2">
@@ -601,15 +707,15 @@ export default function InventoryReportPage() {
             </TabsTrigger>
           </TabsList>
 
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-xl border bg-card p-3">
-            <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
               <Input
                 value={q}
                 placeholder="Search item name or SKU…"
                 onChange={(e) => setQ(e.target.value)}
                 className="md:w-80"
               />
-              <label className="text-sm whitespace-nowrap flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm whitespace-nowrap">
                 <input
                   type="checkbox"
                   checked={onlyNonZero}
@@ -620,7 +726,7 @@ export default function InventoryReportPage() {
             </div>
 
             <div className="flex items-center gap-4">
-              <label className="text-sm whitespace-nowrap flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm whitespace-nowrap">
                 <input
                   type="checkbox"
                   checked={showFactories}
@@ -628,7 +734,7 @@ export default function InventoryReportPage() {
                 />
                 Factories
               </label>
-              <label className="text-sm whitespace-nowrap flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm whitespace-nowrap">
                 <input
                   type="checkbox"
                   checked={showWarehouses}
@@ -641,23 +747,25 @@ export default function InventoryReportPage() {
         </div>
 
         <TabsContent value={activeTab} className="mt-4">
-          <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="overflow-hidden rounded-xl border bg-card">
             <div className="max-h-[72vh] overflow-auto">
               <Table>
-                <TableHeader className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b">
-                  {/* Grouped header */}
+                <TableHeader className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
                   <TableRow>
-                    <TableHead className="sticky left-0 z-30 bg-background/95 backdrop-blur w-10" />
-                    <TableHead className="sticky left-10 z-30 bg-background/95 backdrop-blur min-w-64">
+                    <TableHead className="sticky left-0 z-30 w-10 bg-background/95 backdrop-blur" />
+                    <TableHead className="sticky left-10 z-30 min-w-64 bg-background/95 backdrop-blur">
                       Item
                     </TableHead>
-                    <TableHead className="sticky left-[18.5rem] z-30 bg-background/95 backdrop-blur min-w-32">
+                    <TableHead className="sticky left-[18.5rem] z-30 min-w-32 bg-background/95 backdrop-blur">
                       Type
                     </TableHead>
                     <TableHead className="min-w-28">SKU</TableHead>
                     <TableHead className="min-w-20">Unit</TableHead>
                     {factoryCols.length > 0 && (
-                      <TableHead colSpan={factoryCols.length} className="text-center">
+                      <TableHead
+                        colSpan={factoryCols.length}
+                        className="text-center"
+                      >
                         <span className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                           <FactoryIcon className="h-4 w-4" />
                           Factories
@@ -675,18 +783,21 @@ export default function InventoryReportPage() {
                         </span>
                       </TableHead>
                     )}
-                    <TableHead className="min-w-28 text-right">Factory</TableHead>
-                    <TableHead className="min-w-28 text-right">Warehouse</TableHead>
+                    <TableHead className="min-w-28 text-right">
+                      Factory
+                    </TableHead>
+                    <TableHead className="min-w-28 text-right">
+                      Warehouse
+                    </TableHead>
                     <TableHead className="min-w-28 text-right">Total</TableHead>
                   </TableRow>
 
-                  {/* Location header row */}
                   <TableRow>
-                    <TableHead className="sticky left-0 z-30 bg-background/95 backdrop-blur w-10">
+                    <TableHead className="sticky left-0 z-30 w-10 bg-background/95 backdrop-blur">
                       #
                     </TableHead>
-                    <TableHead className="sticky left-10 z-30 bg-background/95 backdrop-blur min-w-64" />
-                    <TableHead className="sticky left-[18.5rem] z-30 bg-background/95 backdrop-blur min-w-32" />
+                    <TableHead className="sticky left-10 z-30 min-w-64 bg-background/95 backdrop-blur" />
+                    <TableHead className="sticky left-[18.5rem] z-30 min-w-32 bg-background/95 backdrop-blur" />
                     <TableHead className="min-w-28" />
                     <TableHead className="min-w-20" />
                     {factoryCols.map((c) => (
@@ -709,9 +820,7 @@ export default function InventoryReportPage() {
                   {loading && (
                     <TableRow>
                       <TableCell
-                        colSpan={
-                          8 + factoryCols.length + warehouseCols.length
-                        }
+                        colSpan={8 + factoryCols.length + warehouseCols.length}
                         className="py-10 text-center"
                       >
                         Loading…
@@ -731,61 +840,57 @@ export default function InventoryReportPage() {
                               className="py-3 font-semibold"
                             >
                               {g.label}
-                              <span className="ml-2 text-xs text-muted-foreground font-normal">
+                              <span className="ml-2 text-xs font-normal text-muted-foreground">
                                 ({g.rows.length})
                               </span>
                             </TableCell>
                           </TableRow>
                         )}
 
-                        {g.rows.map((r, idx) => {
-                          const rowIndex =
-                            activeTab === "ALL"
-                              ? idx + 1
-                              : idx + 1;
-                          return (
-                            <TableRow key={r.key} className="hover:bg-muted/40">
-                              <TableCell className="sticky left-0 z-10 bg-card w-10">
-                                {rowIndex}
+                        {g.rows.map((r, idx) => (
+                          <TableRow key={r.key} className="hover:bg-muted/40">
+                            <TableCell className="sticky left-0 z-10 w-10 bg-card">
+                              {idx + 1}
+                            </TableCell>
+                            <TableCell className="sticky left-10 z-10 min-w-64 bg-card">
+                              <div className="font-medium">{r.name}</div>
+                            </TableCell>
+                            <TableCell className="sticky left-[18.5rem] z-10 min-w-32 bg-card">
+                              <Badge variant={kindBadgeVariant(r.kind)}>
+                                {kindLabel(r.kind)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">{r.sku}</TableCell>
+                            <TableCell className="text-sm">{r.unit}</TableCell>
+
+                            {factoryCols.map((c) => (
+                              <TableCell
+                                key={c.id}
+                                className="text-sm tabular-nums"
+                              >
+                                {r.totals[c.id] ?? 0}
                               </TableCell>
-                              <TableCell className="sticky left-10 z-10 bg-card min-w-64">
-                                <div className="font-medium">{r.name}</div>
+                            ))}
+                            {warehouseCols.map((c) => (
+                              <TableCell
+                                key={c.id}
+                                className="text-sm tabular-nums"
+                              >
+                                {r.totals[c.id] ?? 0}
                               </TableCell>
-                              <TableCell className="sticky left-[18.5rem] z-10 bg-card min-w-32">
-                                <Badge variant={kindBadgeVariant(r.kind)}>
-                                  {kindLabel(r.kind)}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm">{r.sku}</TableCell>
-                              <TableCell className="text-sm">{r.unit}</TableCell>
-                              {factoryCols.map((c) => (
-                                <TableCell
-                                  key={c.id}
-                                  className="text-sm tabular-nums"
-                                >
-                                  {r.totals[c.id] ?? 0}
-                                </TableCell>
-                              ))}
-                              {warehouseCols.map((c) => (
-                                <TableCell
-                                  key={c.id}
-                                  className="text-sm tabular-nums"
-                                >
-                                  {r.totals[c.id] ?? 0}
-                                </TableCell>
-                              ))}
-                              <TableCell className="text-right font-medium tabular-nums">
-                                {r.totalFactory}
-                              </TableCell>
-                              <TableCell className="text-right font-medium tabular-nums">
-                                {r.totalWarehouse}
-                              </TableCell>
-                              <TableCell className="text-right font-bold tabular-nums">
-                                {r.grandTotal}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                            ))}
+
+                            <TableCell className="text-right font-medium tabular-nums">
+                              {r.totalFactory}
+                            </TableCell>
+                            <TableCell className="text-right font-medium tabular-nums">
+                              {r.totalWarehouse}
+                            </TableCell>
+                            <TableCell className="text-right font-bold tabular-nums">
+                              {r.grandTotal}
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </React.Fragment>
                     ))}
 
@@ -801,21 +906,27 @@ export default function InventoryReportPage() {
                   )}
 
                   {!loading && visibleRows.length > 0 && (
-                    <TableRow className="sticky bottom-0 z-20 bg-background/95 backdrop-blur border-t">
-                      <TableCell className="sticky left-0 z-30 bg-background/95 backdrop-blur w-10" />
-                      <TableCell className="sticky left-10 z-30 bg-background/95 backdrop-blur min-w-64 font-semibold">
+                    <TableRow className="sticky bottom-0 z-20 border-t bg-background/95 backdrop-blur">
+                      <TableCell className="sticky left-0 z-30 w-10 bg-background/95 backdrop-blur" />
+                      <TableCell className="sticky left-10 z-30 min-w-64 bg-background/95 backdrop-blur font-semibold">
                         Totals
                       </TableCell>
-                      <TableCell className="sticky left-[18.5rem] z-30 bg-background/95 backdrop-blur min-w-32" />
+                      <TableCell className="sticky left-[18.5rem] z-30 min-w-32 bg-background/95 backdrop-blur" />
                       <TableCell />
                       <TableCell />
                       {factoryCols.map((c) => (
-                        <TableCell key={c.id} className="font-semibold tabular-nums">
+                        <TableCell
+                          key={c.id}
+                          className="font-semibold tabular-nums"
+                        >
                           {totalsByColumn.colTotals[c.id] ?? 0}
                         </TableCell>
                       ))}
                       {warehouseCols.map((c) => (
-                        <TableCell key={c.id} className="font-semibold tabular-nums">
+                        <TableCell
+                          key={c.id}
+                          className="font-semibold tabular-nums"
+                        >
                           {totalsByColumn.colTotals[c.id] ?? 0}
                         </TableCell>
                       ))}
