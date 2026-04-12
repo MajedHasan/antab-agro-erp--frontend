@@ -93,6 +93,7 @@ const menuItems: MenuItem[] = [
       { key: "BOM", href: "/inventory/bom" },
       { key: "Production", href: "/inventory/production" },
       { key: "WIP", href: "/inventory/wip" },
+      { key: "Material WIP", href: "/inventory/material-wip" },
     ],
   },
   {
