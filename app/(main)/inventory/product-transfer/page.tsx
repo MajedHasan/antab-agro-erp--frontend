@@ -17,16 +17,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ArrowRightLeft,
-  Building2,
   Factory,
+  Building2,
+  ArrowRightLeft,
   Search,
   Eye,
   RefreshCw,
   Filter,
-  FileCheck2,
   FileText,
-  PackageSearch,
+  FileCheck2,
   Clock3,
   CircleAlert,
   CheckCircle2,
@@ -60,13 +59,7 @@ type Transfer = {
   sender?: Location | null;
   receiver?: Location | null;
   createdBy?: { name?: string; email?: string } | null;
-  items?: Array<{
-    productId?: any;
-    requestedQty?: number;
-    finalQty?: number;
-    unit?: string;
-    costPrice?: number;
-  }>;
+  items?: any[];
   printSnapshot?: any;
   documents?: {
     signed?: any;
@@ -108,9 +101,9 @@ function locationKind(loc?: Location | null) {
 }
 
 function transferTypeLabel(type: Transfer["transferType"]) {
-  return type === "WAREHOUSE_TO_WAREHOUSE"
-    ? "Warehouse → Warehouse"
-    : "Factory → Warehouse";
+  return type === "FACTORY_TO_WAREHOUSE"
+    ? "Factory → Warehouse"
+    : "Warehouse → Warehouse";
 }
 
 function stepLabel(status: Transfer["status"]) {
@@ -137,42 +130,27 @@ function stepLabel(status: Transfer["status"]) {
 }
 
 function stepHint(t: Transfer) {
-  if (t.transferType === "WAREHOUSE_TO_WAREHOUSE") {
-    switch (t.status) {
-      case "DRAFT":
-        return "Waiting for receiver NSM approval";
-      case "RECEIVER_NSM_APPROVED":
-        return "Waiting for sender review";
-      case "SENDER_REVIEWED":
-        return "Waiting for sender NSM final approval";
-      case "SENDER_NSM_APPROVED":
-        return "Ready for print and dispatch";
-      case "DISPATCHED":
-        return "Waiting for receiver to receive and submit";
-      case "COMPLETED":
-        return "Transfer completed";
-      case "CANCELLED":
-        return "Transfer cancelled";
-      case "REJECTED":
-        return "Transfer rejected";
-      default:
-        return "In workflow";
-    }
-  }
-
   switch (t.status) {
     case "DRAFT":
-      return "Waiting for receiver NSM approval";
+      return t.transferMode === "DIRECT"
+        ? "Waiting for factory action"
+        : "Waiting for receiver NSM approval";
     case "RECEIVER_NSM_APPROVED":
-      return "Waiting for factory dispatch";
+      return t.transferMode === "DIRECT"
+        ? "Ready for factory processing"
+        : "Waiting for factory approval / dispatch";
+    case "SENDER_REVIEWED":
+      return "Waiting for sender NSM final approval";
+    case "SENDER_NSM_APPROVED":
+      return "Ready to print and dispatch";
     case "DISPATCHED":
-      return "Waiting for receiver to receive and submit";
+      return "Waiting for receiver to submit signed document";
     case "COMPLETED":
       return "Transfer completed";
-    case "CANCELLED":
-      return "Transfer cancelled";
     case "REJECTED":
       return "Transfer rejected";
+    case "CANCELLED":
+      return "Transfer cancelled";
     default:
       return "In workflow";
   }
@@ -201,17 +179,7 @@ function documentTone(t: Transfer) {
   return "bg-slate-100 text-slate-800 border-slate-200";
 }
 
-function isActiveStatus(status: Transfer["status"]) {
-  return [
-    "DRAFT",
-    "RECEIVER_NSM_APPROVED",
-    "SENDER_REVIEWED",
-    "SENDER_NSM_APPROVED",
-    "DISPATCHED",
-  ].includes(status);
-}
-
-export default function WarehouseTransferListPage() {
+export default function FactoryTransferListPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
@@ -224,17 +192,16 @@ export default function WarehouseTransferListPage() {
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("ALL");
-  const [transferType, setTransferType] = useState<string>("ALL");
   const [transferMode, setTransferMode] = useState<string>("ALL");
   const [sender, setSender] = useState<string>("ALL");
   const [receiver, setReceiver] = useState<string>("ALL");
 
-  const [tab, setTab] = useState<"ALL" | "INCOMING" | "OUTGOING" | "MINE">(
-    "ALL",
-  );
+  const [tab, setTab] = useState<
+    "ALL" | "DIRECT" | "REQUEST" | "NEED_ACTION" | "COMPLETED"
+  >("ALL");
 
-  // TODO: later derive this from auth context / user.warehouseId and scope tabs automatically.
-  const currentWarehouseId = "";
+  // TODO: later derive sender factory from auth and lock factory scoping per role.
+  const currentFactoryId = "";
 
   useEffect(() => {
     loadLocations();
@@ -243,11 +210,11 @@ export default function WarehouseTransferListPage() {
   useEffect(() => {
     loadTransfers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q, status, transferType, transferMode, sender, receiver, tab]);
+  }, [page, q, status, transferMode, sender, receiver, tab]);
 
   useEffect(() => {
     setPage(1);
-  }, [q, status, transferType, transferMode, sender, receiver, tab]);
+  }, [q, status, transferMode, sender, receiver, tab]);
 
   async function loadLocations() {
     try {
@@ -268,26 +235,35 @@ export default function WarehouseTransferListPage() {
       const params: Record<string, any> = {
         page,
         limit,
+        transferType: "FACTORY_TO_WAREHOUSE",
       };
 
       if (q.trim()) params.q = q.trim();
       if (status !== "ALL") params.status = status;
-      if (transferType !== "ALL") params.transferType = transferType;
       if (transferMode !== "ALL") params.transferMode = transferMode;
       if (sender !== "ALL") params.sender = sender;
       if (receiver !== "ALL") params.receiver = receiver;
 
-      // TODO: later use auth-based filtering and permission-aware scoping.
-      if (tab === "INCOMING" && currentWarehouseId) {
-        params.receiver = currentWarehouseId;
+      // TODO: later scope by current factory or accessible factories automatically.
+      if (tab === "DIRECT") {
+        params.transferMode = "DIRECT";
       }
 
-      if (tab === "OUTGOING" && currentWarehouseId) {
-        params.sender = currentWarehouseId;
+      if (tab === "REQUEST") {
+        params.transferMode = "REQUEST";
       }
 
-      if (tab === "MINE") {
-        // TODO: later filter by current user / createdBy after auth is wired here.
+      if (tab === "NEED_ACTION") {
+        // This can later be scoped to current role/status rules
+        // e.g. pending factory dispatch / approval actions
+      }
+
+      if (tab === "COMPLETED") {
+        params.status = "COMPLETED";
+      }
+
+      if (currentFactoryId && !sender) {
+        // TODO: later auto-filter by sender = currentFactoryId for factory users.
       }
 
       const res = await api.get("/transfers", { params });
@@ -295,7 +271,7 @@ export default function WarehouseTransferListPage() {
       setTotal(res.data?.total || 0);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load transfers");
+      toast.error("Failed to load factory transfers");
     } finally {
       setLoading(false);
     }
@@ -308,42 +284,26 @@ export default function WarehouseTransferListPage() {
 
   const summary = useMemo(() => {
     const totalItems = transfers.length;
-    const pending = transfers.filter((t) => isActiveStatus(t.status)).length;
-    const completed = transfers.filter((t) => t.status === "COMPLETED").length;
-    const needAttention = transfers.filter((t) =>
-      [
-        "DRAFT",
-        "RECEIVER_NSM_APPROVED",
-        "SENDER_REVIEWED",
-        "SENDER_NSM_APPROVED",
-        "DISPATCHED",
-      ].includes(t.status),
+    const direct = transfers.filter((t) => t.transferMode === "DIRECT").length;
+    const request = transfers.filter(
+      (t) => t.transferMode === "REQUEST",
     ).length;
-
-    return { totalItems, pending, completed, needAttention };
+    const completed = transfers.filter((t) => t.status === "COMPLETED").length;
+    return { totalItems, direct, request, completed };
   }, [transfers]);
 
   function openTransfer(id: string) {
-    router.push(`/sales/transfer/${id}`);
+    router.push(`/inventory/product-transfer/${id}`);
   }
 
   function resetFilters() {
     setQ("");
     setStatus("ALL");
-    setTransferType("ALL");
     setTransferMode("ALL");
     setSender("ALL");
     setReceiver("ALL");
     setTab("ALL");
     setPage(1);
-  }
-
-  function paginatePrev() {
-    setPage((p) => Math.max(1, p - 1));
-  }
-
-  function paginateNext() {
-    setPage((p) => Math.min(totalPages, p + 1));
   }
 
   function itemPreview(t: Transfer) {
@@ -374,28 +334,27 @@ export default function WarehouseTransferListPage() {
             <div>
               <div className="flex items-center gap-2 text-sm text-slate-300">
                 <ArrowRightLeft className="h-4 w-4" />
-                <span>Transfer Center</span>
+                <span>Factory Transfer Center</span>
               </div>
               <h1 className="mt-2 text-3xl font-bold tracking-tight">
-                Warehouse transfer requests
+                Factory transfer requests
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-300">
-                This page gives you a clean view of all transfer requests. Open
-                any row to continue approvals, dispatch, or receiving on the
-                detail page.
+                Track direct factory shipments and warehouse requests that need
+                factory processing.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex gap-3">
               <Button variant="secondary" onClick={loadTransfers}>
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
               </Button>
               <Button
-                onClick={() => router.push("/sales/transfer/create")}
+                onClick={() => router.push("/inventory/product-transfer/new")}
                 className="bg-white text-slate-900 hover:bg-slate-100"
               >
-                + Create Transfer
+                + Create Factory Transfer
               </Button>
             </div>
           </div>
@@ -406,7 +365,7 @@ export default function WarehouseTransferListPage() {
           <Card className="shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <div className="rounded-2xl bg-slate-900 p-3 text-white">
-                <PackageSearch className="h-5 w-5" />
+                <Factory className="h-5 w-5" />
               </div>
               <div>
                 <div className="text-sm text-muted-foreground">
@@ -419,21 +378,31 @@ export default function WarehouseTransferListPage() {
 
           <Card className="shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
-              <div className="rounded-2xl bg-amber-100 p-3 text-amber-800">
-                <Clock3 className="h-5 w-5" />
+              <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
+                <FileText className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-sm text-muted-foreground">
-                  Pending workflow
-                </div>
-                <div className="text-2xl font-bold">{summary.pending}</div>
+                <div className="text-sm text-muted-foreground">Direct</div>
+                <div className="text-2xl font-bold">{summary.direct}</div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
-              <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-800">
+              <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
+                <Clock3 className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Request</div>
+                <div className="text-2xl font-bold">{summary.request}</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardContent className="flex items-center gap-4 p-5">
+              <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
                 <CheckCircle2 className="h-5 w-5" />
               </div>
               <div>
@@ -442,25 +411,9 @@ export default function WarehouseTransferListPage() {
               </div>
             </CardContent>
           </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="rounded-2xl bg-red-100 p-3 text-red-700">
-                <CircleAlert className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">
-                  Need attention
-                </div>
-                <div className="text-2xl font-bold">
-                  {summary.needAttention}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
-        {/* filter panel */}
+        {/* filters */}
         <Card className="shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
@@ -473,9 +426,10 @@ export default function WarehouseTransferListPage() {
             <div className="flex flex-wrap gap-2">
               {[
                 ["ALL", "All"],
-                ["INCOMING", "Incoming"],
-                ["OUTGOING", "Outgoing"],
-                ["MINE", "My Requests"],
+                ["DIRECT", "Direct"],
+                ["REQUEST", "Requests"],
+                ["NEED_ACTION", "Need Action"],
+                ["COMPLETED", "Completed"],
               ].map(([key, label]) => (
                 <Button
                   key={key}
@@ -487,7 +441,7 @@ export default function WarehouseTransferListPage() {
               ))}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <div className="xl:col-span-2">
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   Search transfer no
@@ -527,26 +481,6 @@ export default function WarehouseTransferListPage() {
                     <SelectItem value="COMPLETED">Completed</SelectItem>
                     <SelectItem value="CANCELLED">Cancelled</SelectItem>
                     <SelectItem value="REJECTED">Rejected</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Transfer type
-                </label>
-                <Select value={transferType} onValueChange={setTransferType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All</SelectItem>
-                    <SelectItem value="WAREHOUSE_TO_WAREHOUSE">
-                      Warehouse → Warehouse
-                    </SelectItem>
-                    <SelectItem value="FACTORY_TO_WAREHOUSE">
-                      Factory → Warehouse
-                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -608,8 +542,7 @@ export default function WarehouseTransferListPage() {
 
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm text-muted-foreground">
-                Use the filters to narrow down requests. The action page will
-                handle approvals, printing, dispatch, and receiving.
+                The action page will handle print, dispatch, and receive.
               </div>
               <Button variant="outline" onClick={resetFilters}>
                 Reset filters
@@ -618,10 +551,10 @@ export default function WarehouseTransferListPage() {
           </CardContent>
         </Card>
 
-        {/* table */}
+        {/* list */}
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <CardTitle>Transfer list</CardTitle>
+            <CardTitle>Factory transfer list</CardTitle>
             <div className="text-sm text-muted-foreground">
               Page {page} of {totalPages}
             </div>
@@ -658,10 +591,10 @@ export default function WarehouseTransferListPage() {
                         <td colSpan={8} className="px-4 py-16">
                           <div className="mx-auto max-w-md text-center">
                             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-                              <ArrowRightLeft className="h-6 w-6 text-slate-500" />
+                              <Factory className="h-6 w-6 text-slate-500" />
                             </div>
                             <h3 className="text-lg font-semibold">
-                              No transfers found
+                              No factory transfers found
                             </h3>
                             <p className="mt-2 text-sm text-muted-foreground">
                               No records match your current filters.
@@ -672,7 +605,7 @@ export default function WarehouseTransferListPage() {
                               </Button>
                               <Button
                                 onClick={() =>
-                                  router.push("/sales/transfer/create")
+                                  router.push("/factory/transfers/create")
                                 }
                               >
                                 Create transfer
@@ -702,7 +635,7 @@ export default function WarehouseTransferListPage() {
                           <td className="px-4 py-4">
                             <div className="space-y-2 text-sm">
                               <div className="flex items-center gap-2">
-                                <Building2 className="h-4 w-4 text-muted-foreground" />
+                                <Factory className="h-4 w-4 text-muted-foreground" />
                                 <span className="font-medium">
                                   {locationLabel(t.sender)}
                                 </span>
@@ -711,7 +644,7 @@ export default function WarehouseTransferListPage() {
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Factory className="h-4 w-4 text-muted-foreground" />
+                                <Building2 className="h-4 w-4 text-muted-foreground" />
                                 <span className="font-medium">
                                   {locationLabel(t.receiver)}
                                 </span>
@@ -832,7 +765,7 @@ export default function WarehouseTransferListPage() {
                 <Button
                   variant="outline"
                   disabled={page <= 1 || loading}
-                  onClick={paginatePrev}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
                   Prev
                 </Button>
@@ -842,7 +775,7 @@ export default function WarehouseTransferListPage() {
                 <Button
                   variant="outline"
                   disabled={page >= totalPages || loading}
-                  onClick={paginateNext}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
                   Next
                 </Button>
