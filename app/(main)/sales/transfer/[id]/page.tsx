@@ -330,7 +330,8 @@ function currentWorkflowStep(transfer: TransferDoc | null) {
 
   const workflow = getWorkflowStatuses(transfer);
   const idx = workflow.indexOf(transfer.status);
-  return idx >= 0 ? idx : 0;
+  console.log("WorkFlow IDX: ", idx);
+  return idx >= 0 ? idx + 1 : 0;
 }
 
 function canEditQty(transfer: TransferDoc | null) {
@@ -413,10 +414,11 @@ function canApproveSenderNSM(transfer: TransferDoc | null) {
   );
 }
 
-function getMediaPreviewUrl(mediaId?: string) {
+function getMediaPreviewUrl(mediaId?: any) {
   if (!mediaId) return "";
-  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
-  return `${base}/api/media/${mediaId}`;
+  // const base = process.env.NEXT_PUBLIC_MEDIA_URL?.replace(/\/$/, "") || "";
+  const base = "http://localhost:5001"; // TODO: move to env
+  return `${base}${mediaId?.url}`;
 }
 
 export default function WarehouseTransferActionPage() {

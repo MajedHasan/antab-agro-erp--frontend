@@ -301,7 +301,7 @@ function currentWorkflowStep(transfer: TransferDoc | null) {
 
   const workflow = getWorkflowStatuses(transfer);
   const idx = workflow.indexOf(transfer.status);
-  return idx >= 0 ? idx : 0;
+  return idx >= 0 ? idx + 1 : 0;
 }
 
 function canEditQty(transfer: TransferDoc | null) {
@@ -358,14 +358,14 @@ function canReject(transfer: TransferDoc | null) {
   );
 }
 
-function getMediaPreviewUrl(mediaId?: string) {
+function getMediaPreviewUrl(mediaId?: any) {
   if (!mediaId) return "";
   // const base =
   //   process.env.NEXT_PUBLIC_MEDIA_URL?.replace(/\/$/, "") ||
   //   "http://localhost:5001/uploads/" ||
   //   "";
-  const base = "http://localhost:5001/uploads";
-  return `${base}/warehouse-transfer/signed-documents/${mediaId}`;
+  const base = "http://localhost:5001";
+  return `${base}${mediaId?.url}`;
 }
 
 export default function FactoryTransferActionPage() {
