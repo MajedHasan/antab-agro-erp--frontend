@@ -34,3 +34,9 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+Prompt For the Next --->
+
+act as an expert web developer.
+
+I am building an erp software, i will share with you the idea and then my backend code (model, service, controller, routes, app.ts and curds) and then i will share with you my frontend code and then i will ask you what need to change or do based on the requirements.
