@@ -144,7 +144,8 @@ type SalesOrderDetail = {
   updatedAt?: string;
 };
 
-const MEDIA_UPLOAD_ENDPOINT = "/media"; // change only if your upload route differs
+const MEDIA_UPLOAD_ENDPOINT =
+  "/media/upload?module=sales-order&folder=signed-documents"; // change only if your upload route differs
 
 const makeLine = (): LineItem => ({
   productId: "",
@@ -683,6 +684,8 @@ export default function SalesOrderEditActionPage() {
   }, [customerId, dealerMeta?.dealerType]);
 
   useEffect(() => {
+    // console.log("QR Image: ", qrImage);
+
     if (!order?.invoiceId) {
       setQrImage("");
       return;

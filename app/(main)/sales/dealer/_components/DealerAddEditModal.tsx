@@ -76,6 +76,7 @@ const DealerAddEditModal = ({
     { key: "nidCard", label: "NID Card" },
     { key: "informationDeed", label: "Information / Deed" },
     { key: "pesticideLicense", label: "Pesticide License" },
+    { key: "signature", label: "Signature" },
   ];
 
   return (
