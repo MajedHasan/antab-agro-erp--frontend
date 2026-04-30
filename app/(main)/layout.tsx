@@ -129,9 +129,53 @@ const menuItems: MenuItem[] = [
         ],
       },
 
+      {
+        key: "TADA",
+        permissions: ["tada.view"],
+        submenu: [
+          {
+            key: "Entries",
+            permissions: ["tada.view", "tada.edit"],
+            submenu: [
+              {
+                key: "My Entries",
+                href: "/sales/tada/entries",
+              },
+              {
+                key: "Create Entry",
+                href: "/sales/tada/entries/create",
+              },
+            ],
+          },
+          {
+            key: "Monthly",
+            href: "/sales/tada/monthly",
+            permissions: ["tada.view", "tada.edit"],
+          },
+          {
+            key: "Team Sheets",
+            href: "/sales/tada/team-sheets",
+            permissions: ["tada.view", "tada.edit"],
+          },
+          {
+            key: "Rates",
+            permissions: ["tada.view", "tada.edit"],
+            submenu: [
+              {
+                key: "List",
+                href: "/sales/tada/rates",
+              },
+              {
+                key: "Create",
+                href: "/sales/tada/rates/create",
+              },
+            ],
+          },
+        ],
+      },
+
       { key: "T.C (Transfer)", href: "/sales/transfer/status" },
       { key: "Sales Ledger", href: "/sales/ledger" },
-      { key: "Order & List", href: "/sales/order/list" },
       {
         key: "Dealer",
         // href: "/sales/dealer",
@@ -210,7 +254,6 @@ const menuItems: MenuItem[] = [
       { key: "Damages", href: "/sales/damage" },
       { key: "Return", href: "/sales/return" },
       { key: "Incentive", href: "/sales/incentive" },
-      { key: "F.G Stocks", href: "/sales/production/stock" },
       {
         key: "reports",
         submenu: [

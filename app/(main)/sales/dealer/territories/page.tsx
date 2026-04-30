@@ -166,7 +166,7 @@ export default function TerritoriesPage() {
       if (filterRegion && filterRegion !== NONE) params.region = filterRegion;
       if (filterArea && filterArea !== NONE) params.area = filterArea;
 
-      const res = await api.get("/territories?limit=1000", { params });
+      const res = await api.get("/territories", { params });
       setTerritories(res.data.data || []);
       setTotal(res.data.total ?? 0);
     } catch {
@@ -644,7 +644,7 @@ export default function TerritoriesPage() {
                       variant="destructive"
                       onClick={() =>
                         setBulkTerritories((prev) =>
-                          prev.filter((_, i) => i !== index)
+                          prev.filter((_, i) => i !== index),
                         )
                       }
                     >

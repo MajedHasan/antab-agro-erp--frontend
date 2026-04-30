@@ -550,6 +550,10 @@ export default function SalesOrderListPage() {
                 className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
               >
                 <option value="">All</option>
+                <option value="PENDING_AM, PENDING_AM, PENDING_NSM, PENDING_FULFILLMENT">
+                  All Pending (Not Ready Now, Later will need to do that
+                  separately for better control)
+                </option>
                 <option value="PENDING_AM">Pending AM</option>
                 <option value="PENDING_RM">Pending RM</option>
                 <option value="PENDING_NSM">Pending NSM</option>

@@ -599,6 +599,7 @@ export default function FactoryTransferCreatePage() {
                       className="mt-2"
                       value={transferNo}
                       onChange={(e) => setTransferNo(e.target.value)}
+                      disabled={true}
                       placeholder="TR-YYYYMMDD-XXXX"
                     />
                   </div>

@@ -1,6 +1,8 @@
 import axios from "axios";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api";
+// const API_BASE =
+//   process.env.NEXT_PUBLIC_API_URL || "http://192.168.0.229:5001/api";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -77,7 +79,7 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(err);
-  }
+  },
 );
 
 export default api;

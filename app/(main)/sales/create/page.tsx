@@ -363,6 +363,8 @@ export default function SalesOrderCreatePage() {
           params: { productId, warehouseId: wId, page: 1, limit: 1 },
         });
 
+        console.log("Product Stock: ", res.data);
+
         const row = res.data?.data?.[0] || {};
         const stock: StockInfo = {
           quantity: Number(row.quantity || 0),

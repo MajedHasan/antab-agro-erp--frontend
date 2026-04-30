@@ -144,7 +144,7 @@ export default function AreasPage() {
       // individual region filter (overrides zone)
       if (filterRegion) params.region = filterRegion;
 
-      const res = await api.get("/areas?limit=100", { params });
+      const res = await api.get("/areas", { params });
       setAreas(res.data.data || []);
       setTotal(res.data.total ?? 0);
     } catch {
@@ -634,7 +634,7 @@ export default function AreasPage() {
                       variant="destructive"
                       onClick={() =>
                         setBulkAreas((prev) =>
-                          prev.filter((_, i) => i !== index)
+                          prev.filter((_, i) => i !== index),
                         )
                       }
                     >
