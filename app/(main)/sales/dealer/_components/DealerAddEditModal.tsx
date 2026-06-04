@@ -275,8 +275,8 @@ const DealerAddEditModal = ({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>Select Type</SelectItem>
-                      <SelectItem value="Credit">Credit</SelectItem>
-                      <SelectItem value="Cash">Cash</SelectItem>
+                      <SelectItem value="CREDIT">Credit</SelectItem>
+                      <SelectItem value="CASH">Cash</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -438,10 +438,11 @@ const DealerAddEditModal = ({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>Select Status</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                      <SelectItem value="suspended">Suspended</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                      <SelectItem value="Blocked">Blocked</SelectItem>
+                      {/* <SelectItem value="suspended">Suspended</SelectItem> */}
                     </SelectContent>
                   </Select>
                 </div>

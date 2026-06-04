@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import PrintWorkOrderInvoice from "./PrintWorkOrderInvoice";
 import {
+  buildWorkOrderContentHtml,
+  esc,
   fmtDate,
   fmtMoney,
   itemName,
@@ -28,9 +30,9 @@ import {
   ClipboardList,
   Coins,
 } from "lucide-react";
-import PrintWorkOrderInvoiceV2 from "./PrintWorkOrderInvoiceV2";
 import Logo from "/images/logo-green.png";
 import PrintWorkOrderInvoiceV3 from "./PrintWorkOrderInvoiceV3";
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 
 type Props = {
   viewing: WorkOrderView | null;
@@ -47,7 +49,7 @@ const FLOW = [
 
 function getWorkflowIndex(status?: string) {
   if (!status) return -1;
-  return FLOW.findIndex((s) => s.key === status);
+  return FLOW.findIndex((s) => s.key === status) + 1;
 }
 
 function getNextStage(status?: string) {
@@ -250,7 +252,7 @@ const WorkflowStrip = memo(function WorkflowStrip({
                     <Icon className="h-4 w-4" />
                   </div>
 
-                  {idx < FLOW.length - 1 && (
+                  {idx < FLOW.length && (
                     <div
                       className={[
                         "h-1 w-full rounded-full",
@@ -357,7 +359,7 @@ const WorkOrderViewDialog = ({ viewing, setViewing }: Props) => {
             {safeName(viewing?.warehouseOrFactory)}
           </div>
           <div className="mt-1 text-sm text-muted-foreground">
-            {safeAddress(viewing?.warehouseOrFactory)}
+            {/* {safeAddress(viewing?.warehouseOrFactory)} */}
           </div>
         </div>
       ),
@@ -404,8 +406,38 @@ const WorkOrderViewDialog = ({ viewing, setViewing }: Props) => {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <PrintWorkOrderInvoice viewing={viewing} />
-                  <PrintWorkOrderInvoiceV2 viewing={viewing} />
                   <PrintWorkOrderInvoiceV3 viewing={viewing} />
+
+                  <GlobalPrintButton
+                    label="Print Invoice"
+                    title={`Work Order ${viewing?.workOrderNo ?? ""}`}
+                    contentHtml={
+                      viewing ? buildWorkOrderContentHtml(viewing) : ""
+                    }
+                    watermarkLogoUrl={`${window.location.origin + "/images/logo-green.png"}`}
+                    headerRightHtml={
+                      viewing
+                        ? `<div class="top">
+                              <div class="doc">
+                                <h2>WORK ORDER</h2>
+                                <div class="no">${esc(viewing.workOrderNo || "-")}</div>
+                                <div class="m">Issue: ${esc(fmtDate(viewing.issueDate))}</div>
+                                <div class="m">Expected: ${esc(fmtDate(viewing.expectedDeliveryDate))}</div>
+                              </div>
+                            </div>`
+                        : ""
+                    }
+                    company={{
+                      name: "Antab Agro LTD",
+                      address:
+                        "House #63 (1st floor), Road no #6, Sector-4, Uttara, Dhaka-1230.",
+                      phone: "Phone: +88-02-7111708, +88-02-58953033",
+                      email:
+                        "Email: mehran_anwar@hotmail.com, sarzanavg@gmail.com",
+                      logoUrl: "/images/logo-green.png",
+                    }}
+                  />
+
                   <Button
                     variant="secondary"
                     onClick={() => setViewing(null)}

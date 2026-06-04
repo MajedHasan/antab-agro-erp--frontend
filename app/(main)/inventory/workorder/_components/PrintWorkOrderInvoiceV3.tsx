@@ -18,7 +18,11 @@ type Props = {
 
 const DEFAULT_COMPANY_NAME = "Antab Agro LTD";
 
-function injectWatermark(doc: Document, companyName: string, logoUrl?: string) {
+export function injectWatermark(
+  doc: Document,
+  companyName: string,
+  logoUrl?: string,
+) {
   const old = doc.getElementById("antab-watermark");
   old?.remove();
 

@@ -313,7 +313,7 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 function WorkflowTracker({ status }: { status?: string }) {
-  const index = FLOW.findIndex((s) => s === status);
+  const index = FLOW.findIndex((s) => s === status) + 1;
   const cancelled = status === "Cancelled";
 
   return (
@@ -345,7 +345,7 @@ function WorkflowTracker({ status }: { status?: string }) {
                 {i + 1}
               </div>
 
-              {i < FLOW.length - 1 && (
+              {i < FLOW.length && (
                 <div
                   className={[
                     "h-1 w-full rounded-full",

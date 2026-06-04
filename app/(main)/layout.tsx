@@ -174,6 +174,12 @@ const menuItems: MenuItem[] = [
         ],
       },
 
+      {
+        key: "Prescription",
+        href: "/sales/prescription",
+        permissions: ["prescription.view"],
+      },
+
       { key: "T.C (Transfer)", href: "/sales/transfer/status" },
       { key: "Sales Ledger", href: "/sales/ledger" },
       {
@@ -286,6 +292,10 @@ const menuItems: MenuItem[] = [
         //   { key: "Create Individual Accounts", href: "" },
         //   { key: "Sub Individual Accounts", href: "" },
         // ],
+      },
+      {
+        key: "Collections",
+        href: "/accounts/collections",
       },
       {
         key: "Vouchers",

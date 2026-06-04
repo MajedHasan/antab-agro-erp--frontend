@@ -908,7 +908,10 @@ export default function ProductPromotionsPage() {
       {/* Create / Edit Modal */}
       <Dialog open={openForm} onOpenChange={setOpenForm}>
         <DialogContent>
-          <form onSubmit={submitForm} className="space-y-4 max-w-4xl">
+          <form
+            onSubmit={submitForm}
+            className="space-y-4 max-w-4xl max-h-[90vh] overflow-y-scroll"
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">
                 {editing?._id ? "Edit Promotion" : "New Promotion"}

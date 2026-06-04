@@ -359,3 +359,131 @@ export function buildPrintHtml(
     </body>
   </html>`;
 }
+
+export function buildWorkOrderContentHtml(viewing: WorkOrderView) {
+  const rows = (viewing.items || [])
+    .map(
+      (it, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td><strong>${esc(itemName(it))}</strong></td>
+          <td>${esc(it.description || "-")}</td>
+          <td class="right">${it.quantity ?? 0}</td>
+          <td class="right">${esc(it.unit || "-")}</td>
+          <td class="right">${fmtMoney(it.unitPrice)}</td>
+          <td class="right">${fmtMoney(it.lineTotal)}</td>
+          <td class="right">${esc(it.remarks)}</td>
+        </tr>
+      `,
+    )
+    .join("");
+
+  return `
+    <style>
+      .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+      .t { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; font-weight:700; }
+      .val { font-weight:700; }
+      .metabox { display:flex; flex-direction:column; gap:10px; margin-bottom:20px; }
+      table { width:100%; border-collapse:collapse; }
+      th, td { border:1px solid #d1d5db; padding:8px; vertical-align:top; }
+      th { background:#f8fafc; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+      .right { text-align:right; }
+      .sumwrap { display:flex; justify-content:flex-end; margin-top:12px; }
+      .sum { width:360px; border:1px solid #d1d5db; border-radius:12px; overflow:hidden; }
+      .row { display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #e5e7eb; }
+      .row:last-child { border-bottom:none; }
+      .grand { font-weight:700; background:#f8fafc; }
+      .words { margin-top:8px; color:#6b7280; font-size:11px; }
+      .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+      .card { border:1px solid #d1d5db; border-radius:12px; padding:12px; }
+      .pre { white-space:pre-wrap; }
+      .sigs { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:16px; }
+      .sig { text-align:center; }
+      .line { border-bottom:1px solid #111827; height:46px; }
+      .sl { margin-top:8px; font-size:12px; font-weight:700; }
+    </style>
+
+
+    <div class="two">
+      <div>
+        <div class="t">WO To</div>
+        <div class="val">${esc(safeName(viewing.supplier))}</div>
+        <div class="m">${esc(safeAddress(viewing.supplier))}</div>
+      </div>
+      <div>
+        <div class="t">Factory / Ship To</div>
+        <div class="val">${esc(safeName(viewing.warehouseOrFactory))}</div>
+        <div class="m">${esc(safeAddress(viewing.warehouseOrFactory))}</div>
+      </div>
+    </div>
+
+    <div class="metabox">
+      <div><strong>Ref:</strong> ${esc(viewing.reference)}</div>
+      <div><strong>Subject:</strong> ${esc(viewing.subject)}</div>
+      <div>Dear Sir / Madam, <br/> ${esc(viewing.salutation)}</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:20px;">#</th>
+          <th style="width:170px;">Item</th>
+          <th>Description</th>
+          <th class="right" style="width:40px;">Qty</th>
+          <th class="right" style="width:40px;">Unit</th>
+          <th class="right" style="width:90px;">Unit Price</th>
+          <th class="right" style="width:90px;">Line Total</th>
+          <th class="right" style="width:130px;">Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="8" style="text-align:center;color:#6b7280;padding:16px;">No items found.</td></tr>`}
+      </tbody>
+    </table>
+
+    <div class="sumwrap">
+      <div class="sum">
+        <div class="row"><div>Subtotal</div><div>${fmtMoney(viewing.subTotal)}</div></div>
+        <div class="row"><div>Discount (${viewing.discountPercent ?? 0}%)</div><div>- ${fmtMoney(viewing.discountAmount)}</div></div>
+        <div class="row"><div>Tax (${viewing.taxPercent ?? 0}%)</div><div>${fmtMoney(viewing.taxTotal)}</div></div>
+        <div class="row grand"><div>Grand Total</div><div>${fmtMoney(viewing.grandTotal)}</div></div>
+      </div>
+    </div>
+
+    <div class="words">Amount in words: ${esc(words(Number(viewing.grandTotal || 0)) || "-")}</div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="t">Terms & Conditions</div>
+        <div class="pre">${esc(viewing.terms || "-")}</div>
+      </div>
+      <div class="card">
+        <div class="t">Notes</div>
+        <div class="pre">${esc(viewing.notes || "-")}</div>
+        ${
+          viewing.cancelReason
+            ? `<div style="margin-top:10px;color:#b91c1c;font-weight:700;">Cancel Reason</div><div class="pre" style="color:#b91c1c;">${esc(viewing.cancelReason)}</div>`
+            : ""
+        }
+      </div>
+    </div>
+
+    <div class="sigs">
+      <div class="sig">
+        <div class="line"></div>
+        <div class="sl">Prepared By</div>
+        <div class="m">${esc(safeName(viewing.createdBy))}</div>
+      </div>
+      <div class="sig">
+        <div class="line"></div>
+        <div class="sl">Approved By</div>
+        <div class="m">${esc(safeName(viewing.approvedBy))}</div>
+      </div>
+      <div class="sig">
+        <div class="line"></div>
+        <div class="sl">Chairman</div>
+        <div class="m">-</div>
+      </div>
+    </div>
+  `;
+}
