@@ -85,11 +85,11 @@ const menuItems: MenuItem[] = [
           { key: "Packing Materials", href: "/inventory/packing-materials" },
           { key: "Finished Goods", href: "/inventory/finished-products" },
           { key: "Other Products", href: "/inventory/other-products" },
-          { key: "Product Transfer", href: "/inventory/product-transfer" },
           { key: "Inventory Report", href: "/inventory/report" },
         ],
       },
 
+      { key: "Product Transfer", href: "/inventory/product-transfer" },
       { key: "BOM", href: "/inventory/bom" },
       { key: "Production", href: "/inventory/production" },
       { key: "WIP", href: "/inventory/wip" },

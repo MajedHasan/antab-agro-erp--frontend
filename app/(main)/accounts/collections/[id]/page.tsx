@@ -822,6 +822,8 @@ export default function CollectionDetailPage() {
               </div>
               <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">
                 {collection.voucherNo}
+                <br />
+                COL-26-06-D-0001
               </h1>
               <p className="text-slate-500 text-sm mt-1">
                 Created {formatDateTime(collection.createdAt)} · Updated{" "}

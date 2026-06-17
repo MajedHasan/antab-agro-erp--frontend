@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,16 +31,14 @@ import {
   ChevronUp,
   Search,
   X,
+  Plus,
   BarChart3,
+  TrendingDown,
   DollarSign,
   Box,
-  ArrowDownIcon,
-  ArrowUpIcon,
-  Layers,
-  ArrowRight,
 } from "lucide-react";
 
-/* ---------- types ---------- */
+/* ---------- types (original + new) ---------- */
 type Warehouse = {
   _id: string;
   name?: string;
@@ -136,7 +133,7 @@ type ReportRow = {
   grandTotal: number;
 };
 
-/* ---------- helpers ---------- */
+/* ---------- helpers (original) ---------- */
 function idOf(maybe: any): string {
   if (!maybe) return "";
   if (typeof maybe === "string") return maybe;
@@ -178,6 +175,8 @@ function makeTotalsMap(stocks: any[], itemField: string) {
   }
   return map;
 }
+
+/* ---------- date helpers ---------- */
 function getPresetDates(preset: string): { start: Date; end: Date } | null {
   const now = new Date();
   let start: Date, end: Date;
@@ -232,7 +231,7 @@ function getPresetDates(preset: string): { start: Date; end: Date } | null {
   return { start, end };
 }
 
-/* ---------- MultiSelect (with portal) ---------- */
+/* ---------- Multi‑select component (improved) ---------- */
 function MultiSelect({
   items,
   selected,
@@ -244,16 +243,15 @@ function MultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const filtered = items.filter((i) =>
     i.label.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative">
       <div
-        className="flex min-h-[2.5rem] items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors"
+        className="flex min-h-[2.5rem] items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
         onClick={() => setOpen(!open)}
       >
         {selected.length === 0 ? (
@@ -287,105 +285,86 @@ function MultiSelect({
         <ChevronDown className="ml-auto h-4 w-4 text-slate-400" />
       </div>
 
-      {open &&
-        containerRef.current &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[9999]"
-            onClick={() => setOpen(false)}
-          >
-            <div
-              className="absolute mt-1 w-80 max-h-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
-              style={{
-                top:
-                  containerRef.current.getBoundingClientRect().bottom +
-                  window.scrollY +
-                  4,
-                left:
-                  containerRef.current.getBoundingClientRect().left +
-                  window.scrollX,
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-2">
-                <Input
-                  placeholder="Search items…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 text-sm"
-                  autoFocus
-                />
-              </div>
-              <div className="max-h-48 overflow-y-auto">
-                {filtered.length === 0 ? (
-                  <p className="p-2 text-sm text-slate-500">No items found</p>
-                ) : (
-                  filtered.map((item) => {
-                    const isSelected = selected.includes(item.value);
-                    return (
-                      <div
-                        key={item.value}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 ${
-                          isSelected ? "bg-indigo-50 text-indigo-700" : ""
-                        }`}
-                        onClick={() => {
-                          if (isSelected) {
-                            onChange(selected.filter((s) => s !== item.value));
-                          } else {
-                            onChange([...selected, item.value]);
-                          }
-                        }}
-                      >
-                        <div
-                          className={`h-4 w-4 rounded border ${
-                            isSelected
-                              ? "border-indigo-500 bg-indigo-500"
-                              : "border-slate-300"
-                          } flex items-center justify-center`}
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+          <div className="p-2">
+            <Input
+              placeholder="Search items…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="p-2 text-sm text-slate-500">No items found</p>
+            ) : (
+              filtered.map((item) => {
+                const isSelected = selected.includes(item.value);
+                return (
+                  <div
+                    key={item.value}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 ${
+                      isSelected ? "bg-indigo-50 text-indigo-700" : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isSelected) {
+                        onChange(selected.filter((s) => s !== item.value));
+                      } else {
+                        onChange([...selected, item.value]);
+                      }
+                    }}
+                  >
+                    <div
+                      className={`h-4 w-4 rounded border ${
+                        isSelected
+                          ? "border-indigo-500 bg-indigo-500"
+                          : "border-slate-300"
+                      } flex items-center justify-center`}
+                    >
+                      {isSelected && (
+                        <svg
+                          className="h-3 w-3 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
                         >
-                          {isSelected && (
-                            <svg
-                              className="h-3 w-3 text-white"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                          )}
-                        </div>
-                        {item.label}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-              <div className="border-t p-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setOpen(false)}
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={3}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    {item.label}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="border-t p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full"
+              onClick={() => setOpen(false)}
+            >
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ================================================================== */
 export default function InventoryReportPage() {
-  /* ---------- base data ---------- */
+  /* ---------- base data (original) ---------- */
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [factories, setFactories] = useState<Warehouse[]>([]);
 
@@ -403,7 +382,7 @@ export default function InventoryReportPage() {
     OtherProductStock[]
   >([]);
 
-  /* ---------- UI state ---------- */
+  /* ---------- UI state (original) ---------- */
   const [activeTab, setActiveTab] = useState<ReportTab>("ALL");
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -411,9 +390,10 @@ export default function InventoryReportPage() {
   const [showFactories, setShowFactories] = useState(true);
   const [showWarehouses, setShowWarehouses] = useState(true);
 
+  /* ---------- view tab (new) ---------- */
   const [viewTab, setViewTab] = useState<ViewTab>("overview");
 
-  /* ---------- filter state ---------- */
+  /* ---------- date & item filter (new) ---------- */
   const [datePreset, setDatePreset] = useState("this_month");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -441,7 +421,7 @@ export default function InventoryReportPage() {
       : { start: null, end: null };
   }, [datePreset, customStart, customEnd]);
 
-  /* ---------- load all data ---------- */
+  /* ---------- load all static data (original) ---------- */
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -530,7 +510,7 @@ export default function InventoryReportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ---------- location columns ---------- */
+  /* ---------- location columns (original) ---------- */
   const locations = useMemo(() => {
     const cols: { id: string; label: string; kind: "Factory" | "Warehouse" }[] =
       [];
@@ -555,7 +535,7 @@ export default function InventoryReportPage() {
     return cols;
   }, [factories, warehouses, showFactories, showWarehouses]);
 
-  /* ---------- matrix rows ---------- */
+  /* ---------- original matrix rows ---------- */
   const rows: ReportRow[] = useMemo(() => {
     const search = debouncedQ.toLowerCase();
     const match = (name?: string, sku?: string) => {
@@ -803,7 +783,7 @@ export default function InventoryReportPage() {
     URL.revokeObjectURL(url);
   }
 
-  /* ---------- transactions loading ---------- */
+  /* ---------- load transactions (new) ---------- */
   const allItemsForFilter = useMemo(() => {
     return [
       ...rawMaterials,
@@ -854,7 +834,7 @@ export default function InventoryReportPage() {
     }
   }, [viewTab, activeDateRange, selectedItems]); // eslint-disable-line
 
-  /* ---------- movement data ---------- */
+  /* ---------- movement data (new) ---------- */
   const movementData = useMemo(() => {
     if (viewTab !== "movement" || transactions.length === 0) return [];
     // current stock map across all stocks
@@ -946,123 +926,6 @@ export default function InventoryReportPage() {
     otherProducts,
   ]);
 
-  /* ---------- summaries for tabs ---------- */
-  const txSummary = useMemo(() => {
-    const totalIn = transactions
-      .filter((t) => t.quantity > 0)
-      .reduce((a, t) => a + t.quantity, 0);
-    const totalOut = transactions
-      .filter((t) => t.quantity < 0)
-      .reduce((a, t) => a + Math.abs(t.quantity), 0);
-    const uniqueItems = new Set(transactions.map((t) => idOf(t.itemId))).size;
-    const typeCounts: Record<string, number> = {};
-    transactions.forEach((t) => {
-      typeCounts[t.transactionType] = (typeCounts[t.transactionType] || 0) + 1;
-    });
-    return {
-      totalIn,
-      totalOut,
-      count: transactions.length,
-      uniqueItems,
-      typeCounts,
-    };
-  }, [transactions]);
-
-  const movementSummary = useMemo(() => {
-    const totalItems = movementData.length;
-    const totalNetChange = movementData.reduce(
-      (a, m) => a + (m.closing - m.opening),
-      0,
-    );
-    return { totalItems, totalNetChange };
-  }, [movementData]);
-
-  function exportTransactionsCSV() {
-    if (transactions.length === 0)
-      return toast.error("No transactions to export");
-    const headers = [
-      "Date",
-      "Type",
-      "Item",
-      "Location",
-      "Qty",
-      "Unit Cost",
-      "Total Cost",
-      "Batch",
-    ];
-    const csvRows = transactions.map((tx) => {
-      const itemName =
-        rawMaterials.find((i) => i._id === idOf(tx.itemId))?.name ||
-        packagingItems.find((i) => i._id === idOf(tx.itemId))?.name ||
-        products.find((i) => i._id === idOf(tx.itemId))?.name ||
-        otherProducts.find((i) => i._id === idOf(tx.itemId))?.name ||
-        idOf(tx.itemId);
-      const locName =
-        factories.find((f) => f._id === idOf(tx.locationId))?.name ||
-        warehouses.find((w) => w._id === idOf(tx.locationId))?.name ||
-        idOf(tx.locationId);
-      return [
-        new Date(tx.transactionDate).toLocaleDateString(),
-        tx.transactionType,
-        itemName,
-        locName,
-        tx.quantity,
-        tx.unitCost?.toFixed(2),
-        tx.totalCost?.toFixed(2),
-        tx.batch || "",
-      ]
-        .map(csvEscape)
-        .join(",");
-    });
-    const csv = [headers.map(csvEscape).join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stock_transactions_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function exportMovementCSV() {
-    if (movementData.length === 0)
-      return toast.error("No movement data to export");
-    const headers = [
-      "Item",
-      "SKU",
-      "Unit",
-      "Location",
-      "Opening",
-      "In",
-      "Out",
-      "Net",
-      "Closing",
-    ];
-    const csvRows = movementData.map((m) =>
-      [
-        m.itemName,
-        m.sku,
-        m.unit,
-        m.locationName,
-        m.opening,
-        m.inward,
-        m.outward,
-        m.inward - m.outward,
-        m.closing,
-      ]
-        .map(csvEscape)
-        .join(","),
-    );
-    const csv = [headers.map(csvEscape).join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stock_movement_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   /* ================================================================== */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-blue-50 p-4 md:p-6 space-y-6">
@@ -1144,8 +1007,8 @@ export default function InventoryReportPage() {
         </div>
       </div>
 
-      {/* Filter Bar (no overflow-hidden on outer) */}
-      <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200 shadow-sm">
+      {/* Filter Bar */}
+      <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200 shadow-sm overflow-hidden">
         <div
           className="flex items-center justify-between p-4 cursor-pointer"
           onClick={() => setShowFilters(!showFilters)}
@@ -1575,302 +1438,166 @@ export default function InventoryReportPage() {
 
         {/* ---------- Transactions ---------- */}
         <TabsContent value="transactions" className="mt-0">
-          <div className="space-y-4">
-            {transactions.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-emerald-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-emerald-100">
-                    <ArrowDownIcon className="h-5 w-5 text-emerald-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Total Inward</div>
-                    <div className="text-xl font-bold text-emerald-700">
-                      {txSummary.totalIn}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-rose-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-rose-100">
-                    <ArrowUpIcon className="h-5 w-5 text-rose-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Total Outward</div>
-                    <div className="text-xl font-bold text-rose-700">
-                      {txSummary.totalOut}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-blue-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-blue-100">
-                    <Layers className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Transactions</div>
-                    <div className="text-xl font-bold">{txSummary.count}</div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-purple-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-purple-100">
-                    <Package className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Unique Items</div>
-                    <div className="text-xl font-bold">
-                      {txSummary.uniqueItems}
-                    </div>
-                  </div>
-                </div>
+          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
+            <div className="p-4 border-b bg-gradient-to-r from-emerald-50 to-teal-50">
+              <h3 className="text-lg font-semibold text-slate-800">
+                Stock Transactions
+              </h3>
+              <p className="text-sm text-slate-500">
+                All inventory movements within the selected period.
+              </p>
+            </div>
+            {txLoading ? (
+              <div className="p-10 text-center text-slate-400">
+                Loading transactions…
               </div>
-            )}
-
-            {Object.keys(txSummary.typeCounts).length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                {Object.entries(txSummary.typeCounts).map(([type, count]) => (
-                  <span
-                    key={type}
-                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700"
-                  >
-                    {type} <span className="font-bold">{count}</span>
-                  </span>
-                ))}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={exportTransactionsCSV}
-                  className="ml-auto gap-1"
-                >
-                  <Download className="h-4 w-4" /> Export CSV
-                </Button>
-              </div>
-            )}
-
-            <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
-              {txLoading ? (
-                <div className="p-10 text-center text-slate-400">
-                  Loading transactions…
-                </div>
-              ) : (
-                <div className="max-h-[60vh] overflow-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-white/90 backdrop-blur-sm">
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Unit Cost</TableHead>
-                        <TableHead className="text-right">Total Cost</TableHead>
-                        <TableHead>Batch</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.map((tx) => {
-                        const itemName =
-                          rawMaterials.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          packagingItems.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          products.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          otherProducts.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          idOf(tx.itemId);
-                        const locName =
-                          factories.find((f) => f._id === idOf(tx.locationId))
-                            ?.name ||
-                          warehouses.find((w) => w._id === idOf(tx.locationId))
-                            ?.name ||
-                          idOf(tx.locationId);
-                        return (
-                          <TableRow
-                            key={tx._id}
-                            className="hover:bg-emerald-50/20 transition-colors"
-                          >
-                            <TableCell className="text-sm">
-                              {new Date(
-                                tx.transactionDate,
-                              ).toLocaleDateString()}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`capitalize ${
-                                  tx.transactionType === "purchase"
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : tx.transactionType === "sale"
-                                      ? "bg-rose-50 text-rose-700 border-rose-200"
-                                      : tx.transactionType === "transfer_in"
-                                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                                        : "bg-slate-50 text-slate-600 border-slate-200"
-                                }`}
-                              >
-                                {tx.transactionType}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-medium text-slate-800">
-                              {itemName}
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {locName}
-                            </TableCell>
-                            <TableCell
-                              className={`text-right font-mono font-semibold ${
-                                tx.quantity >= 0
-                                  ? "text-emerald-600"
-                                  : "text-rose-600"
-                              }`}
-                            >
-                              {tx.quantity > 0 ? "+" : ""}
-                              {tx.quantity}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              ৳ {tx.unitCost?.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              ৳ {tx.totalCost?.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-500">
-                              {tx.batch || "-"}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                      {transactions.length === 0 && (
-                        <TableRow>
+            ) : (
+              <div className="max-h-[65vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-white/90 backdrop-blur-sm">
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Item</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Unit Cost</TableHead>
+                      <TableHead className="text-right">Total Cost</TableHead>
+                      <TableHead>Batch</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map((tx) => {
+                      const itemName =
+                        rawMaterials.find((i) => i._id === idOf(tx.itemId))
+                          ?.name ||
+                        packagingItems.find((i) => i._id === idOf(tx.itemId))
+                          ?.name ||
+                        products.find((i) => i._id === idOf(tx.itemId))?.name ||
+                        otherProducts.find((i) => i._id === idOf(tx.itemId))
+                          ?.name ||
+                        idOf(tx.itemId);
+                      const locName =
+                        factories.find((f) => f._id === idOf(tx.locationId))
+                          ?.name ||
+                        warehouses.find((w) => w._id === idOf(tx.locationId))
+                          ?.name ||
+                        idOf(tx.locationId);
+                      return (
+                        <TableRow
+                          key={tx._id}
+                          className="hover:bg-emerald-50/30 transition-colors"
+                        >
+                          <TableCell className="text-sm">
+                            {new Date(tx.transactionDate).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                              {tx.transactionType}
+                            </span>
+                          </TableCell>
+                          <TableCell className="font-medium text-slate-800">
+                            {itemName}
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            {locName}
+                          </TableCell>
                           <TableCell
-                            colSpan={8}
-                            className="py-12 text-center text-slate-400"
+                            className={`text-right font-mono font-semibold ${tx.quantity >= 0 ? "text-emerald-600" : "text-rose-600"}`}
                           >
-                            <BarChart3 className="h-10 w-10 mx-auto mb-2 text-slate-300" />
-                            No transactions found for this period.
+                            {tx.quantity > 0 ? "+" : ""}
+                            {tx.quantity}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            ৳ {tx.unitCost?.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            ৳ {tx.totalCost?.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-sm text-slate-500">
+                            {tx.batch || "-"}
                           </TableCell>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </div>
+                      );
+                    })}
+                    {transactions.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={8}
+                          className="py-10 text-center text-slate-400"
+                        >
+                          No transactions for the selected period.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
         </TabsContent>
 
         {/* ---------- Stock Movement ---------- */}
         <TabsContent value="movement" className="mt-0">
-          <div className="space-y-4">
-            {movementData.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-amber-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-amber-100">
-                    <Layers className="h-5 w-5 text-amber-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">
-                      Items with Movement
-                    </div>
-                    <div className="text-xl font-bold">
-                      {movementSummary.totalItems}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-slate-100">
-                    <ArrowRight className="h-5 w-5 text-slate-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">
-                      Net Change (all)
-                    </div>
-                    <div
-                      className={`text-xl font-bold ${
-                        movementSummary.totalNetChange >= 0
-                          ? "text-emerald-600"
-                          : "text-rose-600"
-                      }`}
-                    >
-                      {movementSummary.totalNetChange > 0 ? "+" : ""}
-                      {movementSummary.totalNetChange}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-end justify-self-end gap-1"
-                  onClick={exportMovementCSV}
-                >
-                  <Download className="h-4 w-4" /> Export
-                </Button>
+          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
+            <div className="p-4 border-b bg-gradient-to-r from-amber-50 to-orange-50">
+              <h3 className="text-lg font-semibold text-slate-800">
+                Stock Movement
+              </h3>
+              <p className="text-sm text-slate-500">
+                Opening balance, inward, outward, and closing for the period.
+              </p>
+            </div>
+            {movementData.length === 0 ? (
+              <div className="p-10 text-center text-slate-400">
+                Select a date range and apply to see stock movement.
+              </div>
+            ) : (
+              <div className="max-h-[65vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-white/90 backdrop-blur-sm">
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead className="text-right">Opening</TableHead>
+                      <TableHead className="text-right">In</TableHead>
+                      <TableHead className="text-right">Out</TableHead>
+                      <TableHead className="text-right">Closing</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {movementData.map((m, i) => (
+                      <TableRow
+                        key={`${m.itemId}_${m.locationId}`}
+                        className="hover:bg-amber-50/30 transition-colors"
+                      >
+                        <TableCell>
+                          <div className="font-medium text-slate-800">
+                            {m.itemName}
+                          </div>
+                          <div className="text-xs text-slate-500">{m.sku}</div>
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          {m.locationName}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {m.opening}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-emerald-600 font-medium">
+                          +{m.inward}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-rose-600 font-medium">
+                          -{m.outward}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-bold text-indigo-600">
+                          {m.closing}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
-
-            <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
-              {movementData.length === 0 ? (
-                <div className="p-10 text-center text-slate-400">
-                  <TrendingUp className="h-10 w-10 mx-auto mb-2 text-slate-300" />
-                  Apply a date range to see stock movement.
-                </div>
-              ) : (
-                <div className="max-h-[60vh] overflow-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-white/90 backdrop-blur-sm">
-                      <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="text-right">Opening</TableHead>
-                        <TableHead className="text-right">In</TableHead>
-                        <TableHead className="text-right">Out</TableHead>
-                        <TableHead className="text-right">Net</TableHead>
-                        <TableHead className="text-right">Closing</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {movementData.map((m) => {
-                        const net = m.inward - m.outward;
-                        return (
-                          <TableRow
-                            key={`${m.itemId}_${m.locationId}`}
-                            className="hover:bg-amber-50/30 transition-colors"
-                          >
-                            <TableCell>
-                              <div className="font-medium text-slate-800">
-                                {m.itemName}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {m.sku} · {m.unit}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {m.locationName}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {m.opening}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-emerald-600 font-medium">
-                              +{m.inward}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-rose-600 font-medium">
-                              -{m.outward}
-                            </TableCell>
-                            <TableCell
-                              className={`text-right tabular-nums font-semibold ${
-                                net >= 0 ? "text-emerald-600" : "text-rose-600"
-                              }`}
-                            >
-                              {net > 0 ? "+" : ""}
-                              {net}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums font-bold text-indigo-600">
-                              {m.closing}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </div>
           </div>
         </TabsContent>
       </Tabs>

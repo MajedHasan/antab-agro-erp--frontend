@@ -1,389 +1,546 @@
+// app/accounts/vouchers/payment/cash/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/card";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import api from "@/lib/api";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Save } from "lucide-react";
-import api from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  RefreshCw,
+  Download,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Ban,
+} from "lucide-react";
 
-/* ------------------ Types ------------------ */
-type Account = {
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
+import {
+  buildCashPaymentVoucherHtml,
+  buildVoucherPrintHeader,
+  CashPaymentVoucherPreview,
+} from "./_components/CashPaymentVoucherContent";
+
+/* ---------- types ---------- */
+type VoucherAccount = {
   _id: string;
-  name: string;
-  type: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
-  category?: string;
-  balance?: number;
-  code?: string;
-  children?: Account[];
+  name?: string;
+  accountId?: string | { _id: string; name?: string; code?: string };
+  role?: string;
+  voucherTypes?: string[];
+  isActive?: boolean;
 };
 
-type EntryRow = {
-  id: string;
-  ledgerId: string;
-  amount: number;
+type VoucherParty = {
+  _id: string;
+  name: string;
+  direction?: "Receive" | "Payment";
+};
+
+type VoucherLine = {
+  _id?: string;
+  accountId?: string | { _id: string; name?: string; code?: string };
+  debit?: number;
+  credit?: number;
   narration?: string;
 };
 
-/* ------------------ Component ------------------ */
-export default function CashPaymentVoucherPage() {
-  const [voucherNo, setVoucherNo] = useState(() => `CP-${Date.now()}`);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+type Voucher = {
+  _id: string;
+  voucherNo?: string;
+  date?: string;
+  type?: string;
+  reference?: string;
+  narration?: string;
+  status?: string;
+  source?: string | { _id: string; name?: string };
+  bankVaId?: string | { _id: string; name?: string; accountId?: any };
+  lines?: VoucherLine[];
+  submittedBy?: { name?: string };
+  approvedBy?: { name?: string };
+};
 
-  const [paymentTo, setPaymentTo] = useState("");
-  const [paymentMode, setPaymentMode] = useState("");
-  const [narration, setNarration] = useState("");
+/* ---------- helpers ---------- */
+const formatTaka = (n = 0) => `৳ ${Number(n || 0).toFixed(2)}`;
+const isoDate = (d?: string | Date) => {
+  if (!d) return "";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
+};
 
-  const [rows, setRows] = useState<EntryRow[]>([
-    { id: crypto.randomUUID(), ledgerId: "", amount: 0, narration: "" },
-  ]);
+/* ---------- component ---------- */
+export default function CashPaymentVoucherListPage() {
+  const router = useRouter();
 
-  const [allAccounts, setAllAccounts] = useState<Account[]>([]);
-  const [cashLedger, setCashLedger] = useState<Account | null>(null);
-  const [saving, setSaving] = useState(false);
+  const ANY = "__any";
+  const [q, setQ] = useState("");
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [partyFilter, setPartyFilter] = useState(ANY);
+  const [cashFilter, setCashFilter] = useState(ANY);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(15);
 
-  const PAYMENT_TO = ["Supplier", "Expense", "Other"];
-  const PAYMENT_MODES = ["Cash", "Petty Cash", "Adjustment"];
+  const [data, setData] = useState<Voucher[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-  /* ------------------ Fetch accounts ------------------ */
+  const [voucherAccounts, setVoucherAccounts] = useState<VoucherAccount[]>([]);
+  const [voucherParties, setVoucherParties] = useState<VoucherParty[]>([]);
+
+  const [showDetail, setShowDetail] = useState(false);
+  const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null);
+  const [voucherLines, setVoucherLines] = useState<VoucherLine[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [rowLoadingMap, setRowLoadingMap] = useState<Record<string, boolean>>({});
+
+  const qTimer = useRef<any>(null);
+
+  /* Masters – filtered for CashPayment */
   useEffect(() => {
-    let mounted = true;
-    api
-      .get("/accounts/tree")
-      .then((res) => {
-        if (!mounted) return;
-        const flat = flattenTree(res?.data?.data || []);
-        setAllAccounts(flat);
-
-        const cash = flat.find(
-          (a) => a.type === "Asset" && /cash/i.test(a.name),
-        );
-        setCashLedger(cash || null);
-      })
-      .catch((err) => {
-        console.error("Failed to load accounts", err);
-        alert("Failed to load accounts. Check console.");
-      });
-
-    return () => {
-      mounted = false;
-    };
+    loadMasters();
   }, []);
 
-  /* ------------------ Helpers ------------------ */
-  function flattenTree(accounts: Account[]): Account[] {
-    const out: Account[] = [];
-    const walk = (node: Account) => {
-      out.push(node);
-      if (node.children) node.children.forEach(walk);
-    };
-    accounts.forEach(walk);
-    return out;
-  }
-
-  const money = (n = 0) =>
-    `₹ ${Math.abs(Number(n) || 0).toFixed(2)} ${
-      Number(n || 0) >= 0 ? "Dr" : "Cr"
-    }`;
-
-  /* ------------------ Derived Lists ------------------ */
-  const suggestedDebits = useMemo(() => {
-    if (!allAccounts.length) return [];
-    const nonCash = allAccounts.filter((a) => a._id !== cashLedger?._id);
-    if (paymentTo === "Supplier")
-      return nonCash.filter((a) =>
-        /supplier|payable/i.test(a.name.toLowerCase()),
-      );
-    if (paymentTo === "Expense")
-      return nonCash.filter((a) => a.type === "Expense");
-    return nonCash;
-  }, [allAccounts, paymentTo, cashLedger]);
-
-  const totalAmount = useMemo(
-    () => rows.reduce((s, r) => s + (Number(r.amount) || 0), 0),
-    [rows],
-  );
-
-  const closingCashBalance = useMemo(() => {
-    if (!cashLedger) return 0;
-    return (cashLedger.balance || 0) - totalAmount;
-  }, [cashLedger, totalAmount]);
-
-  const isBalanced =
-    totalAmount > 0 &&
-    !!paymentTo &&
-    !!paymentMode &&
-    rows.length > 0 &&
-    rows.every((r) => r.ledgerId && Number(r.amount) > 0) &&
-    closingCashBalance >= 0;
-
-  /* ------------------ Row Actions ------------------ */
-  function addRow() {
-    setRows((s) => [
-      ...s,
-      { id: crypto.randomUUID(), ledgerId: "", amount: 0, narration: "" },
-    ]);
-  }
-
-  function removeRow(id: string) {
-    setRows((s) => s.filter((r) => r.id !== id));
-  }
-
-  function updateRow(id: string, key: keyof EntryRow, value: any) {
-    setRows((s) => s.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
-  }
-
-  /* ------------------ Save Voucher ------------------ */
-  async function saveVoucher() {
-    if (!isBalanced || !cashLedger) {
-      alert("Voucher incomplete, not balanced, or insufficient cash balance.");
-      return;
-    }
-
-    const lines = [
-      // Cash credit
-      {
-        accountId: cashLedger._id,
-        debit: 0,
-        credit: totalAmount,
-        narration: "Cash payment",
-      },
-      // Debit lines
-      ...rows.map((r) => ({
-        accountId: r.ledgerId,
-        debit: Number(r.amount),
-        credit: 0,
-        narration: r.narration || "",
-      })),
-    ];
-
-    const dr = lines.reduce((s, l) => s + (l.debit || 0), 0);
-    const cr = lines.reduce((s, l) => s + (l.credit || 0), 0);
-    if (Math.abs(dr - cr) > 0.005) {
-      alert("Voucher not balanced!");
-      return;
-    }
-
-    const payload = {
-      voucherNo,
-      date,
-      paymentTo,
-      paymentMode,
-      narration,
-      cashLedgerId: cashLedger._id,
-      lines,
-    };
-
+  async function loadMasters() {
     try {
-      setSaving(true);
-      await api.post("/vouchers/cash-payment", payload);
-      alert("Cash payment voucher saved successfully.");
-
-      // Reset form
-      setVoucherNo(`CP-${Date.now()}`);
-      setDate(new Date().toISOString().slice(0, 10));
-      setPaymentTo("");
-      setPaymentMode("");
-      setNarration("");
-      setRows([
-        { id: crypto.randomUUID(), ledgerId: "", amount: 0, narration: "" },
+      const [vasRes, partiesRes] = await Promise.all([
+        api.get("/voucher-accounts").catch(() => ({ data: { data: [] } })),
+        api.get("/voucher-parties?voucherTypes=CashPayment").catch(() => ({ data: { data: [] } })),
       ]);
-    } catch (err: any) {
+      setVoucherAccounts(vasRes?.data?.data ?? []);
+      setVoucherParties(partiesRes?.data?.data ?? []);
+    } catch (err) {
       console.error(err);
-      const msg = err?.response?.data?.message || err?.message || "Save failed";
-      alert(`Failed to save voucher: ${msg}`);
-    } finally {
-      setSaving(false);
+      toast.error("Failed to load filter data");
     }
   }
 
-  /* ------------------ UI ------------------ */
+  /* Fetch list */
+  const fetchList = async () => {
+    setLoading(true);
+    try {
+      const params: any = {
+        type: "CashPayment",
+        page,
+        limit,
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+        q: q || undefined,
+        source: partyFilter !== ANY ? partyFilter : undefined,
+        bankVaId: cashFilter !== ANY ? cashFilter : undefined, // backend uses bankVaId for cash too
+      };
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+      });
+      const res = await api.get(`/vouchers?${qs.toString()}`);
+      setData(res?.data?.data ?? []);
+      setTotal(res?.data?.total ?? 0);
+    } catch (err) {
+      toast.error("Failed to load vouchers");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    qTimer.current = setTimeout(fetchList, 200);
+    return () => clearTimeout(qTimer.current);
+  }, [page, limit, from, to, statusFilter, partyFilter, cashFilter, q]);
+
+  /* Detail */
+  const openDetails = async (v: Voucher) => {
+    setSelectedVoucher(v);
+    setShowDetail(true);
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/vouchers/${v._id}`);
+      const full = res?.data?.data ?? res?.data;
+      if (full) {
+        setSelectedVoucher(full);
+        setVoucherLines(full.lines || []);
+      }
+    } catch (err) {
+      toast.error("Failed to load voucher details");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const doAction = async (id: string, action: "approve" | "cancel" | "reject") => {
+    setRowLoadingMap((prev) => ({ ...prev, [id]: true }));
+    try {
+      if (action === "reject") {
+        const reason = window.prompt("Rejection reason:")?.trim();
+        if (!reason) { toast.error("Reason required"); return; }
+        await api.post(`/vouchers/${id}/reject`, { reason });
+      } else {
+        if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+        await api.post(`/vouchers/${id}/${action}`);
+      }
+      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}d`);
+      fetchList();
+      if (selectedVoucher?._id === id) openDetails(selectedVoucher!);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || `${action} failed`);
+    } finally {
+      setRowLoadingMap((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const cashName = (v: Voucher) => {
+    const id = (v as any).bankVaId;
+    if (!id) return "";
+    const va = voucherAccounts.find((a) => a._id === String(id));
+    if (!va) return "";
+    return (
+      va.name ||
+      (va.accountId && typeof va.accountId === "object"
+        ? va.accountId.name
+        : "") ||
+      ""
+    );
+  };
+
+  const computeTotals = (lines: VoucherLine[]) => {
+    let gross = 0;
+    lines.forEach((l) => {
+      gross += l.debit || 0; // payments: debits are amounts paid out
+    });
+    return { gross, net: gross };
+  };
+
+  const getPrintHtml = () => {
+    if (!selectedVoucher) return "";
+    return buildCashPaymentVoucherHtml(
+      {
+        voucherNo: selectedVoucher.voucherNo,
+        date: selectedVoucher.date,
+        type: selectedVoucher.type,
+        reference: selectedVoucher.reference,
+        narration: selectedVoucher.narration,
+        source: selectedVoucher.source,
+        cashName: cashName(selectedVoucher),
+        submittedBy: selectedVoucher.submittedBy?.name || "",
+        approvedBy: selectedVoucher.approvedBy?.name || "",
+      },
+      voucherLines,
+    );
+  };
+
+  const getPrintHeaderRight = () => {
+    if (!selectedVoucher) return "";
+    return buildVoucherPrintHeader({
+      voucherNo: selectedVoucher.voucherNo,
+      date: selectedVoucher.date,
+      type: selectedVoucher.type,
+    });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const exportCSV = async () => {
+    try {
+      const params: any = {
+        type: "CashPayment",
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+        source: partyFilter !== ANY ? partyFilter : undefined,
+        bankVaId: cashFilter !== ANY ? cashFilter : undefined,
+      };
+      const qs = new URLSearchParams();
+      qs.append("fields", "voucherNo,date,type,status,reference,narration");
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+      });
+      const res = await api.get(`/vouchers/export?${qs.toString()}`, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cash-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Export started");
+    } catch (err) {
+      toast.error("Export failed");
+    }
+  };
+
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Cash Payment Voucher</h1>
-        <p className="text-sm text-muted-foreground">
-          Record cash payments made
-        </p>
+    <div className="max-w-[1500px] mx-auto p-4 md:p-6 space-y-5">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Cash Payment Vouchers</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage cash payment vouchers — filter, view, and approve.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchList} disabled={loading}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportCSV}>
+            <Download className="h-4 w-4 mr-1" /> Export
+          </Button>
+          <Button onClick={() => router.push("/accounts/vouchers/payment/cash/submit")}>
+            + Add Voucher
+          </Button>
+        </div>
       </div>
 
-      {/* Voucher Meta */}
-      <Card className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div>
-          <Label>Voucher No</Label>
-          <Input
-            value={voucherNo}
-            onChange={(e) => setVoucherNo(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <Label>Date</Label>
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <Label>Payment To</Label>
-          <select
-            value={paymentTo}
-            onChange={(e) => setPaymentTo(e.target.value)}
-            className="w-full border rounded-md px-3 py-2"
-          >
-            <option value="">Select</option>
-            {PAYMENT_TO.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <Label>Payment Mode</Label>
-          <select
-            value={paymentMode}
-            onChange={(e) => setPaymentMode(e.target.value)}
-            className="w-full border rounded-md px-3 py-2"
-          >
-            <option value="">Select</option>
-            {PAYMENT_MODES.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-        </div>
+      {/* Filters */}
+      <Card className="shadow-sm border-gray-200">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">From</Label>
+            <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} />
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">To</Label>
+            <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} />
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Status</Label>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Approved">Approved</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Payee</Label>
+            <Select value={partyFilter} onValueChange={(v) => { setPartyFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Any</SelectItem>
+                {voucherParties.filter(p => p.direction === "Payment").map(p => (
+                  <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Cash Ledger</Label>
+            <Select value={cashFilter} onValueChange={(v) => { setCashFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Any</SelectItem>
+                {voucherAccounts.filter(v => v.role === "Cash").map(b => (
+                  <SelectItem key={b._id} value={b._id}>{b.name || b._id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Search</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input className="pl-9" placeholder="Voucher No, Ref" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      {/* Cash Impact */}
-      <Card className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <Label>Cash Ledger (Credit)</Label>
-          <div className="mt-2 font-semibold">{cashLedger?.name || "—"}</div>
+      {/* Table */}
+      <Card className="shadow-sm border-gray-200 overflow-hidden">
+        <div className="overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50 hover:bg-gray-50">
+                <TableHead className="font-semibold text-gray-700">Voucher No</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Cash Ledger</TableHead>
+                <TableHead>Payee</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[150px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={7} className="py-10 text-center">Loading...</TableCell></TableRow>
+              ) : data.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="py-10 text-center">No vouchers found.</TableCell></TableRow>
+              ) : (
+                data.map((v) => {
+                  const lines = v.lines || [];
+                  const { gross } = computeTotals(lines);
+                  const partyName = typeof v.source === "object" ? v.source?.name || "" : v.source || "";
+                  const status = v.status || "—";
+                  let statusBadge = <Badge variant="secondary">{status}</Badge>;
+                  if (status === "Pending") statusBadge = <Badge className="bg-amber-50 text-amber-700 border border-amber-200">Pending</Badge>;
+                  if (status === "Approved") statusBadge = <Badge className="bg-green-50 text-green-700 border border-green-200">Approved</Badge>;
+                  if (status === "Rejected") statusBadge = <Badge variant="destructive">Rejected</Badge>;
+                  if (status === "Cancelled") statusBadge = <Badge variant="outline">Cancelled</Badge>;
+
+                  return (
+                    <TableRow key={v._id} className="hover:bg-gray-50/50 transition-colors">
+                      <TableCell className="font-medium text-sm">{v.voucherNo || v._id}</TableCell>
+                      <TableCell className="text-sm">{isoDate(v.date)}</TableCell>
+                      <TableCell className="text-sm">{cashName(v)}</TableCell>
+                      <TableCell className="text-sm">{partyName}</TableCell>
+                      <TableCell className="text-right text-sm font-medium">{formatTaka(gross)}</TableCell>
+                      <TableCell>{statusBadge}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openDetails(v)} title="View"><Eye className="h-4 w-4" /></Button>
+                          {status === "Pending" && (
+                            <>
+                              <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "approve")} disabled={rowLoadingMap[v._id]} title="Approve"><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "reject")} disabled={rowLoadingMap[v._id]} title="Reject"><XCircle className="h-4 w-4 text-red-600" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "cancel")} disabled={rowLoadingMap[v._id]} title="Cancel"><Ban className="h-4 w-4" /></Button>
+                            </>
+                          )}
+                          {status === "Approved" && (
+                            <GlobalPrintButton
+                              contentHtml={buildCashPaymentVoucherHtml(
+                                {
+                                  voucherNo: v.voucherNo,
+                                  date: v.date,
+                                  type: v.type,
+                                  reference: v.reference,
+                                  narration: v.narration,
+                                  source: v.source,
+                                  cashName: cashName(v),
+                                  submittedBy: v.submittedBy?.name || "",
+                                  approvedBy: v.approvedBy?.name || "",
+                                },
+                                lines,
+                              )}
+                              headerRightHtml={buildVoucherPrintHeader({
+                                voucherNo: v.voucherNo,
+                                date: v.date,
+                                type: v.type,
+                              })}
+                              label="Print"
+                              title="Cash Payment Voucher"
+                              company={{
+                                name: "Antab Agro LTD",
+                                address: "123 Agro Street, Dhaka",
+                                phone: "+880 1711-111111",
+                                email: "info@antabagro.com",
+                              }}
+                              className="h-8 w-30 p-0"
+                              showHeader={false}
+                              showFooter={false}
+                              orientation="landscape"
+                            />
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
         </div>
 
-        <div>
-          <Label>Opening Balance</Label>
-          <div className="mt-2 font-semibold text-slate-700">
-            {money(cashLedger?.balance || 0)}
+        <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t gap-4 bg-gray-50/50">
+          <div className="text-sm text-gray-600">Page {page} of {totalPages} ({total} records)</div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>First</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><ChevronLeft className="h-4 w-4" /></Button>
+            <span className="text-sm font-medium px-2">{page}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><ChevronRight className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>Last</Button>
+            <Select value={String(limit)} onValueChange={(v) => { setLimit(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="15">15</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
+      </Card>
 
-        <div>
-          <Label>Closing Balance</Label>
-          <div
-            className={`mt-2 font-semibold ${closingCashBalance < 0 ? "text-rose-700" : "text-emerald-700"}`}
-          >
-            {money(closingCashBalance)}
+      {/* Detail Modal */}
+      {showDetail && selectedVoucher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-auto">
+            <div className="flex items-center justify-between p-5 border-b bg-gray-50/70 rounded-t-2xl">
+              <h2 className="text-lg font-semibold">Voucher #{selectedVoucher.voucherNo}</h2>
+              <div className="flex items-center gap-2">
+                {selectedVoucher.status === "Approved" && (
+                  <GlobalPrintButton
+                    contentHtml={getPrintHtml()}
+                    headerRightHtml={getPrintHeaderRight()}
+                    label="Print"
+                    title="Cash Payment Voucher"
+                    company={{
+                      name: "Antab Agro LTD",
+                      address: "123 Agro Street, Dhaka",
+                      phone: "+880 1711-111111",
+                      email: "info@antabagro.com",
+                    }}
+                    showHeader={false}
+                    showFooter={false}
+                  />
+                )}
+                <Button variant="ghost" onClick={() => setShowDetail(false)}>Close</Button>
+              </div>
+            </div>
+            <div className="p-6 md:p-8">
+              {detailLoading ? (
+                <p className="text-center py-10">Loading...</p>
+              ) : (
+                <CashPaymentVoucherPreview
+                  voucher={{
+                    voucherNo: selectedVoucher.voucherNo,
+                    date: selectedVoucher.date,
+                    type: selectedVoucher.type,
+                    reference: selectedVoucher.reference,
+                    narration: selectedVoucher.narration,
+                    source: selectedVoucher.source,
+                    cashName: cashName(selectedVoucher),
+                    submittedBy: selectedVoucher.submittedBy?.name || "",
+                    approvedBy: selectedVoucher.approvedBy?.name || "",
+                  }}
+                  lines={voucherLines}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </Card>
-
-      {/* Debit Entries */}
-      <Card className="p-0 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-slate-100 text-sm">
-            <tr>
-              <th className="px-4 py-3 text-left">Debit Ledger</th>
-              <th className="px-4 py-3 text-left">Narration</th>
-              <th className="px-4 py-3 text-right w-48">Amount</th>
-              <th className="px-4 py-3 w-12"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t">
-                <td className="px-4 py-2">
-                  <select
-                    value={row.ledgerId}
-                    onChange={(e) =>
-                      updateRow(row.id, "ledgerId", e.target.value)
-                    }
-                    className="w-full border rounded-md px-3 py-2"
-                  >
-                    <option value="">Select Ledger</option>
-                    {suggestedDebits.map((l) => (
-                      <option key={l._id} value={l._id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-4 py-2">
-                  <Input
-                    value={row.narration || ""}
-                    onChange={(e) =>
-                      updateRow(row.id, "narration", e.target.value)
-                    }
-                    placeholder="Line narration (optional)"
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <Input
-                    type="number"
-                    min="0"
-                    value={row.amount || ""}
-                    onChange={(e) =>
-                      updateRow(row.id, "amount", Number(e.target.value))
-                    }
-                    className="text-right"
-                  />
-                </td>
-                <td className="px-4 py-2 text-center">
-                  {rows.length > 1 && (
-                    <button
-                      onClick={() => removeRow(row.id)}
-                      className="text-rose-600"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot className="bg-slate-50 font-semibold">
-            <tr>
-              <td colSpan={2} className="px-4 py-3 text-right">
-                Total Paid
-              </td>
-              <td className="px-4 py-3 text-right">
-                ₹ {totalAmount.toFixed(2)}
-              </td>
-              <td />
-            </tr>
-          </tfoot>
-        </table>
-      </Card>
-
-      <Button variant="ghost" onClick={addRow}>
-        <Plus className="mr-2 h-4 w-4" /> Add Line
-      </Button>
-
-      {/* Narration */}
-      <Card className="p-4">
-        <Label>Narration (voucher)</Label>
-        <Textarea
-          rows={3}
-          placeholder="Optional narration for this voucher"
-          value={narration}
-          onChange={(e) => setNarration(e.target.value)}
-        />
-      </Card>
-
-      <div className="flex justify-between items-center">
-        <div className="text-sm font-medium">
-          Cash Credit: ₹ {totalAmount.toFixed(2)} | Debits: ₹{" "}
-          {totalAmount.toFixed(2)}
-        </div>
-
-        <Button disabled={!isBalanced || saving} onClick={saveVoucher}>
-          <Save className="mr-2 h-4 w-4" />{" "}
-          {saving ? "Saving..." : "Save Voucher"}
-        </Button>
-      </div>
+      )}
     </div>
   );
 }

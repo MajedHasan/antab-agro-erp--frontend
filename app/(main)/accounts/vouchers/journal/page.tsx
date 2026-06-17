@@ -1,672 +1,512 @@
-// app/vouchers/journal/page.tsx
+// app/accounts/vouchers/journal/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Card } from "@/components/ui/card";
+import { useRouter } from "next/navigation";
+import api from "@/lib/api";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogTrigger,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  RefreshCw,
   Download,
-  Printer,
-  PlusCircle,
-  Trash2,
   Eye,
   CheckCircle,
-  Save,
+  XCircle,
+  Ban,
 } from "lucide-react";
-import api from "@/lib/api";
 
-/* ---------------- Types ---------------- */
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
+import {
+  buildJournalVoucherHtml,
+  buildVoucherPrintHeader,
+  JournalVoucherPreview,
+} from "./_components/JournalVoucherContent";
 
-type Ledger = {
-  id: string;
-  code: string;
+/* ---------- types ---------- */
+type JournalType = {
+  _id: string;
   name: string;
-  openingBalance: number; // signed: positive = Dr, negative = Cr
+  isActive?: boolean;
 };
 
-type JournalLine = {
-  id: string;
-  ledgerId: string | null;
-  debit: number;
-  credit: number;
+type VoucherLine = {
+  _id?: string;
+  accountId?: { _id?: string; name?: string; code?: string } | string;
+  debit?: number;
+  credit?: number;
   narration?: string;
 };
 
-type JournalVoucher = {
-  id: string;
-  voucherNo: string;
-  date: string;
+type Voucher = {
+  _id: string;
+  voucherNo?: string;
+  date?: string;
+  type?: string;
   reference?: string;
-  voucherType?: string;
   narration?: string;
-  status: "Draft" | "Approved";
-  lines: JournalLine[];
-  createdAt: string;
+  status?: string;
+  journalTypeId?: string; // reference to journal type
+  journalTypeName?: string; // if populated
+  lines?: VoucherLine[];
+  submittedBy?: { name?: string };
+  approvedBy?: { name?: string };
 };
 
-/* ---------------- Demo Data (keep as fallback; replace with API) ---------------- */
+/* ---------- helpers ---------- */
+const formatTaka = (n = 0) => `৳ ${Number(n || 0).toFixed(2)}`;
+const isoDate = (d?: string | Date) => {
+  if (!d) return "";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
+};
 
-const LEDGERS: Ledger[] = [
-  { id: "l1", code: "1000", name: "Cash In Hand", openingBalance: 45000 },
-  { id: "l2", code: "1010", name: "Bank - Main", openingBalance: 120000 },
-  { id: "l3", code: "2000", name: "Accounts Payable", openingBalance: -22000 },
-  { id: "l4", code: "4000", name: "Sales Revenue", openingBalance: -60000 },
-  { id: "l5", code: "5000", name: "Salary Expense", openingBalance: 8000 },
-  { id: "l6", code: "6000", name: "Misc Expense", openingBalance: 0 },
-];
+/* ---------- component ---------- */
+export default function JournalVoucherListPage() {
+  const router = useRouter();
 
-const VOUCHER_TYPES = [
-  "Adjustment",
-  "Reclassification",
-  "Year-end Closing",
-  "Provision",
-  "Other",
-];
+  const ANY = "__any";
+  const [q, setQ] = useState("");
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [journalTypeFilter, setJournalTypeFilter] = useState(ANY);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(15);
 
-const STORAGE_KEY = "demo_journal_vouchers_v2";
+  const [data, setData] = useState<Voucher[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-/* ---------------- Helpers ---------------- */
+  const [journalTypes, setJournalTypes] = useState<JournalType[]>([]);
+  const [showDetail, setShowDetail] = useState(false);
+  const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null);
+  const [voucherLines, setVoucherLines] = useState<VoucherLine[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [rowLoadingMap, setRowLoadingMap] = useState<Record<string, boolean>>({});
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(n);
+  const qTimer = useRef<any>(null);
 
-function uid(prefix = "") {
-  return prefix + Math.random().toString(36).slice(2, 9);
-}
-
-function genVoucherNo(prefix = "JV") {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const rnd = Math.floor(1000 + Math.random() * 9000);
-  return `${prefix}-${d.getFullYear()}${mm}-${rnd}`;
-}
-
-/* ---------------- Component ---------------- */
-
-export default function JournalVoucherPage() {
-  const [voucherNo, setVoucherNo] = useState(() => genVoucherNo("JV"));
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [reference, setReference] = useState("");
-  const [voucherType, setVoucherType] = useState<string | undefined>(
-    VOUCHER_TYPES[0],
-  );
-  const [narration, setNarration] = useState("");
-  const [status, setStatus] = useState<JournalVoucher["status"]>("Draft");
-
-  const [lines, setLines] = useState<JournalLine[]>([
-    { id: uid("ln_"), ledgerId: null, debit: 0, credit: 0, narration: "" },
-    { id: uid("ln_"), ledgerId: null, debit: 0, credit: 0, narration: "" },
-  ]);
-
-  const [saved, setSaved] = useState<JournalVoucher[]>([]);
-  const [viewVoucher, setViewVoucher] = useState<JournalVoucher | null>(null);
-
-  const [saving, setSaving] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
-
+  /* Masters – journal types */
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setSaved(JSON.parse(raw) as JournalVoucher[]);
-    } catch {}
+    (async () => {
+      try {
+        const res = await api.get("/journal-voucher-types");
+        setJournalTypes(res?.data?.data ?? []);
+      } catch (err) {
+        console.error("Failed to load journal types", err);
+      }
+    })();
   }, []);
 
-  useEffect(() => {
+  /* Fetch list */
+  const fetchList = async () => {
+    setLoading(true);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
-    } catch {}
-  }, [saved]);
-
-  function addLine(afterId?: string) {
-    const newLine: JournalLine = {
-      id: uid("ln_"),
-      ledgerId: null,
-      debit: 0,
-      credit: 0,
-      narration: "",
-    };
-    if (!afterId) setLines((s) => [...s, newLine]);
-    else {
-      setLines((s) => {
-        const idx = s.findIndex((l) => l.id === afterId);
-        if (idx === -1) return [...s, newLine];
-        const copy = [...s];
-        copy.splice(idx + 1, 0, newLine);
-        return copy;
-      });
-    }
-  }
-
-  function removeLine(id: string) {
-    setLines((s) => s.filter((l) => l.id !== id));
-  }
-
-  function updateLine(id: string, patch: Partial<JournalLine>) {
-    setLines((s) => s.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  }
-
-  const totalDebit = useMemo(
-    () => lines.reduce((s, l) => s + (Number(l.debit) || 0), 0),
-    [lines],
-  );
-  const totalCredit = useMemo(
-    () => lines.reduce((s, l) => s + (Number(l.credit) || 0), 0),
-    [lines],
-  );
-
-  const hasEmptyLedger = lines.some((l) => !l.ledgerId);
-  const hasBothSidesFilled = lines.some((l) => l.debit > 0 && l.credit > 0);
-  const isBalanced =
-    Math.abs(totalDebit - totalCredit) < 0.005 &&
-    totalDebit > 0 &&
-    !hasEmptyLedger &&
-    !hasBothSidesFilled;
-
-  const firstAmountRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    firstAmountRef.current?.focus();
-  }, []);
-
-  function ledgerOpening(ledgerId?: string | null) {
-    if (!ledgerId) return null;
-    const led = LEDGERS.find((l) => l.id === ledgerId);
-    return led?.openingBalance ?? null;
-  }
-
-  /* ----------------- API Save (fixed) ----------------- */
-
-  async function saveVoucher() {
-    setServerError(null);
-
-    // Quick client validation: ensure at least one valid line
-    const validLines = lines.filter((l) => l.ledgerId && (l.debit || l.credit));
-    if (validLines.length === 0) {
-      alert("Please add at least one line with a ledger and amount.");
-      return;
-    }
-
-    // If any line has missing ledger but some amount, show error
-    const incompleteLine = lines.find(
-      (l) => (l.debit || l.credit) && !l.ledgerId,
-    );
-    if (incompleteLine) {
-      alert(
-        "Some lines have amounts but no ledger selected. Please select ledger for each line.",
-      );
-      return;
-    }
-
-    if (hasBothSidesFilled) {
-      alert("One or more lines have both debit and credit values. Fix them.");
-      return;
-    }
-
-    // Build payload lines with accountId mapping
-    const payloadLines = lines
-      .filter((l) => l.ledgerId && (l.debit || l.credit)) // only send meaningful lines
-      .map((l) => ({
-        accountId: l.ledgerId!, // ledgerId maps to account _id in your backend
-        debit: Number(l.debit || 0),
-        credit: Number(l.credit || 0),
-        narration: l.narration || "",
-      }));
-
-    const dr = payloadLines.reduce((s, p) => s + (p.debit || 0), 0);
-    const cr = payloadLines.reduce((s, p) => s + (p.credit || 0), 0);
-
-    if (Math.abs(dr - cr) > 0.005) {
-      alert(
-        "Debit and Credit totals do not match. Please balance before saving.",
-      );
-      return;
-    }
-
-    const payload = {
-      voucherNo,
-      date,
-      reference,
-      narration,
-      status,
-      lines: payloadLines,
-    };
-
-    try {
-      setSaving(true);
-      // POST to backend
-      const res = await api.post("/vouchers/journal", payload);
-      // if success, backend returns { success: true, data: voucher }
-      // update local demo storage & UI
-      const returned = res?.data?.data;
-      const savedVoucher: JournalVoucher = {
-        id: returned?._id ?? uid("v_"),
-        voucherNo,
-        date,
-        reference,
-        voucherType,
-        narration,
-        status,
-        lines: JSON.parse(JSON.stringify(lines)),
-        createdAt: new Date().toISOString(),
+      const params: any = {
+        type: "Journal",
+        page,
+        limit,
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+        q: q || undefined,
+        journalTypeId: journalTypeFilter !== ANY ? journalTypeFilter : undefined,
       };
-      setSaved((s) => [savedVoucher, ...s]);
-
-      // Reset form
-      setVoucherNo(genVoucherNo("JV"));
-      setDate(new Date().toISOString().slice(0, 10));
-      setReference("");
-      setVoucherType(VOUCHER_TYPES[0]);
-      setNarration("");
-      setStatus("Draft");
-      setLines([
-        { id: uid("ln_"), ledgerId: null, debit: 0, credit: 0, narration: "" },
-      ]);
-      alert("Voucher saved successfully.");
-    } catch (err: any) {
-      console.error("Failed to save journal voucher", err);
-      const msg = err?.response?.data?.message || err?.message || "Save failed";
-      setServerError(String(msg));
-      alert(`Failed to save voucher: ${msg}`);
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+      });
+      const res = await api.get(`/vouchers?${qs.toString()}`);
+      const vouchers = res?.data?.data ?? [];
+      // If backend populates journalTypeId as object, extract name
+      const mapped = vouchers.map((v: any) => ({
+        ...v,
+        journalTypeName:
+          v.journalTypeId && typeof v.journalTypeId === "object"
+            ? v.journalTypeId.name
+            : undefined,
+      }));
+      setData(mapped);
+      setTotal(res?.data?.total ?? 0);
+    } catch (err) {
+      toast.error("Failed to load vouchers");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  }
+  };
 
-  /* ---------------- Render ---------------- */
+  useEffect(() => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    qTimer.current = setTimeout(fetchList, 200);
+    return () => clearTimeout(qTimer.current);
+  }, [page, limit, from, to, statusFilter, journalTypeFilter, q]);
+
+  /* Detail */
+  const openDetails = async (v: Voucher) => {
+    setSelectedVoucher(v);
+    setShowDetail(true);
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/vouchers/${v._id}`);
+      const full = res?.data?.data ?? res?.data;
+      if (full) {
+        setSelectedVoucher(full);
+        setVoucherLines(full.lines || []);
+      }
+    } catch (err) {
+      toast.error("Failed to load voucher details");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const doAction = async (id: string, action: "approve" | "cancel" | "reject") => {
+    setRowLoadingMap((prev) => ({ ...prev, [id]: true }));
+    try {
+      if (action === "reject") {
+        const reason = window.prompt("Rejection reason:")?.trim();
+        if (!reason) { toast.error("Reason required"); return; }
+        await api.post(`/vouchers/${id}/reject`, { reason });
+      } else {
+        if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+        await api.post(`/vouchers/${id}/${action}`);
+      }
+      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}d`);
+      fetchList();
+      if (selectedVoucher?._id === id) openDetails(selectedVoucher!);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || `${action} failed`);
+    } finally {
+      setRowLoadingMap((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const computeTotals = (lines: VoucherLine[]) => {
+    const debit = lines.reduce((s, l) => s + (l.debit || 0), 0);
+    const credit = lines.reduce((s, l) => s + (l.credit || 0), 0);
+    return { debit, credit };
+  };
+
+  const getPrintHtml = () => {
+    if (!selectedVoucher) return "";
+    return buildJournalVoucherHtml(
+      {
+        voucherNo: selectedVoucher.voucherNo,
+        date: selectedVoucher.date,
+        type: selectedVoucher.type,
+        journalType: selectedVoucher.journalTypeName || (journalTypes.find(t => t._id === selectedVoucher.journalTypeId)?.name ?? "—"),
+        reference: selectedVoucher.reference,
+        narration: selectedVoucher.narration,
+        submittedBy: selectedVoucher.submittedBy?.name || "",
+        approvedBy: selectedVoucher.approvedBy?.name || "",
+      },
+      voucherLines,
+    );
+  };
+
+  const getPrintHeaderRight = () => {
+    if (!selectedVoucher) return "";
+    return buildVoucherPrintHeader({
+      voucherNo: selectedVoucher.voucherNo,
+      date: selectedVoucher.date,
+      type: selectedVoucher.type,
+      journalType: selectedVoucher.journalTypeName || (journalTypes.find(t => t._id === selectedVoucher.journalTypeId)?.name ?? "—"),
+    });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const exportCSV = async () => {
+    try {
+      const params: any = {
+        type: "Journal",
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+        journalTypeId: journalTypeFilter !== ANY ? journalTypeFilter : undefined,
+      };
+      const qs = new URLSearchParams();
+      qs.append("fields", "voucherNo,date,type,status,reference,narration");
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+      });
+      const res = await api.get(`/vouchers/export?${qs.toString()}`, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `journal-vouchers-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Export started");
+    } catch (err) {
+      toast.error("Export failed");
+    }
+  };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <div className="max-w-[1500px] mx-auto p-4 md:p-6 space-y-5">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Journal Voucher</h1>
-          <p className="text-sm text-muted-foreground">
-            Create adjustment / reclassification / other journal entries
-          </p>
+          <h1 className="text-2xl font-semibold text-gray-900">Journal Vouchers</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage journal vouchers — filter, view, and approve.</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setStatus("Approved");
-              alert("Marked Approved (demo)");
-            }}
-          >
-            <CheckCircle className="mr-2 h-4 w-4" /> Mark Approved
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchList} disabled={loading}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setLines([
-                {
-                  id: uid("ln_"),
-                  ledgerId: null,
-                  debit: 0,
-                  credit: 0,
-                  narration: "",
-                },
-              ]);
-              setVoucherNo(genVoucherNo("JV"));
-            }}
-          >
-            New
+          <Button variant="outline" size="sm" onClick={exportCSV}>
+            <Download className="h-4 w-4 mr-1" /> Export
           </Button>
-
-          <Dialog
-            open={!!viewVoucher}
-            onOpenChange={(open) => {
-              if (!open) setViewVoucher(null);
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button variant="ghost">
-                <Eye className="mr-2 h-4 w-4" />
-                Saved
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Saved Journal Vouchers (demo)</DialogTitle>
-                <DialogDescription>
-                  List of saved demo vouchers. Replace with your API list.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="mt-4 space-y-2 max-h-[420px] overflow-auto">
-                {saved.length === 0 && (
-                  <div className="text-sm text-slate-500">
-                    No saved vouchers yet.
-                  </div>
-                )}
-                {saved.map((v) => (
-                  <div
-                    key={v.id}
-                    className="p-3 border rounded flex items-start justify-between gap-4"
-                  >
-                    <div>
-                      <div className="font-medium">
-                        {v.voucherNo}{" "}
-                        <span className="text-sm text-slate-500">
-                          • {v.date}
-                        </span>
-                      </div>
-                      <div className="text-sm text-slate-500">
-                        Type: {v.voucherType ?? "-"} • Status: {v.status}
-                      </div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        {(v.narration || "").slice(0, 120)}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={() => setViewVoucher(v)}>
-                        Open
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          /* CSV export logic */
-                        }}
-                      >
-                        Export
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          /* Print logic */
-                        }}
-                      >
-                        <Printer />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button onClick={() => setViewVoucher(null)}>Close</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => router.push("/accounts/vouchers/journal/submit")}>
+            + Add Voucher
+          </Button>
         </div>
       </div>
 
-      {/* Server error */}
-      {serverError && (
-        <div className="p-3 bg-rose-50 text-rose-700 border border-rose-100 rounded">
-          <strong>Error:</strong> {serverError}
+      {/* Filters */}
+      <Card className="shadow-sm border-gray-200">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">From</Label>
+            <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} />
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">To</Label>
+            <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} />
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Status</Label>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Approved">Approved</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Journal Type</Label>
+            <Select value={journalTypeFilter} onValueChange={(v) => { setJournalTypeFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Any</SelectItem>
+                {journalTypes
+                  .filter((t) => t.isActive !== false)
+                  .map((t) => (
+                    <SelectItem key={t._id} value={t._id}>{t.name}</SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Search</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input className="pl-9" placeholder="Voucher No, Ref, Narration" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card className="shadow-sm border-gray-200 overflow-hidden">
+        <div className="overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50 hover:bg-gray-50">
+                <TableHead className="font-semibold text-gray-700">Voucher No</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Journal Type</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Narration</TableHead>
+                <TableHead className="text-right">Debit</TableHead>
+                <TableHead className="text-right">Credit</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[150px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={9} className="py-10 text-center">Loading...</TableCell></TableRow>
+              ) : data.length === 0 ? (
+                <TableRow><TableCell colSpan={9} className="py-10 text-center">No vouchers found.</TableCell></TableRow>
+              ) : (
+                data.map((v) => {
+                  const lines = v.lines || [];
+                  const { debit, credit } = computeTotals(lines);
+                  const status = v.status || "—";
+                  let statusBadge = <Badge variant="secondary">{status}</Badge>;
+                  if (status === "Pending") statusBadge = <Badge className="bg-amber-50 text-amber-700 border border-amber-200">Pending</Badge>;
+                  if (status === "Approved") statusBadge = <Badge className="bg-green-50 text-green-700 border border-green-200">Approved</Badge>;
+                  if (status === "Rejected") statusBadge = <Badge variant="destructive">Rejected</Badge>;
+                  if (status === "Cancelled") statusBadge = <Badge variant="outline">Cancelled</Badge>;
+
+                  const jTypeName = v.journalTypeName || (v.journalTypeId && typeof v.journalTypeId === "object" ? (v.journalTypeId as any).name : "") || "—";
+
+                  return (
+                    <TableRow key={v._id} className="hover:bg-gray-50/50 transition-colors">
+                      <TableCell className="font-medium text-sm">{v.voucherNo || v._id}</TableCell>
+                      <TableCell className="text-sm">{isoDate(v.date)}</TableCell>
+                      <TableCell className="text-sm">{jTypeName}</TableCell>
+                      <TableCell className="text-sm">{v.reference || "—"}</TableCell>
+                      <TableCell className="text-sm max-w-[200px] truncate">{v.narration || "—"}</TableCell>
+                      <TableCell className="text-right text-sm">{formatTaka(debit)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatTaka(credit)}</TableCell>
+                      <TableCell>{statusBadge}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openDetails(v)} title="View"><Eye className="h-4 w-4" /></Button>
+                          {status === "Pending" && (
+                            <>
+                              <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "approve")} disabled={rowLoadingMap[v._id]} title="Approve"><CheckCircle className="h-4 w-4 text-green-600" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "reject")} disabled={rowLoadingMap[v._id]} title="Reject"><XCircle className="h-4 w-4 text-red-600" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "cancel")} disabled={rowLoadingMap[v._id]} title="Cancel"><Ban className="h-4 w-4" /></Button>
+                            </>
+                          )}
+                          {status === "Approved" && (
+                            <GlobalPrintButton
+                              contentHtml={buildJournalVoucherHtml(
+                                {
+                                  voucherNo: v.voucherNo,
+                                  date: v.date,
+                                  type: v.type,
+                                  journalType: jTypeName,
+                                  reference: v.reference,
+                                  narration: v.narration,
+                                  submittedBy: v.submittedBy?.name || "",
+                                  approvedBy: v.approvedBy?.name || "",
+                                },
+                                lines,
+                              )}
+                              headerRightHtml={buildVoucherPrintHeader({
+                                voucherNo: v.voucherNo,
+                                date: v.date,
+                                type: v.type,
+                                journalType: jTypeName,
+                              })}
+                              label="Print"
+                              title="Journal Voucher"
+                              company={{
+                                name: "Antab Agro LTD",
+                                address: "123 Agro Street, Dhaka",
+                                phone: "+880 1711-111111",
+                                email: "info@antabagro.com",
+                              }}
+                              className="h-8 w-30 p-0"
+                              showHeader={false}
+                              showFooter={false}
+                              orientation="landscape"
+                            />
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t gap-4 bg-gray-50/50">
+          <div className="text-sm text-gray-600">Page {page} of {totalPages} ({total} records)</div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>First</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><ChevronLeft className="h-4 w-4" /></Button>
+            <span className="text-sm font-medium px-2">{page}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><ChevronRight className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>Last</Button>
+            <Select value={String(limit)} onValueChange={(v) => { setLimit(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="15">15</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </Card>
+
+      {/* Detail Modal */}
+      {showDetail && selectedVoucher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-auto">
+            <div className="flex items-center justify-between p-5 border-b bg-gray-50/70 rounded-t-2xl">
+              <h2 className="text-lg font-semibold">Voucher #{selectedVoucher.voucherNo}</h2>
+              <div className="flex items-center gap-2">
+                {selectedVoucher.status === "Approved" && (
+                  <GlobalPrintButton
+                    contentHtml={getPrintHtml()}
+                    headerRightHtml={getPrintHeaderRight()}
+                    label="Print"
+                    title="Journal Voucher"
+                    company={{
+                      name: "Antab Agro LTD",
+                      address: "123 Agro Street, Dhaka",
+                      phone: "+880 1711-111111",
+                      email: "info@antabagro.com",
+                    }}
+                    showHeader={false}
+                    showFooter={false}
+                  />
+                )}
+                <Button variant="ghost" onClick={() => setShowDetail(false)}>Close</Button>
+              </div>
+            </div>
+            <div className="p-6 md:p-8">
+              {detailLoading ? (
+                <p className="text-center py-10">Loading...</p>
+              ) : (
+                <JournalVoucherPreview
+                  voucher={{
+                    voucherNo: selectedVoucher.voucherNo,
+                    date: selectedVoucher.date,
+                    type: selectedVoucher.type,
+                    journalType: selectedVoucher.journalTypeName || (journalTypes.find(t => t._id === selectedVoucher.journalTypeId)?.name ?? "—"),
+                    reference: selectedVoucher.reference,
+                    narration: selectedVoucher.narration,
+                    submittedBy: selectedVoucher.submittedBy?.name || "",
+                    approvedBy: selectedVoucher.approvedBy?.name || "",
+                  }}
+                  lines={voucherLines}
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Voucher header */}
-      <Card className="p-4 grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-        <div>
-          <Label>Voucher No</Label>
-          <Input
-            value={voucherNo}
-            onChange={(e) => setVoucherNo(e.target.value)}
-          />
-        </div>
-        <div>
-          <Label>Date</Label>
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-        <div className="md:col-span-2">
-          <Label>Voucher Type</Label>
-          <select
-            className="w-full border rounded-md px-3 py-2"
-            value={voucherType}
-            onChange={(e) => setVoucherType(e.target.value)}
-          >
-            {VOUCHER_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label>Reference</Label>
-          <Input
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-            placeholder="Optional reference"
-          />
-        </div>
-      </Card>
-
-      {/* Lines table */}
-      <Card className="p-0 overflow-hidden">
-        <div className="flex items-center justify-between p-4">
-          <div className="font-semibold">Line Items</div>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => addLine()}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Line
-            </Button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full table-auto">
-            <thead className="bg-slate-100 text-sm">
-              <tr>
-                <th className="px-4 py-2 text-left">Ledger (code — name)</th>
-                <th className="px-4 py-2 text-left hidden md:table-cell">
-                  Opening
-                </th>
-                <th className="px-4 py-2 text-right w-36">Debit</th>
-                <th className="px-4 py-2 text-right w-36">Credit</th>
-                <th className="px-4 py-2 text-left">Narration</th>
-                <th className="px-4 py-2 w-24"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((ln, idx) => {
-                const opening = ledgerOpening(ln.ledgerId) ?? 0;
-                const missingLedger = !ln.ledgerId && (ln.debit || ln.credit);
-                const bothSides = ln.debit > 0 && ln.credit > 0;
-                return (
-                  <tr
-                    key={ln.id}
-                    className={`border-t even:bg-white odd:bg-slate-50 ${
-                      missingLedger ? "bg-rose-50" : ""
-                    }`}
-                  >
-                    <td className="px-4 py-2">
-                      <select
-                        className={`w-full border rounded-md px-3 py-2 ${
-                          missingLedger ? "border-rose-400" : ""
-                        }`}
-                        value={ln.ledgerId ?? ""}
-                        onChange={(e) =>
-                          updateLine(ln.id, {
-                            ledgerId: e.target.value || null,
-                          })
-                        }
-                      >
-                        <option value="">-- Select ledger --</option>
-                        {LEDGERS.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.code} — {l.name}
-                          </option>
-                        ))}
-                      </select>
-                      {missingLedger && (
-                        <div className="text-xs text-rose-600 mt-1">
-                          Select ledger for this amount
-                        </div>
-                      )}
-                      {bothSides && (
-                        <div className="text-xs text-rose-600 mt-1">
-                          Debit and credit both set — keep only one
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 hidden md:table-cell text-sm text-slate-500">
-                      {ln.ledgerId ? fmt(opening) : "-"}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <Input
-                        ref={idx === 0 ? firstAmountRef : undefined}
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        className="text-right"
-                        value={ln.debit === 0 ? "" : String(ln.debit)}
-                        onChange={(e) =>
-                          updateLine(ln.id, {
-                            debit: Number(e.target.value || 0),
-                            credit: 0,
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        className="text-right"
-                        value={ln.credit === 0 ? "" : String(ln.credit)}
-                        onChange={(e) =>
-                          updateLine(ln.id, {
-                            credit: Number(e.target.value || 0),
-                            debit: 0,
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <Input
-                        value={ln.narration ?? ""}
-                        onChange={(e) =>
-                          updateLine(ln.id, { narration: e.target.value })
-                        }
-                        placeholder="Line narration (optional)"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <button
-                        className="text-rose-600"
-                        onClick={() => removeLine(ln.id)}
-                      >
-                        <Trash2 />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-slate-50 font-semibold">
-                <td className="px-4 py-3 text-right" colSpan={2}>
-                  Totals
-                </td>
-                <td className="px-4 py-3 text-right text-emerald-700">
-                  {totalDebit.toFixed(2)}
-                </td>
-                <td className="px-4 py-3 text-right text-rose-700">
-                  {totalCredit.toFixed(2)}
-                </td>
-                <td colSpan={2}></td>
-              </tr>
-              <tr
-                className={`${isBalanced ? "bg-emerald-50" : "bg-rose-50"} text-sm`}
-              >
-                <td className="px-4 py-2 text-left font-medium" colSpan={3}>
-                  {isBalanced ? (
-                    <span className="text-emerald-700">Balanced ✓</span>
-                  ) : (
-                    <span className="text-rose-700">Not balanced</span>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-left font-medium" colSpan={3}>
-                  {hasEmptyLedger && (
-                    <span className="text-rose-600">
-                      Some lines missing ledger
-                    </span>
-                  )}
-                  {hasBothSidesFilled && (
-                    <span className="text-rose-600 ml-3">
-                      Some lines have both debit & credit
-                    </span>
-                  )}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </Card>
-
-      {/* Narration & Actions */}
-      <Card className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-        <div className="md:col-span-2">
-          <Label>Narration (voucher level)</Label>
-          <Textarea
-            rows={3}
-            value={narration}
-            onChange={(e) => setNarration(e.target.value)}
-            placeholder="Explain the purpose of this journal entry (mandatory for audit)"
-          />
-        </div>
-        <div>
-          <Label>Status & Actions</Label>
-          <div className="mt-2 space-y-2">
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => saveVoucher()}
-                disabled={!isBalanced || saving}
-              >
-                <Save className="mr-2 h-4 w-4" />
-                {saving ? "Saving..." : "Save"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setVoucherNo(genVoucherNo("JV"));
-                  setLines([
-                    {
-                      id: uid("ln_"),
-                      ledgerId: null,
-                      debit: 0,
-                      credit: 0,
-                      narration: "",
-                    },
-                  ]);
-                }}
-              >
-                Reset
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="approved"
-                checked={status === "Approved"}
-                onCheckedChange={(v) => setStatus(v ? "Approved" : "Draft")}
-              />
-              <Label htmlFor="approved">Approved (demo)</Label>
-            </div>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 }

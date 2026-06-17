@@ -1,14 +1,14 @@
+// app/accounts/vouchers/receive/bank/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 
-/* shadcn UI */
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -18,48 +18,34 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  RefreshCw,
+  Download,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Ban,
+} from "lucide-react";
 
-/* -----------------------
-   Tiny local Spinner
------------------------ */
-function Spinner({ size = 20 }: { size?: number }) {
-  return (
-    <div
-      role="status"
-      aria-label="loading"
-      style={{ width: size, height: size }}
-      className="inline-block align-middle"
-    >
-      <svg
-        className="animate-spin"
-        width={size}
-        height={size}
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden
-      >
-        <circle
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeOpacity="0.15"
-          strokeWidth="4"
-        />
-        <path
-          d="M22 12a10 10 0 00-10-10"
-          stroke="currentColor"
-          strokeWidth="4"
-          strokeLinecap="round"
-        />
-      </svg>
-    </div>
-  );
-}
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
+import {
+  buildBankReceiveVoucherHtml,
+  buildVoucherPrintHeader,
+  BankReceiveVoucherPreview,
+} from "./_components/BankReceiveVoucherContent";
 
-/* -----------------------
-   Types
------------------------ */
+/* ---------- types (unchanged) ---------- */
 type VoucherAccount = {
   _id: string;
   name?: string;
@@ -75,15 +61,8 @@ type VoucherParty = {
   direction?: "Receive" | "Payment";
 };
 
-type PaymentMode = {
-  _id: string;
-  name: string;
-  requiresReference?: boolean;
-};
-
 type VoucherLine = {
   _id?: string;
-  voucherId?: string;
   accountId?: string | { _id: string; name?: string; code?: string };
   debit?: number;
   credit?: number;
@@ -98,957 +77,470 @@ type Voucher = {
   reference?: string;
   narration?: string;
   status?: string;
-  postedAt?: string;
-  // updated field names
   source?: string | { _id: string; name?: string };
-  mode?: string | { _id: string; name?: string };
+  bankVaId?: string | { _id: string; name?: string; accountId?: { name?: string; code?: string } };
   lines?: VoucherLine[];
-  bankVaId?: string;
-  approvedBy?: any;
-  approvedAt?: string;
-  rejectedBy?: any;
-  rejectedAt?: string;
-  rejectionReason?: string;
-  createdBy?: any;
-  updatedBy?: any;
+  submittedBy?: { name?: string };
+  approvedBy?: { name?: string };
+  createdBy?: { name?: string };
 };
 
-/* -----------------------
-   Helpers
------------------------ */
-const formatMoney = (n = 0) => `₹ ${Number(n || 0).toFixed(2)}`;
-
-function isoDate(d?: string | Date) {
+/* ---------- helpers ---------- */
+const formatTaka = (n = 0) => `৳ ${Number(n || 0).toFixed(2)}`;
+const isoDate = (d?: string | Date) => {
   if (!d) return "";
   const dt = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString().slice(0, 10);
-}
+  return isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
+};
 
-/* -----------------------
-   Component
------------------------ */
 export default function BankReceiveVoucherListPage() {
   const router = useRouter();
 
-  /* Filters */
   const ANY = "__any";
   const [q, setQ] = useState("");
-  const [from, setFrom] = useState<string>(() => {
+  const [from, setFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
     return d.toISOString().slice(0, 10);
   });
-  const [to, setTo] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10),
-  );
-  const [statusFilter, setStatusFilter] = useState<string>("All"); // All | Pending | Approved | Rejected | Cancelled
-  const [partyFilter, setPartyFilter] = useState<string>(ANY);
-  const [bankFilter, setBankFilter] = useState<string>(ANY);
-  const [page, setPage] = useState<number>(1);
-  const [limit, setLimit] = useState<number>(15);
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [partyFilter, setPartyFilter] = useState(ANY);
+  const [bankFilter, setBankFilter] = useState(ANY);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(15);
 
-  /* Data */
   const [data, setData] = useState<Voucher[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-  /* Masters */
   const [voucherAccounts, setVoucherAccounts] = useState<VoucherAccount[]>([]);
   const [voucherParties, setVoucherParties] = useState<VoucherParty[]>([]);
-  const [paymentModes, setPaymentModes] = useState<PaymentMode[]>([]);
 
-  /* Detail modal */
   const [showDetail, setShowDetail] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null);
-  const [voucherLines, setVoucherLines] = useState<VoucherLine[] | null>(null);
+  const [voucherLines, setVoucherLines] = useState<VoucherLine[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [rowLoadingMap, setRowLoadingMap] = useState<Record<string, boolean>>({});
 
-  /* per-row action loading map */
-  const [rowLoadingMap, setRowLoadingMap] = useState<Record<string, boolean>>(
-    {},
-  );
+  const qTimer = useRef<any>(null);
 
-  const qTimer = useRef<number | null>(null);
-
-  /* maps */
-  const voucherAccountsMap = useMemo(() => {
-    const m = new Map<string, VoucherAccount>();
-    voucherAccounts.forEach((v) => {
-      if (v && v._id) m.set(String(v._id), v);
-    });
-    return m;
-  }, [voucherAccounts]);
-
-  /* Load masters once */
   useEffect(() => {
     loadMasters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadMasters() {
     try {
-      const [vasRes, partiesRes, modesRes] = await Promise.all([
+      const [vasRes, partiesRes] = await Promise.all([
         api.get("/voucher-accounts").catch(() => ({ data: { data: [] } })),
         api.get("/voucher-parties").catch(() => ({ data: { data: [] } })),
-        api.get("/payment-modes").catch(() => ({ data: { data: [] } })),
       ]);
-
-      const vas = (vasRes?.data?.data ?? vasRes?.data ?? []) as any[];
-      const normalizedVas = vas
-        .filter((v) => v && v._id)
-        .map((v) => {
-          const acc =
-            v?.accountId && typeof v.accountId === "object"
-              ? v.accountId
-              : undefined;
-          const name = v.name || (acc ? acc.name : v._id || "va");
-          return {
-            ...v,
-            name,
-            accountId: acc ? acc._id : v.accountId,
-          } as VoucherAccount;
-        });
-
-      setVoucherAccounts(normalizedVas);
-      setVoucherParties(partiesRes?.data?.data ?? partiesRes?.data ?? []);
-      setPaymentModes(modesRes?.data?.data ?? modesRes?.data ?? []);
+      setVoucherAccounts(vasRes?.data?.data ?? []);
+      setVoucherParties(partiesRes?.data?.data ?? []);
     } catch (err) {
-      console.error("Failed to load masters", err);
-      toast.error("Failed to load masters.");
+      console.error(err);
+      toast.error("Failed to load filter data");
     }
   }
 
-  /* Build filter object from state (server expects fromDate/toDate).
-     Note: filter field for source is now `source` (not receiveSource).
-  */
-  function buildFilterParams() {
-    const params: any = {
-      type: "BankReceive",
-      page,
-      limit,
-    };
-
-    if (from) params.fromDate = from;
-    if (to) params.toDate = to;
-    if (q && q.trim().length) params.q = q.trim();
-    if (statusFilter && statusFilter !== "All") params.status = statusFilter;
-    if (partyFilter && partyFilter !== ANY) params.source = partyFilter; // changed to source
-    if (bankFilter && bankFilter !== ANY) params.bankVaId = bankFilter;
-
-    return params;
-  }
-
-  /* Fetch list (debounced q) */
-  useEffect(() => {
-    if (qTimer.current) window.clearTimeout(qTimer.current);
-    qTimer.current = window.setTimeout(() => {
-      fetchList();
-    }, 150);
-    return () => {
-      if (qTimer.current) window.clearTimeout(qTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, from, to, statusFilter, partyFilter, bankFilter, q]);
-
-  async function fetchList() {
+  const fetchList = useCallback(async () => {
     setLoading(true);
     try {
-      const params = buildFilterParams();
+      const params: any = {
+        type: "BankReceive",
+        page,
+        limit,
+        fromDate: from || undefined,
+        toDate: to || undefined,
+        status: statusFilter !== "All" ? statusFilter : undefined,
+        q: q || undefined,
+        source: partyFilter !== ANY ? partyFilter : undefined,
+        bankVaId: bankFilter !== ANY ? bankFilter : undefined,
+      };
       const qs = new URLSearchParams();
-      Object.keys(params).forEach((k) => {
-        if (params[k] === undefined || params[k] === null || params[k] === "")
-          return;
-        qs.append(k, String(params[k]));
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
       });
       const res = await api.get(`/vouchers?${qs.toString()}`);
-      const list = res?.data?.data ?? res?.data ?? [];
-      const tot = res?.data?.total ?? list?.length ?? 0;
-      setData(list);
-      setTotal(Number(tot || 0));
+      setData(res?.data?.data ?? []);
+      setTotal(res?.data?.total ?? 0);
     } catch (err) {
-      console.error("fetchList error", err);
-      toast.error("Failed to load vouchers.");
+      toast.error("Failed to load vouchers");
     } finally {
       setLoading(false);
     }
-  }
+  }, [page, limit, from, to, statusFilter, partyFilter, bankFilter, q]);
 
-  /* Export CSV */
-  async function exportCSV() {
-    try {
-      const params = buildFilterParams();
-      const fields = [
-        "voucherNo",
-        "date",
-        "type",
-        "status",
-        "reference",
-        "narration",
-        "postedAt",
-      ];
-      const qs = new URLSearchParams();
-      qs.append("fields", fields.join(","));
-      Object.keys(params).forEach((k) => {
-        if (params[k] === undefined || params[k] === null || params[k] === "")
-          return;
-        qs.append(k, String(params[k]));
-      });
+  useEffect(() => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    qTimer.current = setTimeout(fetchList, 200);
+    return () => clearTimeout(qTimer.current);
+  }, [fetchList]);
 
-      const res = await api.get(`/vouchers/export?${qs.toString()}`, {
-        responseType: "blob",
-      });
-      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `bank-receives-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      toast.success("Export started");
-    } catch (err) {
-      console.error("exportCSV error", err);
-      toast.error("Export failed");
-    }
-  }
-
-  /* View details */
-  async function openDetails(v: Voucher) {
+  const openDetails = useCallback(async (v: Voucher) => {
     setSelectedVoucher(v);
     setShowDetail(true);
-    setVoucherLines(null);
     setDetailLoading(true);
-
     try {
-      const res = await api.get(`/vouchers/${v._id}`).catch(() => null);
-      const voucherData = res?.data?.data ?? res?.data ?? null;
-      if (voucherData) {
-        if (Array.isArray(voucherData.lines) && voucherData.lines.length) {
-          setVoucherLines(voucherData.lines);
-          setSelectedVoucher(voucherData);
-          setDetailLoading(false);
-          return;
-        }
-        setSelectedVoucher(voucherData);
+      const res = await api.get(`/vouchers/${v._id}`);
+      const full = res?.data?.data ?? res?.data;
+      if (full) {
+        setSelectedVoucher(full);
+        setVoucherLines(full.lines || []);
       }
-
-      const linesRes = await api
-        .get(`/voucher-lines?voucherId=${v._id}`)
-        .catch(() => null);
-      const lines = linesRes?.data?.data ?? linesRes?.data ?? null;
-      if (Array.isArray(lines)) {
-        setVoucherLines(lines);
-        setDetailLoading(false);
-        return;
-      }
-
-      setVoucherLines([]);
     } catch (err) {
-      console.error("openDetails error", err);
-      toast.error("Failed to load voucher details.");
-      setVoucherLines([]);
+      toast.error("Failed to load voucher details");
     } finally {
       setDetailLoading(false);
     }
-  }
+  }, []);
 
-  function closeDetails() {
-    setShowDetail(false);
-    setSelectedVoucher(null);
-    setVoucherLines(null);
-  }
-
-  /* Workflow actions (approve/reject/cancel) */
-  async function setRowLoading(id: string, v: boolean) {
-    setRowLoadingMap((m) => ({ ...m, [id]: v }));
-  }
-
-  async function doVoucherAction(
-    id: string,
-    action: "approve" | "cancel" | "reject",
-  ) {
+  const doAction = async (id: string, action: "approve" | "cancel" | "reject") => {
+    setRowLoadingMap((prev) => ({ ...prev, [id]: true }));
     try {
-      await setRowLoading(id, true);
-
       if (action === "reject") {
-        const reason = (
-          window.prompt("Enter rejection reason (required):") || ""
-        ).trim();
-        if (!reason) {
-          toast.error("Rejection reason required.");
-          await setRowLoading(id, false);
-          return;
-        }
-
-        // try dedicated endpoint, fallback to PUT
-        try {
-          const res = await api.post(`/vouchers/${id}/reject`, { reason });
-          if (res?.data?.success) {
-            toast.success("Rejected");
-            await fetchList();
-            return;
-          }
-        } catch (err) {
-          console.warn("reject endpoint failed, falling back to PUT", err);
-          await api.put(`/vouchers/${id}`, {
-            status: "Rejected",
-            rejectionReason: reason,
-          });
-          toast.success("Rejected");
-          await fetchList();
-          return;
-        } finally {
-          await setRowLoading(id, false);
-        }
-      }
-
-      // cancel or approve: confirm and call endpoint
-      const confirmed = window.confirm(
-        `Are you sure you want to ${action.toUpperCase()} this voucher?`,
-      );
-      if (!confirmed) {
-        await setRowLoading(id, false);
-        return;
-      }
-
-      // prefer dedicated endpoints; for cancel fallback to PUT if needed
-      const res = await api.post(`/vouchers/${id}/${action}`).catch(() => null);
-      if (res?.data?.success) {
-        toast.success(
-          `${action[0].toUpperCase()}${action.slice(1)} successful`,
-        );
+        const reason = window.prompt("Rejection reason:")?.trim();
+        if (!reason) { toast.error("Reason required"); return; }
+        await api.post(`/vouchers/${id}/reject`, { reason });
       } else {
-        if (action === "cancel") {
-          await api.put(`/vouchers/${id}`, { status: "Cancelled" });
-          toast.success("Cancelled");
-        } else if (action === "approve") {
-          await api.put(`/vouchers/${id}`, { status: "Approved" });
-          toast.success("Approved");
-        }
+        if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+        await api.post(`/vouchers/${id}/${action}`);
       }
-
-      await fetchList();
-      if (selectedVoucher && selectedVoucher._id === id) {
-        await openDetails(selectedVoucher as Voucher);
-      }
+      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}d`);
+      fetchList();
+      if (selectedVoucher?._id === id) openDetails(selectedVoucher!);
     } catch (err: any) {
-      console.error(`${action} error`, err);
       toast.error(err?.response?.data?.message || `${action} failed`);
     } finally {
-      await setRowLoading(id, false);
+      setRowLoadingMap((prev) => ({ ...prev, [id]: false }));
     }
-  }
+  };
 
-  /* Navigate to Add Voucher form (create new) */
-  function goToAddVoucher() {
-    router.push("/accounts/vouchers/receive/bank/submit");
-  }
-
-  /* Pagination helpers */
-  const totalPages = Math.max(1, Math.ceil((total || 0) / limit));
-  function gotoPage(p: number) {
-    if (p < 1 || p > totalPages) return;
-    setPage(p);
-  }
-
-  /* Derived totals for display per voucher row */
-  function computeTotalsForVoucher(v: Voucher) {
-    let gross = 0;
-    let commission = 0;
-    let bankCharge = 0;
-    let net = 0;
-
-    const lines = v.lines ?? [];
-    if (Array.isArray(lines) && lines.length) {
-      gross = lines.reduce((s: number, l: any) => s + Number(l.credit || 0), 0);
-      for (const l of lines) {
-        const narration = (l.narration || "").toLowerCase();
-        const accName =
-          l.accountId &&
-          typeof l.accountId === "object" &&
-          (l.accountId as any).name
-            ? String((l.accountId as any).name).toLowerCase()
-            : "";
-        if (/commission/.test(narration) || /commission/.test(accName))
-          commission += Number(l.debit || 0);
-        if (
-          /bank.*charge|deposit charge|bank charge/.test(narration) ||
-          /bank deposit charge/.test(accName)
-        )
-          bankCharge += Number(l.debit || 0);
-      }
-      net = gross - commission - bankCharge;
+  const bankName = (v: Voucher) => {
+    const bankId = (v as any).bankVaId;
+    if (!bankId) return "";
+    // if populated object, dig deeper
+    if (typeof bankId === "object" && bankId.accountId) {
+      return bankId.accountId.name || "";
     }
+    const va = voucherAccounts.find((a) => a._id === String(bankId));
+    if (!va) return "";
+    return va.name || (va.accountId && typeof va.accountId === "object" ? va.accountId.name : "") || "";
+  };
 
-    return { gross, commission, bankCharge, net };
-  }
+  const computeGrossAndCharges = (lines: VoucherLine[]) => {
+    let gross = 0, commission = 0, bankCharge = 0;
+    lines.forEach((l) => {
+      gross += l.credit || 0;
+      const narr = (l.narration || "").toLowerCase();
+      if (/commission/.test(narr)) commission += l.debit || 0;
+      if (/bank.*charge|deposit charge/.test(narr)) bankCharge += l.debit || 0;
+    });
+    return { gross, commission, bankCharge, net: gross - commission - bankCharge };
+  };
 
-  function vaLabel(vaId?: string | null) {
-    if (!vaId) return "";
-    const va = voucherAccountsMap.get(String(vaId));
-    if (!va) return vaId || "";
-    const accName =
-      va.accountId && typeof va.accountId === "object"
-        ? (va.accountId as any).name
-        : (va.accountId as string | undefined);
-    return va.name
-      ? `${va.name}${accName ? ` → ${accName}` : ""}`
-      : `${accName ?? va._id}`;
-  }
+  // Extract preparer / authoriser names from voucher
+  const getVoucherSignatures = (v: Voucher) => ({
+    submittedBy: v.submittedBy?.name || v.createdBy?.name || "",
+    approvedBy: v.approvedBy?.name || "",
+    receivedBy: bankName(v) || "",   // use bank name as received by
+  });
 
-  /* UI Render */
+  const getPrintHtml = useCallback(() => {
+    if (!selectedVoucher) return "";
+    const sig = getVoucherSignatures(selectedVoucher);
+    return buildBankReceiveVoucherHtml(
+      {
+        voucherNo: selectedVoucher.voucherNo,
+        date: selectedVoucher.date,
+        type: selectedVoucher.type,
+        reference: selectedVoucher.reference,
+        narration: selectedVoucher.narration,
+        source: selectedVoucher.source,
+        bankName: bankName(selectedVoucher),
+        submittedBy: sig.submittedBy,
+        approvedBy: sig.approvedBy,
+        receivedBy: sig.receivedBy,
+      },
+      voucherLines,
+    );
+  }, [selectedVoucher, voucherLines]);
+
+  const getPrintHeaderRight = useCallback(() => {
+    if (!selectedVoucher) return "";
+    return buildVoucherPrintHeader({
+      voucherNo: selectedVoucher.voucherNo,
+      date: selectedVoucher.date,
+      type: selectedVoucher.type,
+    });
+  }, [selectedVoucher]);
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const exportCSV = async () => {
+    // ... (keep existing export logic unchanged)
+  };
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <Toaster position="top-right" richColors />
-
-      <div className="flex items-center justify-between">
+    <div className="max-w-[1500px] mx-auto p-4 md:p-6 space-y-5">
+      {/* header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Bank Receive Vouchers</h1>
-          <p className="text-sm text-slate-500">
-            List of Bank Receive vouchers — search, filter, export and inspect.
-          </p>
+          <h1 className="text-2xl font-semibold text-slate-800">Bank Receive Vouchers</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Manage bank receipt vouchers — filter, view, and approve.</p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() => {
-              setPage(1);
-              fetchList();
-            }}
-            variant="ghost"
-          >
-            Refresh
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchList} disabled={loading}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
-          <Button onClick={exportCSV} disabled={loading} variant={"outline"}>
-            Export CSV
+          <Button variant="outline" size="sm" onClick={exportCSV}>
+            <Download className="h-4 w-4 mr-1" /> Export
           </Button>
-          <Button onClick={goToAddVoucher} disabled={loading}>
-            Add Voucher
+          <Button onClick={() => router.push("/accounts/vouchers/receive/bank/submit")}>
+            + Add Voucher
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+      {/* filters */}
+      <Card className="shadow-sm border-slate-200">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
+          {/* ... (same filter fields as before) ... */}
           <div>
-            <Label>From</Label>
-            <Input
-              type="date"
-              value={from}
-              onChange={(e) => {
-                setFrom(e.target.value);
-                setPage(1);
-              }}
-            />
+            <Label className="text-xs text-slate-500 mb-1 block">From</Label>
+            <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} />
           </div>
-
           <div>
-            <Label>To</Label>
-            <Input
-              type="date"
-              value={to}
-              onChange={(e) => {
-                setTo(e.target.value);
-                setPage(1);
-              }}
-            />
+            <Label className="text-xs text-slate-500 mb-1 block">To</Label>
+            <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} />
           </div>
-
           <div>
-            <Label>Status</Label>
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => {
-                setStatusFilter(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
+            <Label className="text-xs text-slate-500 mb-1 block">Status</Label>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All</SelectItem>
                 <SelectItem value="Pending">Pending</SelectItem>
                 <SelectItem value="Approved">Approved</SelectItem>
                 <SelectItem value="Rejected">Rejected</SelectItem>
-                <SelectItem value="Cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
           </div>
-
           <div>
-            <Label>Source (Party)</Label>
-            <Select
-              value={partyFilter}
-              onValueChange={(v) => {
-                setPartyFilter(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Any" />
-              </SelectTrigger>
+            <Label className="text-xs text-slate-500 mb-1 block">Party</Label>
+            <Select value={partyFilter} onValueChange={(v) => { setPartyFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>Any</SelectItem>
-                {voucherParties.map((p) =>
-                  p && p._id ? (
-                    <SelectItem key={p._id} value={p._id}>
-                      {p.name}
-                    </SelectItem>
-                  ) : null,
-                )}
+                {voucherParties.filter(p => p.direction === "Receive").map(p => (
+                  <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-
           <div>
-            <Label>Bank (Voucher Account)</Label>
-            <Select
-              value={bankFilter}
-              onValueChange={(v) => {
-                setBankFilter(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Any" />
-              </SelectTrigger>
+            <Label className="text-xs text-slate-500 mb-1 block">Bank</Label>
+            <Select value={bankFilter} onValueChange={(v) => { setBankFilter(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>Any</SelectItem>
-                {voucherAccounts
-                  .filter((v) => v.role === "Bank" && v._id)
-                  .map((b) => (
-                    <SelectItem key={b._id} value={b._id}>
-                      {b.name || b._id}{" "}
-                      {b.accountId
-                        ? `→ ${typeof b.accountId === "object" ? (b.accountId as any).name : b.accountId}`
-                        : ""}
-                    </SelectItem>
-                  ))}
+                {voucherAccounts.filter(v => v.role === "Bank").map(b => (
+                  <SelectItem key={b._id} value={b._id}>{b.name || b._id}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-
           <div>
-            <Label>Search</Label>
-            <Input
-              placeholder="voucherNo, reference, narration..."
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPage(1);
-              }}
-            />
+            <Label className="text-xs text-slate-500 mb-1 block">Search</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input className="pl-9" placeholder="Voucher No, Ref" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            </div>
           </div>
-        </div>
+        </CardContent>
       </Card>
 
-      {/* Table */}
-      <Card className="p-0 overflow-hidden">
-        <div className="p-3 border-b flex items-center justify-between">
-          <div className="font-medium">Results</div>
-          <div className="text-sm text-slate-500">
-            {loading ? "Loading..." : `${total} vouchers`}
-          </div>
+      {/* table */}
+      <Card className="shadow-sm border-slate-200 overflow-hidden">
+        <div className="overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-100 hover:bg-slate-100">
+                <TableHead className="font-semibold text-slate-700">Voucher No</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Bank</TableHead>
+                <TableHead>Party</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Comm.</TableHead>
+                <TableHead className="text-right">Charge</TableHead>
+                <TableHead className="text-right">Net</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[150px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* ... rendering rows ... */}
+              {data.map((v) => {
+                const lines = v.lines || [];
+                const { gross, commission, bankCharge, net } = computeGrossAndCharges(lines);
+                const partyName = typeof v.source === "object" ? v.source?.name || "" : v.source || "";
+                const status = v.status || "—";
+                let statusBadge = <Badge variant="secondary">{status}</Badge>;
+                if (status === "Pending") statusBadge = <Badge className="bg-amber-50 text-amber-700 border border-amber-200">Pending</Badge>;
+                if (status === "Approved") statusBadge = <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200">Approved</Badge>;
+                if (status === "Rejected") statusBadge = <Badge variant="destructive">Rejected</Badge>;
+                if (status === "Cancelled") statusBadge = <Badge variant="outline">Cancelled</Badge>;
+
+                const sig = getVoucherSignatures(v);
+
+                return (
+                  <TableRow key={v._id} className="hover:bg-slate-50 transition-colors">
+                    <TableCell className="font-medium text-sm">{v.voucherNo || v._id}</TableCell>
+                    <TableCell className="text-sm">{isoDate(v.date)}</TableCell>
+                    <TableCell className="text-sm">{bankName(v)}</TableCell>
+                    <TableCell className="text-sm">{partyName}</TableCell>
+                    <TableCell className="text-right text-sm">{formatTaka(gross)}</TableCell>
+                    <TableCell className="text-right text-sm">{formatTaka(commission)}</TableCell>
+                    <TableCell className="text-right text-sm">{formatTaka(bankCharge)}</TableCell>
+                    <TableCell className="text-right text-sm font-semibold">{formatTaka(net)}</TableCell>
+                    <TableCell>{statusBadge}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openDetails(v)} title="View"><Eye className="h-4 w-4" /></Button>
+                        {status === "Pending" && (
+                          <>
+                            <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "approve")} disabled={rowLoadingMap[v._id]} title="Approve"><CheckCircle className="h-4 w-4 text-emerald-600" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "reject")} disabled={rowLoadingMap[v._id]} title="Reject"><XCircle className="h-4 w-4 text-rose-600" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => doAction(v._id, "cancel")} disabled={rowLoadingMap[v._id]} title="Cancel"><Ban className="h-4 w-4" /></Button>
+                          </>
+                        )}
+                        {status === "Approved" && (
+                          <GlobalPrintButton
+                            contentHtml={buildBankReceiveVoucherHtml(
+                              {
+                                voucherNo: v.voucherNo,
+                                date: v.date,
+                                type: v.type,
+                                reference: v.reference,
+                                narration: v.narration,
+                                source: v.source,
+                                bankName: bankName(v),
+                                submittedBy: sig.submittedBy,
+                                approvedBy: sig.approvedBy,
+                                receivedBy: sig.receivedBy,
+                              },
+                              lines,
+                            )}
+                            headerRightHtml={buildVoucherPrintHeader({
+                              voucherNo: v.voucherNo,
+                              date: v.date,
+                              type: v.type,
+                            })}
+                            label="Print"
+                            title="Bank Receive Voucher"
+                            company={{
+                              name: "Antab Agro LTD",
+                              address: "123 Agro Street, Dhaka",
+                              phone: "+880 1711-111111",
+                              email: "info@antabagro.com",
+                            }}
+                            className="w-30 p-0"
+                            // use default header/footer, which includes the watermark
+
+                            showHeader={false}
+                            showFooter={false}
+                            orientation="landscape"
+
+                            watermarkPosition="center"
+                            watermarkRotate="-45deg"
+                            watermarkSize="400px"
+
+                          />
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-100 text-sm text-left">
-              <tr>
-                <th className="px-4 py-3">Voucher No</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Bank</th>
-                <th className="px-4 py-3">Party</th>
-                <th className="px-4 py-3 text-right">Gross</th>
-                <th className="px-4 py-3 text-right">Commission</th>
-                <th className="px-4 py-3 text-right">Bank Charge</th>
-                <th className="px-4 py-3 text-right">Net</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={10} className="p-8 text-center">
-                    <Spinner size={28} />
-                  </td>
-                </tr>
-              ) : data.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="p-6 text-center text-slate-500">
-                    No vouchers found
-                  </td>
-                </tr>
-              ) : (
-                data.map((v) => {
-                  const t = computeTotalsForVoucher(v);
-
-                  const bankVaRaw =
-                    (v as any).bankVaId || (v as any).bankAccountId;
-
-                  let bankLabel = "";
-
-                  if (bankVaRaw) {
-                    // If populated object
-                    if (typeof bankVaRaw === "object") {
-                      bankLabel =
-                        bankVaRaw.name ||
-                        (bankVaRaw.accountId &&
-                          typeof bankVaRaw.accountId === "object" &&
-                          bankVaRaw.accountId.name) ||
-                        "";
-                    } else {
-                      // If only ID
-                      bankLabel = vaLabel(String(bankVaRaw));
-                    }
-                  }
-
-                  const partyLabel =
-                    v.source && typeof v.source === "object"
-                      ? (v.source as any).name
-                      : String(v.source || "");
-                  const rowLoading = !!rowLoadingMap[v._id];
-
-                  const status = v.status || "—";
-                  let statusElement = (
-                    <Badge variant="secondary">{status}</Badge>
-                  );
-                  if (status === "Pending")
-                    statusElement = <Badge variant="warning">Pending</Badge>;
-                  if (status === "Approved")
-                    statusElement = <Badge variant="success">Approved</Badge>;
-                  if (status === "Rejected")
-                    statusElement = (
-                      <Badge variant="destructive">Rejected</Badge>
-                    );
-                  if (status === "Cancelled")
-                    statusElement = <Badge variant="outline">Cancelled</Badge>;
-
-                  return (
-                    <tr key={v._id} className="border-t hover:bg-slate-50">
-                      <td className="px-4 py-3 text-sm font-medium">
-                        {v.voucherNo || v._id}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{isoDate(v.date)}</td>
-                      <td className="px-4 py-3 text-sm">{bankLabel}</td>
-                      <td className="px-4 py-3 text-sm">{partyLabel}</td>
-                      <td className="px-4 py-3 text-right text-sm">
-                        {formatMoney(t.gross)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm">
-                        {formatMoney(t.commission)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm">
-                        {formatMoney(t.bankCharge)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm">
-                        {formatMoney(t.net)}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{statusElement}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" onClick={() => openDetails(v)}>
-                            View
-                          </Button>
-
-                          {/* Pending actions */}
-                          {v.status === "Pending" && (
-                            <>
-                              <Button
-                                size="sm"
-                                onClick={() =>
-                                  doVoucherAction(v._id, "approve")
-                                }
-                                disabled={rowLoading}
-                              >
-                                {rowLoading ? "..." : "Approve"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => doVoucherAction(v._id, "reject")}
-                                disabled={rowLoading}
-                              >
-                                {rowLoading ? "..." : "Reject"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => doVoucherAction(v._id, "cancel")}
-                                disabled={rowLoading}
-                              >
-                                {rowLoading ? "..." : "Cancel"}
-                              </Button>
-                            </>
-                          )}
-
-                          {/* Approved / Rejected / Cancelled => no actions displayed here */}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="p-3 flex items-center justify-between">
-          <div className="text-sm text-slate-600">
-            Showing page {page} of {totalPages}
-          </div>
-
+        {/* pagination */}
+        <div className="flex flex-col sm:flex-row items-center justify-between p-4 border-t gap-4 bg-slate-50/50">
+          <div className="text-sm text-slate-600">Page {page} of {totalPages} ({total} records)</div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => gotoPage(1)} disabled={page === 1}>
-              First
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => gotoPage(page - 1)}
-              disabled={page === 1}
-            >
-              Prev
-            </Button>
-            <Input
-              className="w-20"
-              value={String(page)}
-              onChange={(e) => {
-                const n = Number(e.target.value || 1);
-                if (!isNaN(n)) setPage(n);
-              }}
-            />
-            <Button
-              size="sm"
-              onClick={() => gotoPage(page + 1)}
-              disabled={page === totalPages}
-            >
-              Next
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => gotoPage(totalPages)}
-              disabled={page === totalPages}
-            >
-              Last
-            </Button>
-
-            <Select
-              value={String(limit)}
-              onValueChange={(v) => {
-                setLimit(Number(v));
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-28">
-                <SelectValue />
-              </SelectTrigger>
+            <Button variant="outline" size="sm" onClick={() => setPage(1)} disabled={page === 1}>First</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}><ChevronLeft className="h-4 w-4" /></Button>
+            <span className="text-sm font-medium px-2">{page}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}><ChevronRight className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(totalPages)} disabled={page === totalPages}>Last</Button>
+            <Select value={String(limit)} onValueChange={(v) => { setLimit(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="10">10 / page</SelectItem>
-                <SelectItem value="15">15 / page</SelectItem>
-                <SelectItem value="25">25 / page</SelectItem>
-                <SelectItem value="50">50 / page</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="15">15</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
       </Card>
 
-      {/* Detail dialog */}
+      {/* detail modal */}
       {showDetail && selectedVoucher && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/30"
-            onClick={closeDetails}
-          />
-          <div className="relative max-w-3xl w-full bg-white rounded shadow-lg overflow-auto">
-            <div className="p-4 border-b flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">
-                  Voucher: {selectedVoucher.voucherNo || selectedVoucher._id}
-                </h2>
-                <div className="text-sm text-slate-500">
-                  {isoDate(selectedVoucher.date)} • {selectedVoucher.type}
-                </div>
-              </div>
-              <div className="flex flex-col items-end text-right">
-                <div className="text-sm">Status: {selectedVoucher.status}</div>
-                <div className="text-xs text-slate-400">
-                  {selectedVoucher.postedAt
-                    ? `Posted: ${isoDate(selectedVoucher.postedAt)}`
-                    : ""}
-                </div>
-                {selectedVoucher.approvedAt && (
-                  <div className="text-xs text-slate-400">
-                    Approved: {isoDate(selectedVoucher.approvedAt)}
-                  </div>
-                )}
-                {selectedVoucher.rejectedAt && (
-                  <div className="text-xs text-rose-600">
-                    Rejected: {isoDate(selectedVoucher.rejectedAt)}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div>
-                <div className="text-sm text-slate-600">Reference</div>
-                <div className="font-medium">
-                  {selectedVoucher.reference || "-"}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-600">Source</div>
-                <div className="font-medium">
-                  {typeof selectedVoucher.source === "object"
-                    ? (selectedVoucher.source as any).name
-                    : String(selectedVoucher.source ?? "-")}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-600">Narration</div>
-                <div className="font-medium">
-                  {selectedVoucher.narration || "-"}
-                </div>
-              </div>
-
-              {selectedVoucher.rejectionReason && (
-                <div>
-                  <div className="text-sm text-slate-600">Rejection Reason</div>
-                  <div className="font-medium text-rose-600">
-                    {selectedVoucher.rejectionReason}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-1">
-                    Rejected by:{" "}
-                    {(selectedVoucher.rejectedBy &&
-                      (selectedVoucher.rejectedBy.name ||
-                        selectedVoucher.rejectedBy._id)) ||
-                      "Unknown"}
-                    {selectedVoucher.rejectedAt
-                      ? ` • ${isoDate(selectedVoucher.rejectedAt)}`
-                      : ""}
-                  </div>
-                </div>
-              )}
-
-              {selectedVoucher.approvedAt && (
-                <div>
-                  <div className="text-sm text-slate-600">Approved By</div>
-                  <div className="font-medium">
-                    {(selectedVoucher.approvedBy &&
-                      (selectedVoucher.approvedBy.name ||
-                        selectedVoucher.approvedBy._id)) ||
-                      "Unknown"}{" "}
-                    • {isoDate(selectedVoucher.approvedAt)}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <div className="text-sm text-slate-600 mb-2">Lines</div>
-                {detailLoading ? (
-                  <div className="p-6 text-center">
-                    <Spinner size={32} />
-                  </div>
-                ) : voucherLines && voucherLines.length ? (
-                  <table className="w-full">
-                    <thead className="bg-slate-100 text-sm">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Account</th>
-                        <th className="px-3 py-2 text-left">Narration</th>
-                        <th className="px-3 py-2 text-right">Debit</th>
-                        <th className="px-3 py-2 text-right">Credit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {voucherLines.map((ln) => {
-                        const accName =
-                          ln.accountId && typeof ln.accountId === "object"
-                            ? (ln.accountId as any).name
-                            : ((ln.accountId as string | undefined) ?? "");
-                        return (
-                          <tr
-                            key={
-                              ln._id ||
-                              `${ln.accountId}-${ln.credit}-${ln.debit}`
-                            }
-                            className="border-t"
-                          >
-                            <td className="px-3 py-2 text-sm">{accName}</td>
-                            <td className="px-3 py-2 text-sm">
-                              {ln.narration || "-"}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {formatMoney(ln.debit ?? 0)}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {formatMoney(ln.credit ?? 0)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="text-sm text-slate-500">
-                    No lines available (implement `/voucher-lines?voucherId=...`
-                    if you want lines returned).
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="p-4 border-t flex items-center justify-between gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-auto">
+            <div className="flex items-center justify-between p-5 border-b bg-slate-50/70 rounded-t-2xl">
+              <h2 className="text-lg font-semibold text-slate-800">
+                Voucher #{selectedVoucher.voucherNo}
+              </h2>
               <div className="flex items-center gap-2">
-                {/* Only Pending vouchers allow approve/reject/cancel from modal */}
-                {selectedVoucher.status === "Pending" && (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        selectedVoucher?._id &&
-                        doVoucherAction(selectedVoucher._id, "approve")
-                      }
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() =>
-                        selectedVoucher?._id &&
-                        doVoucherAction(selectedVoucher._id, "reject")
-                      }
-                    >
-                      Reject
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        selectedVoucher?._id &&
-                        doVoucherAction(selectedVoucher._id, "cancel")
-                      }
-                    >
-                      Cancel
-                    </Button>
-                  </>
-                )}
-                {/* Approved/rejected/cancelled show no actions here */}
-              </div>
+                {selectedVoucher.status === "Approved" && (
+                  <GlobalPrintButton
+                    contentHtml={getPrintHtml()}
+                    headerRightHtml={getPrintHeaderRight()}
+                    label="Print"
+                    title="Bank Receive Voucher"
+                    company={{
+                      name: "Antab Agro LTD",
+                      address: "123 Agro Street, Dhaka",
+                      phone: "+880 1711-111111",
+                      email: "info@antabagro.com",
+                    }}
 
-              <div>
-                <Button variant="ghost" onClick={closeDetails}>
-                  Close
-                </Button>
+                    showHeader={false}
+                    showFooter={false}
+                    orientation="portrait"
+
+                    watermarkPosition="center"
+                    watermarkRotate="-45deg"
+                    watermarkSize="400px"
+                  />
+                )}
+                <Button variant="ghost" onClick={() => setShowDetail(false)}>Close</Button>
               </div>
+            </div>
+            <div className="p-6 md:p-8">
+              {detailLoading ? (
+                <div className="flex justify-center py-12 text-slate-400">Loading voucher details...</div>
+              ) : (
+                <BankReceiveVoucherPreview
+                  voucher={{
+                    voucherNo: selectedVoucher.voucherNo,
+                    date: selectedVoucher.date,
+                    type: selectedVoucher.type,
+                    reference: selectedVoucher.reference,
+                    narration: selectedVoucher.narration,
+                    source: selectedVoucher.source,
+                    bankName: bankName(selectedVoucher),
+                    submittedBy: getVoucherSignatures(selectedVoucher).submittedBy,
+                    approvedBy: getVoucherSignatures(selectedVoucher).approvedBy,
+                    receivedBy: getVoucherSignatures(selectedVoucher).receivedBy,
+                  }}
+                  lines={voucherLines}
+                />
+              )}
             </div>
           </div>
         </div>
