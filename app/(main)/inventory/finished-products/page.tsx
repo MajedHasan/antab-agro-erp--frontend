@@ -686,7 +686,7 @@ export default function ProductsPage() {
               }}
               className="border rounded-lg px-2 py-1 text-sm"
             >
-              {[10, 15, 25, 50].map((l) => (
+              {[10, 15, 25, 50, 100].map((l) => (
                 <option key={l} value={l}>
                   {l} / page
                 </option>

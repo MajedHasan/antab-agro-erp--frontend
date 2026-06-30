@@ -1,37 +1,38 @@
 // app/ledger/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { format } from "date-fns";
+import api from "@/lib/api";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Search,
-  Download,
-  Filter,
-  Calendar,
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Receipt,
-  CreditCard,
-  Building,
-  User,
-  DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
-  MoreVertical,
-  Eye,
-  FileEdit,
-  Trash2,
-  RefreshCw,
-  Printer,
-  Mail,
-  TrendingUp,
-  TrendingDown,
-  Plus,
-  Minus,
-  CheckCircle,
-  XCircle,
-  Clock,
-} from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { DateRange } from "react-day-picker";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -40,1392 +41,998 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DateRange } from "react-day-picker";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
-import api from "@/lib/api";
+import {
+  Search,
+  Download,
+  Filter,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  ChevronLeft,
+  Eye,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  CheckCircle,
+  Clock,
+  XCircle,
+  FileText,
+  Layers,
+  Wallet,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ArrowUp,
+  ArrowDown,
+  Printer,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 
-/* ---------------- Types ---------------- */
-
-interface Account {
-  id: string;
+/* ---------- types ---------- */
+type AccountNode = {
+  _id: string;
   code: string;
   name: string;
   type: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
-  category: string;
-  balance: number;
-  currency?: string;
-  description?: string;
-}
+  openingBalance?: number;
+  periodDebit?: number;
+  periodCredit?: number;
+  closingBalance?: number;
+  children?: AccountNode[];
+};
 
-interface JournalEntry {
-  id: string;
-  entryNumber: string;
-  date: string | Date;
-  description: string;
-  reference: string;
-  status: "Posted" | "Draft" | "Void";
-  createdBy: string;
-  createdAt: string | Date;
-}
-
-interface LedgerTransaction {
+type Transaction = {
   id: string;
   entryId: string;
   accountId: string;
   accountCode: string;
   accountName: string;
-  date: string | Date;
+  date: string;
   description: string;
   reference: string;
   debit: number;
   credit: number;
   balance: number;
-  journalEntry: JournalEntry;
-  type:
-    | "Invoice"
-    | "Payment"
-    | "Journal"
-    | "Adjustment"
-    | "Expense"
-    | "Receipt"
-    | "Purchase"
-    | string;
-  contactName?: string;
-  contactType?: "Customer" | "Vendor" | "Employee" | "Bank" | string;
-}
+  journalEntry: {
+    id: string;
+    entryNumber: string;
+    date: string;
+    description: string;
+    reference: string;
+    status: string;
+    createdBy: string;
+    createdAt: string;
+  };
+  type: string;
+};
 
-interface LedgerSummary {
-  account: Account | null;
+type LedgerSummary = {
   openingBalance: number;
   totalDebit: number;
   totalCredit: number;
   closingBalance: number;
   transactionCount: number;
   avgTransaction: number;
-}
+};
 
-/* ---------------- Helpers (UI-only) ---------------- */
+/* ---------- helpers ---------- */
+const formatTaka = (n = 0) =>
+  new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
 
-function getTransactionTypeConfig(type: LedgerTransaction["type"]) {
-  const configs: Record<string, any> = {
-    Invoice: {
-      color: "bg-green-50 dark:bg-green-950/30 border-l-4 border-l-green-500",
-      badge:
-        "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300",
-      icon: Receipt,
-      label: "Invoice",
-    },
-    Payment: {
-      color: "bg-blue-50 dark:bg-blue-950/30 border-l-4 border-l-blue-500",
-      badge: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300",
-      icon: CreditCard,
-      label: "Payment",
-    },
-    Journal: {
-      color:
-        "bg-purple-50 dark:bg-purple-950/30 border-l-4 border-l-purple-500",
-      badge:
-        "bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300",
-      icon: FileText,
-      label: "Journal",
-    },
-    Adjustment: {
-      color: "bg-amber-50 dark:bg-amber-950/30 border-l-4 border-l-amber-500",
-      badge:
-        "bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300",
-      icon: RefreshCw,
-      label: "Adjustment",
-    },
-    Expense: {
-      color: "bg-red-50 dark:bg-red-950/30 border-l-4 border-l-red-500",
-      badge: "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300",
-      icon: DollarSign,
-      label: "Expense",
-    },
-    Receipt: {
-      color:
-        "bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-l-emerald-500",
-      badge:
-        "bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300",
-      icon: CheckCircle,
-      label: "Receipt",
-    },
-    Purchase: {
-      color:
-        "bg-indigo-50 dark:bg-indigo-950/30 border-l-4 border-l-indigo-500",
-      badge:
-        "bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300",
-      icon: Building,
-      label: "Purchase",
-    },
+function accountTypeColor(type: string) {
+  const map: Record<string, string> = {
+    Asset: "text-blue-700",
+    Liability: "text-red-700",
+    Equity: "text-purple-700",
+    Revenue: "text-green-700",
+    Expense: "text-amber-700",
   };
-  return configs[type] || configs.Journal;
+  return map[type] || "text-gray-700";
 }
 
-function getAccountTypeColor(type: Account["type"]) {
-  const colors: Record<Account["type"], string> = {
-    Asset: "text-blue-600 dark:text-blue-400",
-    Liability: "text-red-600 dark:text-red-400",
-    Equity: "text-purple-600 dark:text-purple-400",
-    Revenue: "text-green-600 dark:text-green-400",
-    Expense: "text-amber-600 dark:text-amber-400",
-  };
-  return colors[type];
+function statusBadge(status: string) {
+  if (status === "Approved")
+    return (
+      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200">
+        Approved
+      </Badge>
+    );
+  if (status === "Pending")
+    return (
+      <Badge className="bg-amber-50 text-amber-700 border border-amber-200">
+        Pending
+      </Badge>
+    );
+  if (status === "Rejected")
+    return <Badge variant="destructive">Rejected</Badge>;
+  return <Badge variant="secondary">{status}</Badge>;
 }
 
-function getStatusIcon(status: JournalEntry["status"]) {
-  switch (status) {
-    case "Posted":
-      return <CheckCircle className="h-4 w-4 text-green-500" />;
-    case "Draft":
-      return <Clock className="h-4 w-4 text-amber-500" />;
-    case "Void":
-      return <XCircle className="h-4 w-4 text-red-500" />;
-    default:
-      return null;
-  }
-}
+/* ---------- Account Tree Item (with expand/collapse icons) ---------- */
+function AccountTreeItem({
+  node,
+  depth,
+  selectedId,
+  onSelect,
+  searchTerm,
+}: {
+  node: AccountNode;
+  depth: number;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  searchTerm: string;
+}) {
+  const [expanded, setExpanded] = useState(depth < 2);
+  const hasChildren = node.children && node.children.length > 0;
+  const balance = node.closingBalance ?? 0;
 
-/* ---------------- Component ---------------- */
+  const matchesSearch =
+    !searchTerm ||
+    node.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    node.code.toLowerCase().includes(searchTerm.toLowerCase());
 
-export default function LedgerPage() {
-  // Accounts list from API
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountsLoading, setAccountsLoading] = useState(false);
+  if (!matchesSearch && !hasChildren) return null;
 
-  // Selected account
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-
-  // Transactions returned from API (already filtered server-side)
-  const [filteredTransactions, setFilteredTransactions] = useState<
-    LedgerTransaction[]
-  >([]);
-
-  // Summary (opening/period/closing)
-  const [ledgerSummary, setLedgerSummary] = useState<LedgerSummary | null>(
-    null,
+  return (
+    <div>
+      <div
+        className={cn(
+          "flex items-center justify-between py-1.5 px-2 rounded cursor-pointer transition-colors",
+          selectedId === node._id
+            ? "bg-gray-100 font-medium"
+            : "hover:bg-gray-50"
+        )}
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        onClick={() => {
+          if (hasChildren) setExpanded(!expanded);
+          onSelect(node._id);
+        }}
+      >
+        <div className="flex items-center gap-1 min-w-0">
+          {hasChildren ? (
+            expanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            )
+          ) : (
+            <span className="w-3.5 shrink-0" />
+          )}
+          <span className="text-xs font-mono text-gray-500 mr-2 shrink-0">
+            {node.code}
+          </span>
+          <span className="text-sm truncate">{node.name}</span>
+        </div>
+        <span
+          className={cn(
+            "text-xs font-mono shrink-0 ml-2",
+            balance >= 0 ? "text-gray-700" : "text-red-600"
+          )}
+        >
+          {formatTaka(balance)}
+        </span>
+      </div>
+      {expanded &&
+        hasChildren &&
+        node.children!.map((child) => (
+          <AccountTreeItem
+            key={child._id}
+            node={child}
+            depth={depth + 1}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            searchTerm={searchTerm}
+          />
+        ))}
+    </div>
   );
+}
 
-  // UI state / filters
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+/* ---------- Main Page ---------- */
+export default function LedgerPage() {
+  // Sidebar collapse
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Date range
   const [dateRange, setDateRange] = useState<DateRange>({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     to: new Date(),
   });
 
-  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<LedgerTransaction | null>(null);
-  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  // Account tree
+  const [tree, setTree] = useState<AccountNode[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
+    null
+  );
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountTypeFilter, setAccountTypeFilter] = useState<string>("all");
+  const [expandAll, setExpandAll] = useState(false); // we'll use this to force expand
 
-  const [sortConfig, setSortConfig] = useState<{
-    key: keyof LedgerTransaction;
-    direction: "asc" | "desc";
-  }>({ key: "date", direction: "desc" });
+  // Selected account details
+  const selectedAccount = useMemo(() => {
+    const flat = flattenTree(tree);
+    return flat.find((a) => a._id === selectedAccountId) || null;
+  }, [tree, selectedAccountId]);
 
-  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  // Transactions
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txTotal, setTxTotal] = useState(0);
+  const [txPage, setTxPage] = useState(1);
+  const [txLimit, setTxLimit] = useState(25);
+  const [txSortBy, setTxSortBy] = useState("date");
+  const [txSortDir, setTxSortDir] = useState<"asc" | "desc">("desc");
+  const [txSearch, setTxSearch] = useState("");
+  const [txTypeFilter, setTxTypeFilter] = useState("all");
+  const [txStatusFilter, setTxStatusFilter] = useState("all");
 
-  /* ------------------ Fetch Accounts ------------------ */
-  useEffect(() => {
-    let mounted = true;
-    setAccountsLoading(true);
-    api
-      .get("/ledger/accounts")
-      .then((res) => {
-        if (!mounted) return;
-        const list: any[] = res?.data?.data ?? [];
-        // Normalize to Account type expected by UI
-        const normalized: Account[] = list.map((a) => ({
-          id: String(a._id ?? a.id ?? a.id),
-          code: a.code ?? "",
-          name: a.name ?? a.title ?? "Unnamed",
-          type: a.type,
-          category: a.category ?? "",
-          balance:
-            typeof a.balance === "number"
-              ? a.balance
-              : Number(a.openingBalance ?? 0),
-          currency: a.currency ?? "USD",
-          description: a.description ?? a.note ?? "",
-        }));
-        setAccounts(normalized);
-        if (normalized.length > 0 && !selectedAccount) {
-          setSelectedAccount(normalized[0]);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load accounts:", err);
-        // keep demo fallback? we keep empty and show message
-        alert("Failed to load accounts. Check console.");
-      })
-      .finally(() => {
-        if (mounted) setAccountsLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Summary
+  const [summary, setSummary] = useState<LedgerSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
-  /* ------------------ Helper: format currency ------------------ */
-  const formatCurrency = (amount: number) => {
-    const currency = selectedAccount?.currency ?? "USD";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
+  // Detail modal
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  /* ------------------ Fetch transactions (server-side filtering) ------------------ */
-  useEffect(() => {
-    // Whenever selectedAccount or filters change, fetch transactions from backend
-    if (!selectedAccount) {
-      setFilteredTransactions([]);
-      setLedgerSummary(null);
-      return;
+  // Flatten helper
+  function flattenTree(nodes: AccountNode[]): AccountNode[] {
+    let flat: AccountNode[] = [];
+    for (const n of nodes) {
+      flat.push(n);
+      if (n.children) flat = flat.concat(flattenTree(n.children));
     }
+    return flat;
+  }
 
-    let mounted = true;
-    const fetchData = async () => {
-      setLoadingTransactions(true);
-      try {
-        // Build params
-        const params: any = {
-          limit: 1000,
-        };
-        if (dateRange?.from) params.from = dateRange.from.toISOString();
-        if (dateRange?.to) params.to = dateRange.to.toISOString();
-        if (filterType && filterType !== "all") params.type = filterType;
-        if (filterStatus && filterStatus !== "all")
-          params.status = filterStatus;
-        if (searchTerm) params.search = searchTerm;
-        if (sortConfig?.key) {
-          params.sortBy = sortConfig.key;
-          params.sortDir = sortConfig.direction;
-        }
-
-        // Transactions endpoint
-        const txRes = await api.get(
-          `/ledger/${encodeURIComponent(selectedAccount.id)}/transactions`,
-          { params },
-        );
-        const txData = txRes?.data?.data ?? txRes?.data ?? null;
-        // Expect object: { transactions: [...], meta: {...}, totals: {...} }
-        const txsRaw: any[] = txData?.transactions ?? [];
-
-        // Convert date strings to Date
-        const txs: LedgerTransaction[] = txsRaw.map((t: any) => ({
-          ...t,
-          date: t.date ? new Date(t.date) : new Date(),
-          journalEntry: {
-            ...t.journalEntry,
-            date: t.journalEntry?.date
-              ? new Date(t.journalEntry.date)
-              : new Date(),
-            createdAt: t.journalEntry?.createdAt
-              ? new Date(t.journalEntry.createdAt)
-              : new Date(),
-          },
-        }));
-
-        if (mounted) setFilteredTransactions(txs);
-      } catch (err) {
-        console.error("Failed to load transactions:", err);
-        alert("Failed to load transactions. Check console.");
-      } finally {
-        if (mounted) setLoadingTransactions(false);
+  // Fetch account tree with balances
+  const fetchTree = useCallback(async () => {
+    setTreeLoading(true);
+    try {
+      const params: any = {};
+      if (dateRange?.from) params.from = dateRange.from.toISOString();
+      if (dateRange?.to) params.to = dateRange.to.toISOString();
+      const res = await api.get("/accounts/tree", { params });
+      const data = res?.data?.data ?? [];
+      setTree(data);
+      if (!selectedAccountId && data.length > 0) {
+        const flat = flattenTree(data);
+        const first = flat.find((a) => a._id);
+        if (first) setSelectedAccountId(first._id);
       }
-    };
+    } catch (err) {
+      toast.error("Failed to load chart of accounts");
+    } finally {
+      setTreeLoading(false);
+    }
+  }, [dateRange]);
 
-    fetchData();
+  useEffect(() => {
+    fetchTree();
+  }, [fetchTree]);
 
-    return () => {
-      mounted = false;
+  // Filter tree by type and search
+  const filteredTree = useMemo(() => {
+    const filter = (nodes: AccountNode[]): AccountNode[] => {
+      return nodes
+        .map((node) => {
+          const children = node.children ? filter(node.children) : [];
+          const matchesType =
+            accountTypeFilter === "all" || node.type === accountTypeFilter;
+          const matchesSearch =
+            !accountSearch ||
+            node.name
+              .toLowerCase()
+              .includes(accountSearch.toLowerCase()) ||
+            node.code
+              .toLowerCase()
+              .includes(accountSearch.toLowerCase());
+          if (children.length > 0 || (matchesType && matchesSearch))
+            return {
+              ...node,
+              children: children.length > 0 ? children : undefined,
+            };
+          return null;
+        })
+        .filter(Boolean) as AccountNode[];
     };
-    // include dependencies for filters
+    return filter(tree);
+  }, [tree, accountTypeFilter, accountSearch]);
+
+  // Fetch transactions for selected account
+  const fetchTransactions = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setTxLoading(true);
+    try {
+      const params: any = {
+        limit: txLimit,
+        skip: (txPage - 1) * txLimit,
+        sortBy: txSortBy,
+        sortDir: txSortDir,
+        q: txSearch || undefined,
+        type: txTypeFilter !== "all" ? txTypeFilter : undefined,
+        status: txStatusFilter !== "all" ? txStatusFilter : undefined,
+        from: dateRange?.from?.toISOString(),
+        to: dateRange?.to?.toISOString(),
+      };
+      const res = await api.get(
+        `/ledger/${selectedAccountId}/transactions`,
+        { params }
+      );
+      const data = res?.data?.data;
+      setTransactions(data?.transactions ?? []);
+      setTxTotal(data?.meta?.total ?? 0);
+    } catch (err) {
+      toast.error("Failed to load transactions");
+    } finally {
+      setTxLoading(false);
+    }
   }, [
-    selectedAccount,
+    selectedAccountId,
+    txPage,
+    txLimit,
+    txSortBy,
+    txSortDir,
+    txSearch,
+    txTypeFilter,
+    txStatusFilter,
     dateRange,
-    filterType,
-    filterStatus,
-    searchTerm,
-    sortConfig,
   ]);
 
-  /* ------------------ Fetch ledger summary ------------------ */
   useEffect(() => {
-    if (!selectedAccount) {
-      setLedgerSummary(null);
-      return;
-    }
+    fetchTransactions();
+  }, [fetchTransactions]);
 
-    let mounted = true;
-    const fetchSummary = async () => {
-      try {
-        const params: any = {};
-        if (dateRange?.from) params.from = dateRange.from.toISOString();
-        if (dateRange?.to) params.to = dateRange.to.toISOString();
-
-        const res = await api.get(
-          `/ledger/${encodeURIComponent(selectedAccount.id)}/summary`,
-          { params },
-        );
-        const data = res?.data?.data ?? null;
-        if (!mounted) return;
-
-        if (data) {
-          // Data shape from backend:
-          // { account, openingBalance, totalDebit, totalCredit, closingBalance, transactionCount, avgTransaction }
-          const accountObj = data.account
-            ? {
-                id: String(data.account._id ?? data.account.id),
-                code: data.account.code ?? "",
-                name: data.account.name ?? "",
-                type: data.account.type,
-                category: data.account.category ?? "",
-                balance:
-                  typeof data.account.balance === "number"
-                    ? data.account.balance
-                    : Number(data.account.openingBalance ?? 0),
-                currency: data.account.currency ?? selectedAccount.currency,
-                description: data.account.description ?? "",
-              }
-            : selectedAccount;
-
-          setLedgerSummary({
-            account: accountObj,
-            openingBalance: Number(data.openingBalance || 0),
-            totalDebit: Number(data.totalDebit || 0),
-            totalCredit: Number(data.totalCredit || 0),
-            closingBalance: Number(data.closingBalance || 0),
-            transactionCount: Number(data.transactionCount || 0),
-            avgTransaction: Number(data.avgTransaction || 0),
-          });
-        } else {
-          setLedgerSummary(null);
-        }
-      } catch (err) {
-        console.error("Failed to load ledger summary:", err);
-        // don't annoy user every time; show console
+  // Fetch summary
+  const fetchSummary = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setSummaryLoading(true);
+    try {
+      const params: any = {};
+      if (dateRange?.from) params.from = dateRange.from.toISOString();
+      if (dateRange?.to) params.to = dateRange.to.toISOString();
+      const res = await api.get(
+        `/ledger/${selectedAccountId}/summary`,
+        { params }
+      );
+      const data = res?.data?.data;
+      if (data) {
+        setSummary({
+          openingBalance: data.openingBalance || 0,
+          totalDebit: data.totalDebit || 0,
+          totalCredit: data.totalCredit || 0,
+          closingBalance: data.closingBalance || 0,
+          transactionCount: data.transactionCount || 0,
+          avgTransaction: data.avgTransaction || 0,
+        });
       }
-    };
-
-    fetchSummary();
-
-    return () => {
-      mounted = false;
-    };
-  }, [selectedAccount, dateRange]);
-
-  /* ------------------ Sorting ------------------ */
-  const handleSort = (key: keyof LedgerTransaction) => {
-    setSortConfig((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
-    }));
-  };
-
-  /* ------------------ Row rendering & helpers ------------------ */
-
-  // Get contact icon
-  const getContactIcon = (transaction: LedgerTransaction) => {
-    if (!transaction.contactType) return null;
-
-    const icons: any = {
-      Customer: User,
-      Vendor: Building,
-      Employee: User,
-      Bank: Building,
-    };
-    const Icon = icons[transaction.contactType] ?? User;
-    return <Icon className="h-3.5 w-3.5" />;
-  };
-
-  // Sort icon component
-  const SortIcon = ({ columnKey }: { columnKey: keyof LedgerTransaction }) => {
-    if (sortConfig.key !== columnKey) {
-      return <ChevronDown className="h-3 w-3 opacity-30" />;
+    } catch (err) {
+      toast.error("Failed to load summary");
+    } finally {
+      setSummaryLoading(false);
     }
-    return sortConfig.direction === "asc" ? (
-      <ChevronUp className="h-3 w-3" />
-    ) : (
-      <ChevronDown className="h-3 w-3" />
-    );
-  };
+  }, [selectedAccountId, dateRange]);
 
-  // Open transaction detail
-  const openDetailDialog = (transaction: LedgerTransaction) => {
-    setSelectedTransaction(transaction);
-    setIsDetailDialogOpen(true);
-  };
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
-  // Render transaction row
-  const renderTransactionRow = (transaction: LedgerTransaction) => {
-    const typeConfig = getTransactionTypeConfig(transaction.type);
-    const TypeIcon = typeConfig.icon;
-
-    const txDate =
-      transaction.date instanceof Date
-        ? transaction.date
-        : new Date(transaction.date);
-
-    return (
-      <tr
-        key={transaction.id}
-        className={`hover:bg-accent/50 transition-colors duration-150 ${typeConfig.color}`}
-      >
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-md bg-white dark:bg-gray-800 border">
-              <TypeIcon className="h-3.5 w-3.5" />
-            </div>
-            <div>
-              <div className="font-medium text-sm">{transaction.reference}</div>
-              <div className="text-xs text-muted-foreground">
-                {transaction.journalEntry?.entryNumber}
-              </div>
-            </div>
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="text-sm font-medium">
-            {format(txDate, "MMM dd, yyyy")}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {format(txDate, "EEE")}
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="max-w-xs">
-            <div className="text-sm font-medium">{transaction.description}</div>
-            {transaction.contactName && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                {getContactIcon(transaction)}
-                <span>{transaction.contactName}</span>
-              </div>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="max-w-xs">
-            <div className="text-sm font-medium">{transaction?.source}</div>
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="max-w-xs">
-            <div className="text-sm font-medium">{transaction?.mode}</div>
-          </div>
-        </td>
-        <td className="px-4 py-3 text-right">
-          {transaction.debit > 0 && (
-            <div className="flex items-center justify-end gap-1">
-              <ArrowUpRight className="h-3.5 w-3.5 text-green-600" />
-              <div className="text-green-600 dark:text-green-400 font-mono font-medium">
-                {formatCurrency(transaction.debit)}
-              </div>
-            </div>
-          )}
-        </td>
-        <td className="px-4 py-3 text-right">
-          {transaction.credit > 0 && (
-            <div className="flex items-center justify-end gap-1">
-              <ArrowDownRight className="h-3.5 w-3.5 text-red-600" />
-              <div className="text-red-600 dark:text-red-400 font-mono font-medium">
-                {formatCurrency(transaction.credit)}
-              </div>
-            </div>
-          )}
-        </td>
-        <td className="px-4 py-3 text-right">
-          <div className="font-mono font-medium">
-            {formatCurrency(transaction.balance)}
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            {getStatusIcon(transaction.journalEntry.status)}
-            <Badge
-              variant={
-                transaction.journalEntry.status === "Posted"
-                  ? "default"
-                  : transaction.journalEntry.status === "Draft"
-                    ? "secondary"
-                    : "destructive"
-              }
-              className="text-xs"
-            >
-              {transaction.journalEntry.status}
-            </Badge>
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => openDetailDialog(transaction)}
-              className="h-7 w-7 p-0"
-              title="View Details"
-            >
-              <Eye className="h-3.5 w-3.5" />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                  <MoreVertical className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => openDetailDialog(transaction)}>
-                  <Eye className="mr-2 h-4 w-4" />
-                  View Details
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <FileEdit className="mr-2 h-4 w-4" />
-                  Edit Entry
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Void Transaction
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </td>
-      </tr>
-    );
-  };
-
-  /* ------------------ Exports & helpers ------------------ */
-
-  function exportServerCsv() {
-    // You can implement server export later; for now reuse client-side rows
-    const rows = filteredTransactions;
-    const header = [
-      "Reference",
+  const exportCSV = () => {
+    if (transactions.length === 0) return toast.error("No data");
+    const headers = [
       "Date",
+      "Reference",
       "Description",
       "Debit",
       "Credit",
       "Balance",
+      "Status",
     ];
-    const lines = [header.join(",")];
-    for (const r of rows) {
-      const dateStr =
-        r.date instanceof Date ? r.date.toISOString() : String(r.date);
-      lines.push(
-        [
-          `"${r.reference}"`,
-          dateStr,
-          `"${(r.description || "").replace(/"/g, '""')}"`,
-          r.debit.toFixed(2),
-          r.credit.toFixed(2),
-          r.balance.toFixed(2),
-        ].join(","),
-      );
-    }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const rows = transactions.map((t) => [
+      format(new Date(t.date), "yyyy-MM-dd"),
+      t.reference,
+      t.description,
+      t.debit.toFixed(2),
+      t.credit.toFixed(2),
+      t.balance.toFixed(2),
+      t.journalEntry.status,
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `ledger-${selectedAccount?.code || "account"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  // Copy totals (using ledgerSummary if available)
-  async function copyTotals() {
-    if (!ledgerSummary) {
-      alert("No ledger summary to copy");
-      return;
-    }
-    const text = `Opening: ${formatCurrency(ledgerSummary.openingBalance)}
-Total Debit: ${formatCurrency(ledgerSummary.totalDebit)}
-Total Credit: ${formatCurrency(ledgerSummary.totalCredit)}
-Closing: ${formatCurrency(ledgerSummary.closingBalance)}`;
-    await navigator.clipboard.writeText(text);
-    alert("Totals copied to clipboard");
-  }
-
-  // Simple export handler wrapper
-  const handleExport = (format: "pdf" | "excel" | "csv") => {
-    if (format === "csv") exportServerCsv();
-    else alert(`Export ${format} not implemented in demo`);
-    setIsExportDialogOpen(false);
   };
 
-  /* ------------------ Render (UI kept as original) ------------------ */
+  const totalTxPages = Math.max(1, Math.ceil(txTotal / txLimit));
+
+  // Print content for modal transaction
+  const printContentForTx = useMemo(() => {
+    if (!selectedTx) return "";
+    // Build a simple mini voucher HTML
+    const linesHtml = `
+      <tr>
+        <td>${selectedTx.description}</td>
+        <td style="text-align:right;">${selectedTx.debit > 0 ? formatTaka(selectedTx.debit) : ""}</td>
+        <td style="text-align:right;">${selectedTx.credit > 0 ? formatTaka(selectedTx.credit) : ""}</td>
+      </tr>
+    `;
+    return `
+      <div style="font-family:Arial; font-size:12px; border:2px solid #000; padding:16px;">
+        <div style="font-size:18px; font-weight:bold; margin-bottom:12px;">Transaction Voucher</div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <div><strong>Reference:</strong> ${selectedTx.reference}</div>
+          <div><strong>Date:</strong> ${format(new Date(selectedTx.date), "PPP")}</div>
+        </div>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:8px;">
+          <thead>
+            <tr style="background:#f0f0f0;">
+              <th style="text-align:left; padding:4px;">Description</th>
+              <th style="text-align:right; padding:4px;">Debit</th>
+              <th style="text-align:right; padding:4px;">Credit</th>
+            </tr>
+          </thead>
+          <tbody>${linesHtml}</tbody>
+          <tfoot>
+            <tr style="font-weight:bold;">
+              <td style="text-align:right; padding:4px;">Total</td>
+              <td style="text-align:right; padding:4px;">${formatTaka(selectedTx.debit)}</td>
+              <td style="text-align:right; padding:4px;">${formatTaka(selectedTx.credit)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <div><strong>Journal:</strong> ${selectedTx.journalEntry.entryNumber}</div>
+        <div><strong>Status:</strong> ${selectedTx.journalEntry.status}</div>
+      </div>
+    `;
+  }, [selectedTx]);
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-full mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              General Ledger
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Track all accounting transactions with running balances and
-              detailed reporting
-            </p>
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "border-r bg-white flex flex-col shrink-0 transition-all duration-300",
+          sidebarOpen ? "w-80" : "w-0 overflow-hidden"
+        )}
+      >
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Layers className="h-5 w-5 text-gray-600" />
+            Accounts
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="p-3 space-y-2 border-b">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search code or name..."
+              value={accountSearch}
+              onChange={(e) => setAccountSearch(e.target.value)}
+              className="pl-9 h-9 text-sm"
+            />
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => setIsExportDialogOpen(true)}
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => window.print()}
-            >
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New Transaction
+          <Select
+            value={accountTypeFilter}
+            onValueChange={setAccountTypeFilter}
+          >
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue placeholder="All types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="Asset">Asset</SelectItem>
+              <SelectItem value="Liability">Liability</SelectItem>
+              <SelectItem value="Equity">Equity</SelectItem>
+              <SelectItem value="Revenue">Revenue</SelectItem>
+              <SelectItem value="Expense">Expense</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpandAll((prev) => !prev)}
+            className="text-xs"
+          >
+            {expandAll ? "Collapse All" : "Expand All"}
+          </Button>
+        </div>
+        <div className="flex-1 overflow-auto p-2">
+          {treeLoading ? (
+            <div className="text-center py-10 text-gray-400">Loading...</div>
+          ) : filteredTree.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">No accounts</div>
+          ) : (
+            filteredTree.map((node) => (
+              <AccountTreeItem
+                key={node._id}
+                node={node}
+                depth={0}
+                selectedId={selectedAccountId}
+                onSelect={setSelectedAccountId}
+                searchTerm={accountSearch}
+              />
+            ))
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <PanelLeftOpen className="h-5 w-5" />
+              </Button>
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <Wallet className="h-6 w-6 text-gray-700" />
+                {selectedAccount?.name || "Select an Account"}
+              </h1>
+              {selectedAccount && (
+                <p className="text-sm text-gray-500 mt-1">
+                  {selectedAccount.code} · {selectedAccount.type}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={exportCSV}>
+              <Download className="h-4 w-4 mr-1" /> Export CSV
             </Button>
           </div>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Account Selector */}
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle>Select Account</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Select
-                value={selectedAccount?.id ?? ""}
-                onValueChange={(value) => {
-                  const account = accounts.find((a) => a.id === value);
-                  if (account) setSelectedAccount(account);
+        {/* Date Range & Summary */}
+        <Card className="shadow-sm border-gray-200 mb-5">
+          <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(!dateRange && "text-muted-foreground")}
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "MMM dd, yyyy")} -{" "}
+                          {format(dateRange.to, "MMM dd, yyyy")}
+                        </>
+                      ) : (
+                        format(dateRange.from, "MMM dd, yyyy")
+                      )
+                    ) : (
+                      "Pick a range"
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDateRange({ from: undefined, to: undefined })}
+              >
+                Clear
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const now = new Date();
+                  setDateRange({
+                    from: new Date(now.getFullYear(), now.getMonth(), 1),
+                    to: now,
+                  });
                 }}
               >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      accountsLoading ? "Loading..." : "Select an account"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex-1">
-                          <div className="font-medium">
-                            {account.code} - {account.name}
-                          </div>
-                          <div
-                            className={`text-xs ${getAccountTypeColor(
-                              account.type,
-                            )}`}
-                          >
-                            {account.type}
-                          </div>
-                        </div>
-                        <div className="font-mono text-sm">
-                          {formatCurrency(account.balance)}
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                This Month
+              </Button>
+            </div>
+            <div className="text-sm text-gray-500">
+              {txTotal} transaction{txTotal !== 1 && "s"}
+            </div>
+          </CardContent>
+        </Card>
 
-              {/* Selected Account Info */}
-              <div className="space-y-3 pt-4 border-t">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Account Code
-                  </span>
-                  <span className="font-semibold">
-                    {selectedAccount?.code ?? "-"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Account Type
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className={
-                      selectedAccount
-                        ? getAccountTypeColor(selectedAccount.type)
-                        : ""
-                    }
-                  >
-                    {selectedAccount?.type ?? "-"}
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Category
-                  </span>
-                  <span className="text-sm">
-                    {selectedAccount?.category ?? "-"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Current Balance
-                  </span>
-                  <span className="font-mono font-semibold">
-                    {selectedAccount
-                      ? formatCurrency(selectedAccount.balance)
-                      : "-"}
-                  </span>
-                </div>
-                {selectedAccount?.description && (
-                  <div className="pt-2 text-sm text-muted-foreground border-t">
-                    {selectedAccount.description}
-                  </div>
-                )}
+        {/* Summary Cards */}
+        {selectedAccount && summary && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+            <div className="bg-white rounded-lg shadow-sm p-4 text-center border">
+              <div className="text-xs text-gray-500">Opening</div>
+              <div className="text-lg font-semibold mt-1">
+                {formatTaka(summary.openingBalance)}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-4 text-center border border-green-100">
+              <div className="text-xs text-green-700">Total Debit</div>
+              <div className="text-lg font-semibold text-green-700 mt-1">
+                {formatTaka(summary.totalDebit)}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-4 text-center border border-red-100">
+              <div className="text-xs text-red-700">Total Credit</div>
+              <div className="text-lg font-semibold text-red-700 mt-1">
+                {formatTaka(summary.totalCredit)}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-4 text-center border">
+              <div className="text-xs text-gray-500">Closing</div>
+              <div className="text-lg font-semibold mt-1">
+                {formatTaka(summary.closingBalance)}
+              </div>
+            </div>
+          </div>
+        )}
 
-          {/* Right Column - Date Range and Summary */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Date Range & Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Date Range Picker */}
-              <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <div className="flex-1">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !dateRange && "text-muted-foreground",
-                        )}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {dateRange?.from ? (
-                          dateRange.to ? (
-                            <>
-                              {format(dateRange.from, "MMM dd, yyyy")} -{" "}
-                              {format(dateRange.to, "MMM dd, yyyy")}
-                            </>
-                          ) : (
-                            format(dateRange.from, "MMM dd, yyyy")
-                          )
+        {/* Transaction Filters */}
+        <Card className="shadow-sm border-gray-200 mb-5">
+          <CardContent className="p-3 flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search transactions..."
+                value={txSearch}
+                onChange={(e) => {
+                  setTxSearch(e.target.value);
+                  setTxPage(1);
+                }}
+                className="pl-9 h-9"
+              />
+            </div>
+            <Select
+              value={txTypeFilter}
+              onValueChange={(v) => {
+                setTxTypeFilter(v);
+                setTxPage(1);
+              }}
+            >
+              <SelectTrigger className="w-40 h-9">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="BankReceive">Bank Receive</SelectItem>
+                <SelectItem value="CashReceive">Cash Receive</SelectItem>
+                <SelectItem value="BankPayment">Bank Payment</SelectItem>
+                <SelectItem value="CashPayment">Cash Payment</SelectItem>
+                <SelectItem value="Journal">Journal</SelectItem>
+                <SelectItem value="Contra">Contra</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={txStatusFilter}
+              onValueChange={(v) => {
+                setTxStatusFilter(v);
+                setTxPage(1);
+              }}
+            >
+              <SelectTrigger className="w-40 h-9">
+                <SelectValue placeholder="All status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                <SelectItem value="Approved">Approved</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setTxSearch("");
+                setTxTypeFilter("all");
+                setTxStatusFilter("all");
+                setTxPage(1);
+              }}
+            >
+              <Filter className="h-4 w-4 mr-1" /> Clear
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Transactions Table */}
+        <Card className="shadow-sm border-gray-200 overflow-hidden">
+          <div className="overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50 hover:bg-gray-50">
+                  <TableHead className="w-[100px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="p-0 font-medium"
+                      onClick={() => {
+                        setTxSortBy("date");
+                        setTxSortDir((d) =>
+                          d === "asc" ? "desc" : "asc"
+                        );
+                      }}
+                    >
+                      Date
+                      {txSortBy === "date" &&
+                        (txSortDir === "asc" ? (
+                          <ArrowUp className="ml-1 h-3 w-3" />
                         ) : (
-                          <span>Select date range</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarComponent
-                        initialFocus
-                        mode="range"
-                        defaultMonth={dateRange?.from}
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+                          <ArrowDown className="ml-1 h-3 w-3" />
+                        ))}
+                    </Button>
+                  </TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Debit</TableHead>
+                  <TableHead className="text-right">Credit</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {txLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-10 text-center text-gray-500">
+                      Loading...
+                    </TableCell>
+                  </TableRow>
+                ) : transactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-10 text-center text-gray-500">
+                      No transactions found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  transactions.map((tx) => (
+                    <TableRow
+                      key={tx.id}
+                      className="hover:bg-gray-50/50 transition-colors"
+                    >
+                      <TableCell className="text-sm font-medium">
+                        {format(new Date(tx.date), "dd MMM yy")}
+                      </TableCell>
+                      <TableCell className="text-sm font-mono">
+                        {tx.reference}
+                      </TableCell>
+                      <TableCell className="text-sm max-w-[250px] truncate">
+                        {tx.description}
+                      </TableCell>
+                      <TableCell className="text-right text-sm text-green-700">
+                        {tx.debit > 0 ? formatTaka(tx.debit) : ""}
+                      </TableCell>
+                      <TableCell className="text-right text-sm text-red-700">
+                        {tx.credit > 0 ? formatTaka(tx.credit) : ""}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        {formatTaka(tx.balance)}
+                      </TableCell>
+                      <TableCell>{statusBadge(tx.journalEntry.status)}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedTx(tx);
+                            setDetailOpen(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          {txTotal > 0 && (
+            <div className="flex items-center justify-between p-4 border-t bg-gray-50/50">
+              <div className="text-sm text-gray-600">
+                Page {txPage} of {totalTxPages} ({txTotal} records)
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
-                  onClick={() =>
-                    setDateRange({ from: undefined, to: undefined })
-                  }
+                  size="sm"
+                  onClick={() => setTxPage(1)}
+                  disabled={txPage === 1}
                 >
-                  Clear Dates
+                  First
                 </Button>
                 <Button
-                  onClick={() => {
-                    const today = new Date();
-                    const firstDay = new Date(
-                      today.getFullYear(),
-                      today.getMonth(),
-                      1,
-                    );
-                    setDateRange({ from: firstDay, to: today });
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTxPage((p) => Math.max(1, p - 1))}
+                  disabled={txPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium px-2">{txPage}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setTxPage((p) => Math.min(totalTxPages, p + 1))
+                  }
+                  disabled={txPage === totalTxPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTxPage(totalTxPages)}
+                  disabled={txPage === totalTxPages}
+                >
+                  Last
+                </Button>
+                <Select
+                  value={String(txLimit)}
+                  onValueChange={(v) => {
+                    setTxLimit(Number(v));
+                    setTxPage(1);
                   }}
                 >
-                  This Month
-                </Button>
+                  <SelectTrigger className="w-20 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Ledger Summary Cards */}
-              {ledgerSummary && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <TrendingUp className="h-4 w-4" />
-                        Opening Balance
-                      </div>
-                      <div className="text-2xl font-bold mt-2">
-                        {formatCurrency(ledgerSummary.openingBalance)}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <ArrowUpRight className="h-4 w-4 text-green-600" />
-                        Total Debit
-                      </div>
-                      <div className="text-2xl font-bold text-green-600 dark:text-green-400 mt-2">
-                        {formatCurrency(ledgerSummary.totalDebit)}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <ArrowDownRight className="h-4 w-4 text-red-600" />
-                        Total Credit
-                      </div>
-                      <div className="text-2xl font-bold text-red-600 dark:text-red-400 mt-2">
-                        {formatCurrency(ledgerSummary.totalCredit)}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <TrendingDown className="h-4 w-4" />
-                        Closing Balance
-                      </div>
-                      <div className="text-2xl font-bold mt-2">
-                        {formatCurrency(ledgerSummary.closingBalance)}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters Card */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                <Input
-                  placeholder="Search transactions by description, reference, or contact..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Transaction Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="Invoice">Invoice</SelectItem>
-                  <SelectItem value="Payment">Payment</SelectItem>
-                  <SelectItem value="Receipt">Receipt</SelectItem>
-                  <SelectItem value="Expense">Expense</SelectItem>
-                  <SelectItem value="Journal">Journal</SelectItem>
-                  <SelectItem value="Adjustment">Adjustment</SelectItem>
-                  <SelectItem value="Purchase">Purchase</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Entry Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="Posted">Posted</SelectItem>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Void">Void</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchTerm("");
-                  setFilterType("all");
-                  setFilterStatus("all");
-                  setDateRange({ from: undefined, to: undefined });
-                }}
-                className="gap-2"
-              >
-                <Filter className="h-4 w-4" />
-                Clear Filters
-              </Button>
             </div>
-          </CardContent>
+          )}
         </Card>
 
-        {/* Transactions Table Card */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Ledger Transactions</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                {filteredTransactions.length} transactions found •
-                {dateRange?.from &&
-                  ` From ${format(dateRange.from, "MMM dd, yyyy")}`}
-                {dateRange?.to && ` to ${format(dateRange.to, "MMM dd, yyyy")}`}
-                {ledgerSummary &&
-                  ` • Net Change: ${formatCurrency(
-                    ledgerSummary.totalDebit - ledgerSummary.totalCredit,
-                  )}`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSort("date")}
-                className="gap-1"
-              >
-                Sort by Date
-                <SortIcon columnKey="date" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted/50">
-                  <tr className="border-b border-border">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      <Button
-                        variant="ghost"
-                        className="hover:bg-transparent p-0 h-auto font-semibold"
-                        onClick={() => handleSort("reference")}
-                      >
-                        Reference
-                        <SortIcon columnKey="reference" />
-                      </Button>
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      <Button
-                        variant="ghost"
-                        className="hover:bg-transparent p-0 h-auto font-semibold"
-                        onClick={() => handleSort("date")}
-                      >
-                        Date
-                        <SortIcon columnKey="date" />
-                      </Button>
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Source
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Mode
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Debit
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Credit
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      <Button
-                        variant="ghost"
-                        className="hover:bg-transparent p-0 h-auto font-semibold"
-                        onClick={() => handleSort("balance")}
-                      >
-                        Balance
-                        <SortIcon columnKey="balance" />
-                      </Button>
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTransactions.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-4 py-12 text-center text-muted-foreground"
-                      >
-                        <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                        <p className="text-base">No transactions found</p>
-                        <p className="text-sm mt-2">
-                          Try selecting a different account or adjusting your
-                          filters
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTransactions.map((transaction) =>
-                      renderTransactionRow(transaction),
-                    )
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Transaction Detail Dialog */}
-        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        {/* Detail Modal (enhanced) */}
+        <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Transaction Details</DialogTitle>
+              <DialogTitle className="flex items-center justify-between">
+                <span>Transaction Detail</span>
+                {selectedTx && (
+                  <GlobalPrintButton
+                    contentHtml={printContentForTx}
+                    label="Print"
+                    title="Transaction Voucher"
+                    company={{
+                      name: "Antab Agro LTD",
+                      address: "123 Agro Street, Dhaka",
+                      phone: "+880 1711-111111",
+                      email: "info@antabagro.com",
+                    }}
+                    showHeader={false}
+                    showFooter={false}
+                    watermarkSize="200px"
+                    watermarkRotate="-30"
+                  />
+                )}
+              </DialogTitle>
               <DialogDescription>
-                Complete transaction information and journal entry details
+                {selectedTx?.reference} — {selectedTx?.journalEntry?.entryNumber}
               </DialogDescription>
             </DialogHeader>
-            {selectedTransaction && (
-              <div className="space-y-6">
-                {/* Header Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm text-muted-foreground">
-                        Transaction Reference
-                      </Label>
-                      <div className="text-xl font-bold flex items-center gap-2">
-                        {selectedTransaction.reference}
-                        <Badge
-                          className={
-                            getTransactionTypeConfig(selectedTransaction.type)
-                              .badge
-                          }
-                        >
-                          {selectedTransaction.type}
-                        </Badge>
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm text-muted-foreground">
-                        Description
-                      </Label>
-                      <div className="text-base font-medium">
-                        {selectedTransaction.description}
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm text-muted-foreground">
-                        Account
-                      </Label>
-                      <div className="text-base">
-                        {selectedTransaction.accountCode} -{" "}
-                        {selectedTransaction.accountName}
-                      </div>
+            {selectedTx && (
+              <div className="space-y-4">
+                {/* Key figures */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="text-xs text-gray-500">Debit</div>
+                    <div className="text-lg font-semibold text-green-700">
+                      {formatTaka(selectedTx.debit)}
                     </div>
                   </div>
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-sm text-muted-foreground">
-                        Journal Entry
-                      </Label>
-                      <div className="text-xl font-bold">
-                        {selectedTransaction.journalEntry.entryNumber}
-                      </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="text-xs text-gray-500">Credit</div>
+                    <div className="text-lg font-semibold text-red-700">
+                      {formatTaka(selectedTx.credit)}
                     </div>
-                    <div>
-                      <Label className="text-sm text-muted-foreground">
-                        Date
-                      </Label>
-                      <div className="text-base font-medium">
-                        {format(
-                          selectedTransaction.date instanceof Date
-                            ? selectedTransaction.date
-                            : new Date(selectedTransaction.date),
-                          "PPPP",
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm text-muted-foreground">
-                        Amount
-                      </Label>
-                      <div
-                        className={`text-2xl font-bold ${
-                          selectedTransaction.debit > 0
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {selectedTransaction.debit > 0
-                          ? `+${formatCurrency(selectedTransaction.debit)}`
-                          : `-${formatCurrency(selectedTransaction.credit)}`}
-                      </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="text-xs text-gray-500">Balance</div>
+                    <div className="text-lg font-semibold">
+                      {formatTaka(selectedTx.balance)}
                     </div>
                   </div>
                 </div>
 
                 <Separator />
 
-                {/* Contact Information */}
-                {selectedTransaction.contactName && (
-                  <div className="space-y-3">
-                    <h4 className="font-semibold">Contact Information</h4>
-                    <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                      <div className="p-2 rounded-md bg-background">
-                        {getContactIcon(selectedTransaction)}
-                      </div>
-                      <div>
-                        <div className="font-medium">
-                          {selectedTransaction.contactName}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {selectedTransaction.contactType}
-                        </div>
-                      </div>
-                    </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Date:</span>{" "}
+                    {format(new Date(selectedTx.date), "PPP")}
                   </div>
+                  <div>
+                    <span className="text-gray-500">Type:</span> {selectedTx.type}
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Description:</span>{" "}
+                    {selectedTx.description}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Journal Entry:</span>{" "}
+                    {selectedTx.journalEntry.entryNumber}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Status:</span>{" "}
+                    {statusBadge(selectedTx.journalEntry.status)}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Created by:</span>{" "}
+                    {selectedTx.journalEntry.createdBy}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Created at:</span>{" "}
+                    {format(new Date(selectedTx.journalEntry.createdAt), "PPp")}
+                  </div>
+                </div>
+
+                {selectedTx.journalEntry.description && (
+                  <>
+                    <Separator />
+                    <div className="text-sm">
+                      <span className="text-gray-500">
+                        Journal Description:
+                      </span>{" "}
+                      {selectedTx.journalEntry.description}
+                    </div>
+                  </>
                 )}
-
-                {/* Journal Entry Details */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold">Journal Entry Details</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Entry Status:
-                        </span>
-                        <span className="font-medium">
-                          {selectedTransaction.journalEntry.status}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Created By:
-                        </span>
-                        <span>
-                          {selectedTransaction.journalEntry.createdBy}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Created At:
-                        </span>
-                        <span>
-                          {format(
-                            selectedTransaction.journalEntry
-                              .createdAt instanceof Date
-                              ? selectedTransaction.journalEntry.createdAt
-                              : new Date(
-                                  selectedTransaction.journalEntry.createdAt,
-                                ),
-                            "PPpp",
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Entry Description:
-                        </span>
-                        <span className="text-right">
-                          {selectedTransaction.journalEntry.description}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Related Transactions (would show other sides of the journal entry) */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold">Related Transactions</h4>
-                  <div className="text-sm text-muted-foreground italic">
-                    This transaction is part of journal entry{" "}
-                    {selectedTransaction.journalEntry.entryNumber}. Other
-                    transactions in this entry would be listed here.
-                  </div>
-                </div>
               </div>
             )}
-            <DialogFooter className="gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsDetailDialogOpen(false)}
-              >
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDetailOpen(false)}>
                 Close
               </Button>
-              <Button>View Full Journal Entry</Button>
-              <Button variant="outline">
-                <FileEdit className="mr-2 h-4 w-4" />
-                Edit
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* Export Dialog */}
-        <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Export Ledger Report</DialogTitle>
-              <DialogDescription>
-                Export ledger transactions for {selectedAccount?.name} (
-                {selectedAccount?.code})
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <Label>Export Format</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    variant="outline"
-                    className="h-20 flex-col"
-                    onClick={() => handleExport("pdf")}
-                  >
-                    <FileText className="h-8 w-8 mb-2" />
-                    <span>PDF</span>
-                    <span className="text-xs text-muted-foreground mt-1">
-                      For printing
-                    </span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-20 flex-col"
-                    onClick={() => handleExport("excel")}
-                  >
-                    <Download className="h-8 w-8 mb-2" />
-                    <span>Excel</span>
-                    <span className="text-xs text-muted-foreground mt-1">
-                      For analysis
-                    </span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-20 flex-col"
-                    onClick={() => handleExport("csv")}
-                  >
-                    <FileText className="h-8 w-8 mb-2" />
-                    <span>CSV</span>
-                    <span className="text-xs text-muted-foreground mt-1">
-                      For import
-                    </span>
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Date Range</Label>
-                <div className="text-sm">
-                  {dateRange?.from ? (
-                    <span>
-                      {format(dateRange.from, "MMM dd, yyyy")}
-                      {dateRange.to &&
-                        ` to ${format(dateRange.to, "MMM dd, yyyy")}`}
-                    </span>
-                  ) : (
-                    "All dates"
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Include</Label>
-                <div className="space-y-2">
-                  {[
-                    { id: "summary", label: "Summary Section", checked: true },
-                    {
-                      id: "transactions",
-                      label: "All Transactions",
-                      checked: true,
-                    },
-                    {
-                      id: "running-balance",
-                      label: "Running Balance",
-                      checked: true,
-                    },
-                    {
-                      id: "contact-info",
-                      label: "Contact Information",
-                      checked: true,
-                    },
-                    {
-                      id: "entry-details",
-                      label: "Journal Entry Details",
-                      checked: false,
-                    },
-                  ].map((item) => (
-                    <div key={item.id} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={item.id}
-                        defaultChecked={item.checked}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={item.id} className="text-sm">
-                        {item.label}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsExportDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button onClick={() => handleExport("pdf")} className="gap-2">
-                <Download className="h-4 w-4" />
-                Export Now
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      </main>
     </div>
   );
 }

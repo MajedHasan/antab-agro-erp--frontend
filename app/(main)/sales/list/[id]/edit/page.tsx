@@ -364,7 +364,7 @@ export default function SalesOrderEditActionPage() {
       warehouseId: "",
       orderDate: today,
       paymentMethod: "CASH",
-      taxPercent: 5,
+      taxPercent: 0,
       notes: "",
       items: [makeLine()],
     },
@@ -581,7 +581,7 @@ export default function SalesOrderEditActionPage() {
             ? Math.round(
                 (Number(data.totalTax || 0) / Number(data.subTotal || 1)) * 100,
               )
-            : 5,
+            : 0,
         notes: data.notes || "",
         items: nextItems.length ? nextItems : [makeLine()],
       });

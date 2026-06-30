@@ -1,774 +1,744 @@
-// app/accounting/trial-balance/page.tsx
+// app/reports/trial-balance/page.tsx
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
-import { Card } from "@/components/ui/card";
+import React, { useState, useEffect, useMemo } from "react";
+import { format } from "date-fns";
+import api from "@/lib/api";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogTrigger,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { DateRange } from "react-day-picker";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Calendar,
   Download,
-  Printer,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
   Search,
-  Clipboard,
+  ChevronDown,
   ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Layers,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-type AccountType = "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 
-type TBRow = {
-  id: string;
+/* ---------- Types ---------- */
+type AccountNode = {
+  _id: string;
   code: string;
   name: string;
-  type: AccountType;
-  opening: number; // signed: positive = DR, negative = CR
-  debit: number; // period debit (always >=0)
-  credit: number; // period credit (always >=0)
-  // Optionally: currency, costCenter, branch...
+  type: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
+  openingBalance?: number;
+  periodDebit?: number;
+  periodCredit?: number;
+  closingBalance?: number;
+  children?: AccountNode[];
 };
 
-const TYPES: AccountType[] = [
-  "Asset",
-  "Liability",
-  "Equity",
-  "Revenue",
-  "Expense",
-];
+type FlatAccount = AccountNode & { depth: number };
 
-// Format money (keeps USD as earlier)
-const fmt = (v: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
+/* ---------- Helpers ---------- */
+const formatTaka = (n = 0) =>
+  new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(v);
+  }).format(n);
 
-// Return DR/CR columns: positive -> DR, negative -> CR
-const openingDR = (v: number) => (v > 0 ? v : 0);
-const openingCR = (v: number) => (v < 0 ? -v : 0);
-const closingValue = (r: TBRow) => r.opening + r.debit - r.credit;
-const closingDR = (v: number) => (v > 0 ? v : 0);
-const closingCR = (v: number) => (v < 0 ? -v : 0);
+function accountTypeColor(type: string) {
+  const map: Record<string, string> = {
+    Asset: "text-blue-700",
+    Liability: "text-red-700",
+    Equity: "text-purple-700",
+    Revenue: "text-green-700",
+    Expense: "text-amber-700",
+  };
+  return map[type] || "text-gray-700";
+}
 
-// Small inline sparkline (visual only)
-function SparkMini({ r }: { r: TBRow }) {
-  const c = closingValue(r);
-  const values = [Math.abs(r.opening), r.debit, r.credit, Math.abs(c)];
-  const max = Math.max(...values, 1);
+/* ---------- flatten tree ---------- */
+function flattenTree(nodes: AccountNode[], depth = 0): FlatAccount[] {
+  const result: FlatAccount[] = [];
+  for (const node of nodes) {
+    result.push({ ...node, depth });
+    if (node.children && node.children.length > 0) {
+      result.push(...flattenTree(node.children, depth + 1));
+    }
+  }
+  return result;
+}
+
+/* ---------- group by type ---------- */
+function groupByType(accounts: FlatAccount[]) {
+  const groups: Record<string, FlatAccount[]> = {
+    Asset: [],
+    Liability: [],
+    Equity: [],
+    Revenue: [],
+    Expense: [],
+  };
+  accounts.forEach((acc) => {
+    if (groups[acc.type]) groups[acc.type].push(acc);
+  });
+  return groups;
+}
+
+/* ---------- Main Component ---------- */
+export default function TrialBalancePage() {
+  const [tree, setTree] = useState<AccountNode[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const [expandedSections, setExpandedSections] = useState<
+    Record<string, boolean>
+  >({
+    Asset: true,
+    Liability: true,
+    Equity: true,
+    Revenue: true,
+    Expense: true,
+  });
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+    to: new Date(),
+  });
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const params: any = {};
+      if (dateRange?.from) params.from = dateRange.from.toISOString();
+      if (dateRange?.to) params.to = dateRange.to.toISOString();
+      const res = await api.get("/accounts/tree", { params });
+      setTree(res?.data?.data ?? []);
+    } catch (err) {
+      toast.error("Failed to load trial balance");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [dateRange]);
+
+  const flatAccounts = useMemo(() => flattenTree(tree), [tree]);
+
+  const filteredAccounts = useMemo(() => {
+    return flatAccounts.filter((acc) => {
+      const matchSearch =
+        !searchTerm ||
+        acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        acc.code.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchType = typeFilter === "all" || acc.type === typeFilter;
+      return matchSearch && matchType;
+    });
+  }, [flatAccounts, searchTerm, typeFilter]);
+
+  const groupedAccounts = useMemo(
+    () => groupByType(filteredAccounts),
+    [filteredAccounts]
+  );
+
+  // subtotals per type (leaf only to avoid double counting)
+  const typeTotals = useMemo(() => {
+    const totals: Record<
+      string,
+      { debit: number; credit: number; net: number; count: number }
+    > = {};
+    for (const type of Object.keys(groupedAccounts)) {
+      let debit = 0,
+        credit = 0,
+        count = 0;
+      const leaves = groupedAccounts[type].filter(
+        (a) => !a.children || a.children.length === 0
+      );
+      leaves.forEach((a) => {
+        const closing = a.closingBalance ?? 0;
+        if (closing > 0) debit += closing;
+        else credit += Math.abs(closing);
+        count++;
+      });
+      totals[type] = { debit, credit, net: debit - credit, count };
+    }
+    return totals;
+  }, [groupedAccounts]);
+
+  const overallTotals = useMemo(() => {
+    let totalDebit = 0,
+      totalCredit = 0;
+    Object.values(typeTotals).forEach((t) => {
+      totalDebit += t.debit;
+      totalCredit += t.credit;
+    });
+    return { totalDebit, totalCredit, net: totalDebit - totalCredit };
+  }, [typeTotals]);
+
+  const isBalanced = Math.abs(overallTotals.net) < 0.005;
+
+  const toggleSection = (type: string) => {
+    setExpandedSections((prev) => ({ ...prev, [type]: !prev[type] }));
+  };
+
+  const exportCSV = () => {
+    if (flatAccounts.length === 0) return toast.error("No data");
+    const headers = ["Code", "Name", "Type", "Debit Balance", "Credit Balance"];
+    const rows = flatAccounts.map((a) => {
+      const closing = a.closingBalance ?? 0;
+      return [
+        a.code,
+        a.name,
+        a.type,
+        closing > 0 ? closing.toFixed(2) : "",
+        closing < 0 ? Math.abs(closing).toFixed(2) : "",
+      ];
+    });
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `trial-balance-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Print HTML (classic statement)
+  const printHtml = useMemo(() => {
+    const sections = Object.keys(groupedAccounts)
+      .map((type) => {
+        const accounts = groupedAccounts[type];
+        if (accounts.length === 0) return "";
+        const rows = accounts
+          .map((a) => {
+            const closing = a.closingBalance ?? 0;
+            return `
+            <tr>
+              <td style="padding:2px 8px; padding-left:${a.depth * 12 + 8}px;">${a.code} - ${a.name}</td>
+              <td style="padding:2px 8px; text-align:right;">${closing > 0 ? formatTaka(closing) : ""}</td>
+              <td style="padding:2px 8px; text-align:right;">${closing < 0 ? formatTaka(Math.abs(closing)) : ""}</td>
+            </tr>`;
+          })
+          .join("");
+        const t = typeTotals[type];
+        return `
+          <tr style="background:#f8fafc; font-weight:bold;">
+            <td colspan="1" style="padding:6px 8px; border-top:2px solid #cbd5e1;">${type} (${accounts.length})</td>
+            <td style="padding:6px 8px; text-align:right; border-top:2px solid #cbd5e1;">${formatTaka(t.debit)}</td>
+            <td style="padding:6px 8px; text-align:right; border-top:2px solid #cbd5e1;">${formatTaka(t.credit)}</td>
+          </tr>
+          ${rows}
+        `;
+      })
+      .join("");
+
+    return `
+    <div style="font-family: 'Segoe UI', sans-serif; font-size:12px; color:#1e293b; padding:20px; max-width:100%;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h2 style="margin:0; font-size:22px; font-weight:700;">Trial Balance</h2>
+        <div style="text-align:right; font-size:11px; color:#475569;">
+          ${dateRange?.from ? `From ${format(dateRange.from, "PPP")}` : "Beginning"} 
+          ${dateRange?.to ? ` to ${format(dateRange.to, "PPP")}` : ""}
+        </div>
+      </div>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f1f5f9; font-size:11px; text-transform:uppercase; color:#475569;">
+            <th style="text-align:left; padding:6px 8px; border-bottom:2px solid #cbd5e1;">Account</th>
+            <th style="text-align:right; padding:6px 8px; border-bottom:2px solid #cbd5e1;">Debit</th>
+            <th style="text-align:right; padding:6px 8px; border-bottom:2px solid #cbd5e1;">Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sections}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:bold; background:#f8fafc;">
+            <td style="padding:8px; text-align:right; border-top:2px solid #cbd5e1;">Totals</td>
+            <td style="padding:8px; text-align:right; border-top:2px solid #cbd5e1;">${formatTaka(overallTotals.totalDebit)}</td>
+            <td style="padding:8px; text-align:right; border-top:2px solid #cbd5e1;">${formatTaka(overallTotals.totalCredit)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="text-align:right; padding:4px 8px; color:${isBalanced ? "#16a34a" : "#dc2626"}; font-size:11px;">
+              ${isBalanced ? "✓ Balanced" : `✗ Difference: ${formatTaka(overallTotals.net)}`}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:16px; text-align:center; font-size:9px; color:#94a3b8;">
+        Computer‑generated statement — Antab Agro LTD
+      </div>
+    </div>`;
+  }, [groupedAccounts, typeTotals, dateRange, overallTotals, isBalanced]);
+
   return (
-    <div className="flex items-center gap-1 w-28">
-      {values.map((val, i) => {
-        const w = Math.max(2, Math.round((val / max) * 20));
-        const bg =
-          i === 0
-            ? "bg-emerald-300"
-            : i === 1
-              ? "bg-emerald-500"
-              : i === 2
-                ? "bg-rose-400"
-                : "bg-emerald-700";
-        return (
-          <div
-            key={i}
-            className={`${bg} h-2 rounded`}
-            style={{ width: `${w}px` }}
-          />
-        );
-      })}
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Sidebar – Chart of Accounts */}
+      <aside
+        className={cn(
+          "border-r bg-white flex flex-col shrink-0 transition-all duration-300",
+          sidebarOpen ? "w-72" : "w-0 overflow-hidden"
+        )}
+      >
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800 flex items-center gap-2 text-sm">
+            <Layers className="h-4 w-4" />
+            Chart of Accounts
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="p-3 space-y-2 border-b">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search code or name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 h-9 text-sm"
+            />
+          </div>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue placeholder="All types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="Asset">Asset</SelectItem>
+              <SelectItem value="Liability">Liability</SelectItem>
+              <SelectItem value="Equity">Equity</SelectItem>
+              <SelectItem value="Revenue">Revenue</SelectItem>
+              <SelectItem value="Expense">Expense</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex-1 overflow-auto p-2">
+          {loading ? (
+            <div className="text-center py-10 text-gray-400">Loading...</div>
+          ) : (
+            <AccountTreeList
+              nodes={tree}
+              depth={0}
+              searchTerm={searchTerm}
+              typeFilter={typeFilter}
+            />
+          )}
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 overflow-auto p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <PanelLeftOpen className="h-5 w-5" />
+              </Button>
+            )}
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900">
+                Trial Balance
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Snapshot of all account balances for the selected period.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCSV}
+              disabled={flatAccounts.length === 0}
+            >
+              <Download className="h-4 w-4 mr-1" /> Export CSV
+            </Button>
+            {flatAccounts.length > 0 && (
+              <GlobalPrintButton
+                contentHtml={printHtml}
+                label="Print"
+                title="Trial Balance"
+                company={{
+                  name: "Antab Agro LTD",
+                  address: "123 Agro Street, Dhaka",
+                  phone: "+880 1711-111111",
+                  email: "info@antabagro.com",
+                }}
+                showHeader={false}
+                showFooter={false}
+              />
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchData}
+              disabled={loading}
+            >
+              <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Date range */}
+        <Card className="shadow-sm border-gray-200 mb-6">
+          <CardContent className="p-4 flex flex-wrap items-center gap-3">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(!dateRange && "text-muted-foreground")}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {dateRange?.from ? (
+                    dateRange.to ? (
+                      <>
+                        {format(dateRange.from, "MMM dd, yyyy")} -{" "}
+                        {format(dateRange.to, "MMM dd, yyyy")}
+                      </>
+                    ) : (
+                      format(dateRange.from, "MMM dd, yyyy")
+                    )
+                  ) : (
+                    "Pick a range"
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarComponent
+                  initialFocus
+                  mode="range"
+                  defaultMonth={dateRange?.from}
+                  selected={dateRange}
+                  onSelect={setDateRange}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDateRange({ from: undefined, to: undefined })}
+            >
+              All
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const now = new Date();
+                setDateRange({
+                  from: new Date(now.getFullYear(), now.getMonth(), 1),
+                  to: now,
+                });
+              }}
+            >
+              This Month
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const now = new Date();
+                const lastMonth = new Date(
+                  now.getFullYear(),
+                  now.getMonth() - 1,
+                  1
+                );
+                const lastMonthEnd = new Date(
+                  now.getFullYear(),
+                  now.getMonth(),
+                  0
+                );
+                setDateRange({ from: lastMonth, to: lastMonthEnd });
+              }}
+            >
+              Last Month
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Overall balance summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <Card className="shadow-sm border-l-4 border-l-blue-500">
+            <CardContent className="p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                Total Debit
+              </p>
+              <p className="text-2xl font-bold text-blue-700 mt-1">
+                {formatTaka(overallTotals.totalDebit)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm border-l-4 border-l-red-500">
+            <CardContent className="p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                Total Credit
+              </p>
+              <p className="text-2xl font-bold text-red-700 mt-1">
+                {formatTaka(overallTotals.totalCredit)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              "shadow-sm border-l-4",
+              isBalanced ? "border-l-emerald-500" : "border-l-amber-500"
+            )}
+          >
+            <CardContent className="p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                {isBalanced ? "Status" : "Difference"}
+              </p>
+              {isBalanced ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <CheckCircle className="h-5 w-5 text-emerald-500" />
+                  <span className="text-lg font-semibold text-emerald-700">
+                    Balanced
+                  </span>
+                </div>
+              ) : (
+                <p className="text-2xl font-bold text-amber-700 mt-1">
+                  {formatTaka(overallTotals.net)}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Grouped account type cards */}
+        {loading ? (
+          <div className="text-center py-20 text-gray-400">
+            Loading trial balance...
+          </div>
+        ) : Object.keys(groupedAccounts).every(
+            (k) => groupedAccounts[k].length === 0
+          ) ? (
+          <div className="text-center py-20 text-gray-400">
+            No accounts found for the selected criteria.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {Object.keys(groupedAccounts).map((type) => {
+              const accounts = groupedAccounts[type];
+              if (accounts.length === 0) return null;
+              const totals = typeTotals[type];
+              const expanded = expandedSections[type];
+
+              return (
+                <Card
+                  key={type}
+                  className="shadow-sm border-gray-200 overflow-hidden"
+                >
+                  <div
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => toggleSection(type)}
+                  >
+                    <div className="flex items-center gap-3">
+                      {expanded ? (
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="h-5 w-5 text-gray-500" />
+                      )}
+                      <div>
+                        <h3 className="font-semibold text-gray-900 uppercase text-sm">
+                          {type}
+                        </h3>
+                        <p className="text-xs text-gray-500">
+                          {accounts.length} accounts
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-sm text-gray-500">
+                          Dr {formatTaka(totals.debit)} · Cr{" "}
+                          {formatTaka(totals.credit)}
+                        </div>
+                        <p
+                          className={cn(
+                            "text-sm font-semibold",
+                            totals.net >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          )}
+                        >
+                          Net {formatTaka(totals.net)}
+                        </p>
+                      </div>
+                      <Badge
+                        className={cn(
+                          "text-xs font-medium",
+                          totals.net >= 0
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-red-50 text-red-700 border-red-200"
+                        )}
+                      >
+                        {totals.net >= 0 ? "CR Balance" : "DR Balance"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div className="border-t">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gray-50 hover:bg-gray-50">
+                            <TableHead className="w-[60%]">Account</TableHead>
+                            <TableHead className="text-right">
+                              Debit
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Credit
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {accounts.map((acc) => {
+                            const closing = acc.closingBalance ?? 0;
+                            return (
+                              <TableRow
+                                key={acc._id}
+                                className="hover:bg-gray-50/50 transition-colors"
+                              >
+                                <TableCell
+                                  style={{
+                                    paddingLeft: `${acc.depth * 16 + 20}px`,
+                                  }}
+                                >
+                                  <span className="font-mono text-sm">
+                                    {acc.code}
+                                  </span>{" "}
+                                  —{" "}
+                                  <span className="text-sm">{acc.name}</span>
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-green-700">
+                                  {closing > 0
+                                    ? formatTaka(closing)
+                                    : ""}
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-red-700">
+                                  {closing < 0
+                                    ? formatTaka(Math.abs(closing))
+                                    : ""}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
 
-// Demo ledger entries for drill-down (keeps your existing demo modal)
-const LEDGERS: Record<
-  string,
-  { date: string; desc: string; debit: number; credit: number }[]
-> = {
-  a1: [
-    { date: "2026-01-01", desc: "Opening balance", debit: 10000, credit: 0 },
-    { date: "2026-01-10", desc: "Customer payment", debit: 5000, credit: 0 },
-    { date: "2026-01-20", desc: "Bank transfer", debit: 0, credit: 2000 },
-  ],
-  r1: [
-    { date: "2026-01-05", desc: "Invoice #1001", debit: 0, credit: 30000 },
-    { date: "2026-01-21", desc: "Invoice #1002", debit: 0, credit: 20000 },
-  ],
-};
-
-export default function Page() {
-  // --- Period selection to match backend API ---
-  // Default kept to match your previous demo header (Jan 2026)
-  const [periodType] = useState<"monthly" | "yearly">("monthly");
-  const [period] = useState<string>("2026-01");
-
-  // API base — allow override with NEXT_PUBLIC_API_URL; otherwise use localhost:5001
-  const API_BASE =
-    (typeof window !== "undefined" && process.env.NEXT_PUBLIC_API_URL) ||
-    "http://localhost:5001";
-
-  // --- Data state (fetched from backend) ---
-  const [data, setData] = useState<TBRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
-  const [showZero, setShowZero] = useState(false);
-  const [openModalId, setOpenModalId] = useState<string | null>(null);
-
-  // Fetch trial balance when page mounts (or when period changes)
-  useEffect(() => {
-    let mounted = true;
-    async function load() {
-      setLoading(true);
-      try {
-        const url = `${API_BASE}/api/reports/trial-balance?periodType=${encodeURIComponent(
-          periodType,
-        )}&period=${encodeURIComponent(period)}`;
-        const res = await fetch(url, { credentials: "include" });
-        if (!res.ok) {
-          const txt = await res.text();
-          // try parse json
-          try {
-            const j = JSON.parse(txt);
-            throw new Error(j?.error || j?.message || res.statusText);
-          } catch {
-            throw new Error(txt || res.statusText);
-          }
-        }
-        const j = await res.json();
-        if (!mounted) return;
-        if (j?.success && Array.isArray(j.data)) {
-          // backend returns TrialBalanceRow[] matching TBRow shape
-          setData(j.data as TBRow[]);
-        } else {
-          // fallback empty
-          setData([]);
-          alert("Unexpected response from trial balance API");
-        }
-      } catch (err: any) {
-        console.error("Failed to load trial balance:", err);
-        alert(`Failed to load trial balance: ${err?.message || err}`);
-        // optionally keep demo fallback? We leave data empty so UI shows none
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, [API_BASE, periodType, period]);
-
-  // Derived rows with closing
-  const rows = useMemo(
-    () => data.map((r) => ({ ...r, closing: closingValue(r) })),
-    [data],
-  );
-
-  // Filtered with search + zero filter
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (!showZero) {
-        if (
-          Math.abs(r.opening) < 0.0001 &&
-          Math.abs(r.debit) < 0.0001 &&
-          Math.abs(r.credit) < 0.0001 &&
-          Math.abs(r.closing) < 0.0001
-        ) {
-          return false;
-        }
-      }
-      if (!q) return true;
-      return (
-        r.name.toLowerCase().includes(q) ||
-        r.code.includes(q) ||
-        r.type.toLowerCase().includes(q)
-      );
-    });
-  }, [rows, query, showZero]);
-
-  // Group by account type for subtotals
-  const grouped = useMemo(() => {
-    const map = new Map<AccountType, typeof filtered>();
-    TYPES.forEach((t) => map.set(t, []));
-    filtered.forEach((r) => map.get(r.type)!.push(r));
-    return map;
-  }, [filtered]);
-
-  // Totals by column as DR/CR (show DR/CR separate)
-  const totals = useMemo(() => {
-    const openingDr = rows.reduce((s, r) => s + openingDR(r.opening), 0);
-    const openingCr = rows.reduce((s, r) => s + openingCR(r.opening), 0);
-    const periodDr = rows.reduce((s, r) => s + r.debit, 0);
-    const periodCr = rows.reduce((s, r) => s + r.credit, 0);
-    const closingVals = rows.map((r) => closingValue(r));
-    const closingDr = closingVals.reduce((s, v) => s + (v > 0 ? v : 0), 0);
-    const closingCr = closingVals.reduce((s, v) => s + (v < 0 ? -v : 0), 0);
-    return { openingDr, openingCr, periodDr, periodCr, closingDr, closingCr };
-  }, [rows]);
-
-  // Local helper: get a friendly period label
-  function periodLabel() {
-    if (periodType === "monthly") {
-      const [y, m] = period.split("-").map(Number);
-      if (!y || !m) return period;
-      const from = new Date(y, m - 1, 1);
-      const to = new Date(y, m, 0);
-      return `${from.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })} to ${to.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })}`;
-    }
-    // yearly
-    return `Year ${period}`;
-  }
-
-  // CSV export (flat)
-  function exportCsv(all = false) {
-    const source = all ? rows : filtered;
-    const header = [
-      "Code",
-      "Account",
-      "Type",
-      "Opening DR",
-      "Opening CR",
-      "Period DR",
-      "Period CR",
-      "Closing DR",
-      "Closing CR",
-    ];
-    const lines = [header.join(",")];
-    for (const r of source) {
-      const opDR = openingDR(r.opening);
-      const opCR = openingCR(r.opening);
-      const cl = closingValue(r);
-      lines.push(
-        [
-          r.code,
-          `"${r.name}"`,
-          r.type,
-          opDR.toFixed(2),
-          opCR.toFixed(2),
-          r.debit.toFixed(2),
-          r.credit.toFixed(2),
-          cl > 0 ? cl.toFixed(2) : "0.00",
-          cl < 0 ? (-cl).toFixed(2) : "0.00",
-        ].join(","),
-      );
-    }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `trial-balance-${periodType}-${period}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // Copy totals to clipboard
-  async function copyTotals() {
-    const text = `Totals (${periodLabel()})
-Opening DR: ${fmt(totals.openingDr)} | Opening CR: ${fmt(totals.openingCr)}
-Period DR: ${fmt(totals.periodDr)} | Period CR: ${fmt(totals.periodCr)}
-Closing DR: ${fmt(totals.closingDr)} | Closing CR: ${fmt(totals.closingCr)}
-`;
-    await navigator.clipboard.writeText(text);
-    alert("Totals copied to clipboard");
-  }
-
+/* ---------- Sidebar Tree List (recursive) ---------- */
+function AccountTreeList({
+  nodes,
+  depth,
+  searchTerm,
+  typeFilter,
+}: {
+  nodes: AccountNode[];
+  depth: number;
+  searchTerm: string;
+  typeFilter: string;
+}) {
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-600 via-emerald-500 to-rose-500">
-            Trial Balance
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Demo Corp — {periodLabel()}
-          </p>
-        </div>
+    <>
+      {nodes.map((node) => {
+        const hasChildren = node.children && node.children.length > 0;
+        const closing = node.closingBalance ?? 0;
+        const matchesSearch =
+          !searchTerm ||
+          node.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          node.code.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesType =
+          typeFilter === "all" || node.type === typeFilter;
+        if (!matchesSearch || !matchesType) return null;
 
-        <div className="flex gap-2 items-center">
-          <Button
-            variant="ghost"
-            onClick={() => copyTotals()}
-            title="Copy totals"
-          >
-            <Clipboard className="mr-2 h-4 w-4" />
-            Copy Totals
-          </Button>
-          <Button onClick={() => exportCsv(false)} title="Export shown rows">
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer className="mr-2 h-4 w-4" />
-            Print
-          </Button>
-        </div>
-      </header>
-
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-4 flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase text-slate-400">
-              Opening (DR / CR)
-            </div>
-            <div className="mt-2 text-lg font-semibold flex items-baseline gap-3">
-              <span className="text-emerald-600">
-                {loading ? "Loading..." : fmt(totals.openingDr)}
-              </span>
-              <span className="text-slate-400">/</span>
-              <span className="text-rose-600">
-                {loading ? "Loading..." : fmt(totals.openingCr)}
-              </span>
-            </div>
-            <div className="text-xs text-slate-400 mt-1">
-              Opening balances across selected period
-            </div>
-          </div>
-          <div className="text-xs text-slate-400">
-            <div className="text-right">Accounts</div>
-            <div className="mt-2 font-semibold text-slate-700">
-              {loading ? "..." : rows.length}
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase text-slate-400">
-              Period Movement
-            </div>
-            <div className="mt-2 text-lg font-semibold">
-              <span className="text-emerald-600 mr-3">
-                {loading ? "Loading..." : fmt(totals.periodDr)}
-              </span>
-              <span className="text-rose-600">
-                {loading ? "Loading..." : fmt(totals.periodCr)}
-              </span>
-            </div>
-            <div className="text-xs text-slate-400 mt-1">
-              Total Debits vs Credits posted
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-slate-400">Balance diff</div>
+        return (
+          <React.Fragment key={node._id}>
             <div
-              className={`mt-2 font-semibold ${
-                totals.periodDr - totals.periodCr === 0
-                  ? "text-emerald-600"
-                  : "text-rose-600"
-              }`}
+              className="flex items-center justify-between py-1 px-2 rounded hover:bg-gray-50 cursor-default text-sm"
+              style={{ paddingLeft: `${depth * 16 + 8}px` }}
             >
-              {loading ? "..." : fmt(totals.periodDr - totals.periodCr)}
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase text-slate-400">
-              Closing (DR / CR)
-            </div>
-            <div className="mt-2 text-lg font-semibold">
-              <span className="text-emerald-600 mr-3">
-                {loading ? "Loading..." : fmt(totals.closingDr)}
+              <span className="truncate flex items-center gap-1">
+                {hasChildren && (
+                  <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
+                )}
+                <span className="font-mono text-xs text-gray-500">
+                  {node.code}
+                </span>
+                <span className="ml-1">{node.name}</span>
               </span>
-              <span className="text-rose-600">
-                {loading ? "Loading..." : fmt(totals.closingCr)}
+              <span
+                className={cn(
+                  "text-xs font-mono",
+                  closing >= 0 ? "text-gray-700" : "text-red-600"
+                )}
+              >
+                {formatTaka(closing)}
               </span>
             </div>
-            <div className="text-xs text-slate-400 mt-1">
-              Post-period closing balances
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-xs text-slate-400">Status</div>
-            <div
-              className={`mt-2 font-semibold ${
-                totals.closingDr === totals.closingCr
-                  ? "text-emerald-600"
-                  : "text-rose-600"
-              }`}
-            >
-              {loading
-                ? "Loading..."
-                : totals.closingDr === totals.closingCr
-                  ? "Balanced"
-                  : "Mismatch"}
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card className="p-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex items-center gap-3 w-full md:w-1/2">
-            <div className="relative flex-1">
-              <Input
-                placeholder="Search account name, code or type..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+            {hasChildren && (
+              <AccountTreeList
+                nodes={node.children!}
+                depth={depth + 1}
+                searchTerm={searchTerm}
+                typeFilter={typeFilter}
               />
-              <Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="zero"
-                checked={showZero}
-                onCheckedChange={(v) => setShowZero(Boolean(v))}
-              />
-              <Label htmlFor="zero">Show zero balances</Label>
-            </div>
-          </div>
-
-          <div className="flex gap-2 items-center">
-            <Button variant="ghost" onClick={() => setQuery("")}>
-              Clear
-            </Button>
-            <Button variant="secondary" onClick={() => exportCsv(true)}>
-              Export All
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      {/* Big table */}
-      <Card className="overflow-x-auto print:overflow-visible">
-        <table className="w-full border-collapse table-auto">
-          <thead className="sticky top-0 z-10 backdrop-blur bg-white/60 print:bg-white">
-            <tr className="text-sm text-slate-500">
-              <th rowSpan={2} className="px-4 py-3 text-left">
-                Code
-              </th>
-              <th rowSpan={2} className="px-4 py-3 text-left">
-                Account
-              </th>
-              <th
-                rowSpan={2}
-                className="px-4 py-3 text-left hidden md:table-cell"
-              >
-                Type
-              </th>
-
-              <th colSpan={2} className="px-4 py-2 text-center border-l">
-                Opening
-              </th>
-              <th colSpan={2} className="px-4 py-2 text-center border-l">
-                Period
-              </th>
-              <th colSpan={2} className="px-4 py-2 text-center border-l">
-                Closing
-              </th>
-
-              <th
-                rowSpan={2}
-                className="px-4 py-3 text-right hidden md:table-cell"
-              >
-                Trend
-              </th>
-              <th rowSpan={2} className="px-4 py-3 text-right">
-                Actions
-              </th>
-            </tr>
-            <tr className="text-xs text-slate-400">
-              <th className="px-4 py-1 text-right text-emerald-600">DR</th>
-              <th className="px-4 py-1 text-right text-rose-600">CR</th>
-
-              <th className="px-4 py-1 text-right text-emerald-600">DR</th>
-              <th className="px-4 py-1 text-right text-rose-600">CR</th>
-
-              <th className="px-4 py-1 text-right text-emerald-600">DR</th>
-              <th className="px-4 py-1 text-right text-rose-600">CR</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {Array.from(grouped.entries()).map(([type, accounts]) => {
-              if (!accounts.length) return null;
-              // subtotal per type
-              const sOpeningDr = accounts.reduce(
-                (s, r) => s + openingDR(r.opening),
-                0,
-              );
-              const sOpeningCr = accounts.reduce(
-                (s, r) => s + openingCR(r.opening),
-                0,
-              );
-              const sPeriodDr = accounts.reduce((s, r) => s + r.debit, 0);
-              const sPeriodCr = accounts.reduce((s, r) => s + r.credit, 0);
-              const sClosingArr = accounts.map((r) => closingValue(r));
-              const sClosingDr = sClosingArr.reduce(
-                (s, v) => s + (v > 0 ? v : 0),
-                0,
-              );
-              const sClosingCr = sClosingArr.reduce(
-                (s, v) => s + (v < 0 ? -v : 0),
-                0,
-              );
-
-              return (
-                <React.Fragment key={type}>
-                  <tr className="bg-slate-50">
-                    <td
-                      colSpan={11}
-                      className="px-4 py-2 font-semibold text-slate-700"
-                    >
-                      {type}
-                    </td>
-                  </tr>
-
-                  {accounts.map((r) => {
-                    const cl = closingValue(r);
-                    return (
-                      <tr
-                        key={r.id}
-                        className="hover:bg-slate-50 even:bg-white"
-                      >
-                        <td className="px-4 py-3 text-sm">{r.code}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{r.name}</div>
-                          <div className="text-xs text-slate-400">#{r.id}</div>
-                        </td>
-                        <td className="px-4 py-3 text-sm hidden md:table-cell">
-                          {r.type}
-                        </td>
-
-                        <td className="px-4 py-3 text-right text-emerald-600">
-                          {r.opening > 0 ? fmt(r.opening) : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right text-rose-600">
-                          {r.opening < 0 ? fmt(-r.opening) : "-"}
-                        </td>
-
-                        <td className="px-4 py-3 text-right text-emerald-600">
-                          {r.debit ? fmt(r.debit) : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right text-rose-600">
-                          {r.credit ? fmt(r.credit) : "-"}
-                        </td>
-
-                        <td
-                          className={`px-4 py-3 text-right ${
-                            cl > 0
-                              ? "text-emerald-700"
-                              : cl < 0
-                                ? "text-rose-700"
-                                : "text-slate-500"
-                          }`}
-                        >
-                          {cl > 0 ? fmt(cl) : "-"}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right ${
-                            cl < 0
-                              ? "text-rose-700"
-                              : cl > 0
-                                ? "text-emerald-700"
-                                : "text-slate-500"
-                          }`}
-                        >
-                          {cl < 0 ? fmt(-cl) : "-"}
-                        </td>
-
-                        <td className="px-4 py-3 hidden md:table-cell">
-                          <SparkMini r={r} />
-                        </td>
-
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Dialog
-                              open={openModalId === r.id}
-                              onOpenChange={(open) =>
-                                setOpenModalId(open ? r.id : null)
-                              }
-                            >
-                              <DialogTrigger asChild>
-                                <button className="text-sm text-sky-600 hover:underline flex items-center gap-1">
-                                  View <ChevronRight className="h-4 w-4" />
-                                </button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-2xl">
-                                <DialogHeader>
-                                  <DialogTitle>
-                                    Ledger — {r.name} ({r.code})
-                                  </DialogTitle>
-                                  <DialogDescription>
-                                    Demo ledger for drill-down. Replace with
-                                    your API call to fetch ledger entries.
-                                  </DialogDescription>
-                                </DialogHeader>
-
-                                {LEDGERS[r.id] ? (
-                                  <table className="w-full mt-4">
-                                    <thead className="text-xs text-slate-500">
-                                      <tr>
-                                        <th className="text-left">Date</th>
-                                        <th className="text-left">
-                                          Description
-                                        </th>
-                                        <th className="text-right">Debit</th>
-                                        <th className="text-right">Credit</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {LEDGERS[r.id].map((t, i) => (
-                                        <tr key={i} className="border-t">
-                                          <td className="py-2 text-sm">
-                                            {t.date}
-                                          </td>
-                                          <td className="py-2 text-sm">
-                                            {t.desc}
-                                          </td>
-                                          <td className="py-2 text-sm text-right">
-                                            {t.debit ? fmt(t.debit) : "-"}
-                                          </td>
-                                          <td className="py-2 text-sm text-right">
-                                            {t.credit ? fmt(t.credit) : "-"}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                ) : (
-                                  <p className="mt-4 text-sm text-slate-500">
-                                    No ledger demo entries for this account.
-                                  </p>
-                                )}
-                                <div className="mt-6 flex justify-end">
-                                  <Button onClick={() => setOpenModalId(null)}>
-                                    Close
-                                  </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {/* Subtotal row */}
-                  <tr className="bg-slate-100 border-t">
-                    <td colSpan={3} className="px-4 py-3 font-semibold">
-                      Subtotal {type}
-                    </td>
-
-                    <td className="px-4 py-3 text-right text-emerald-600 font-semibold">
-                      {sOpeningDr ? fmt(sOpeningDr) : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-rose-600 font-semibold">
-                      {sOpeningCr ? fmt(sOpeningCr) : "-"}
-                    </td>
-
-                    <td className="px-4 py-3 text-right text-emerald-600 font-semibold">
-                      {sPeriodDr ? fmt(sPeriodDr) : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-rose-600 font-semibold">
-                      {sPeriodCr ? fmt(sPeriodCr) : "-"}
-                    </td>
-
-                    <td className="px-4 py-3 text-right text-emerald-700 font-semibold">
-                      {sClosingDr ? fmt(sClosingDr) : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-rose-700 font-semibold">
-                      {sClosingCr ? fmt(sClosingCr) : "-"}
-                    </td>
-
-                    <td colSpan={2} />
-                  </tr>
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-
-          <tfoot>
-            <tr className="bg-gradient-to-r from-slate-50 to-white border-t-2 font-semibold">
-              <td colSpan={3} className="px-4 py-3">
-                Grand Total
-              </td>
-
-              <td className="px-4 py-3 text-right text-emerald-700">
-                {fmt(totals.openingDr)}
-              </td>
-              <td className="px-4 py-3 text-right text-rose-700">
-                {fmt(totals.openingCr)}
-              </td>
-
-              <td className="px-4 py-3 text-right text-emerald-700">
-                {fmt(totals.periodDr)}
-              </td>
-              <td className="px-4 py-3 text-right text-rose-700">
-                {fmt(totals.periodCr)}
-              </td>
-
-              <td className="px-4 py-3 text-right text-emerald-700">
-                {fmt(totals.closingDr)}
-              </td>
-              <td className="px-4 py-3 text-right text-rose-700">
-                {fmt(totals.closingCr)}
-              </td>
-
-              <td colSpan={2} />
-            </tr>
-            <tr className="text-xs text-slate-500">
-              <td colSpan={11} className="px-4 py-2">
-                Sanity check: Opening + Period Debit - Period Credit = Closing
-                (All shown as DR/CR). &nbsp;If totals mismatch, highlight shows
-                above.
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </Card>
-
-      {/* Print-friendly footer / developer notes (hidden on print) */}
-      <Card className="p-4 print:hidden">
-        <div className="text-sm text-slate-500">
-          <strong>Developer notes:</strong> This page now fetches data from
-          <code>
-            {" "}
-            /api/reports/trial-balance?periodType=monthly&period=YYYY-MM
-          </code>
-          . Backend should return signed opening balances (positive = DR,
-          negative = CR), and non-negative period debit/credit numbers. The page
-          computes closing = opening + debit - credit and splits amounts into
-          DR/CR presentation for clarity.
-        </div>
-      </Card>
-
-      {/* Minimal print styles */}
-      <style jsx>{`
-        @media print {
-          :root {
-            color-scheme: light;
-          }
-          .print\\:hidden {
-            display: none !important;
-          }
-          .print\\:overflow-visible {
-            overflow: visible !important;
-          }
-        }
-      `}</style>
-    </div>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
   );
 }
