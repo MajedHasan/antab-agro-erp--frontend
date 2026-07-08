@@ -1,4 +1,4 @@
-// src/app/products/warehouse/page.tsx  (adjust route as needed)
+// src/app/(main)/sales/products/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -41,6 +41,10 @@ import {
   TrendingDown,
   HardDrive,
   MapPin,
+  ChevronDown,
+  ChevronUp,
+  Hash,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -95,7 +99,25 @@ type StockTransaction = {
   sourceModel?: string;
   transactionDate: string;
   createdBy?: string;
-  batch?: string;
+  batch?: string;                     // optional batch label
+  remainingQuantity?: number;         // for purchase / production entries
+  reserved?: number;                  // currently reserved from this batch
+  batchDetails?: BatchDetail[];       // only for reservation transactions
+};
+
+type BatchDetail = {
+  batchId: {
+    _id: string;
+    transactionType: string;
+    unitCost: number;
+    transactionDate: string;
+    batch?: string;
+    itemId?: any;
+    locationId?: any;
+  };
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
 };
 
 /* ---------- Transaction colours & icons ---------- */
@@ -140,6 +162,11 @@ const txConfig: Record<string, { icon: any; bg: string; label: string }> = {
     icon: ClipboardList,
     bg: "bg-amber-100 text-amber-700",
     label: "Reservation",
+  },
+  reservation_release: {
+    icon: Layers,
+    bg: "bg-indigo-100 text-indigo-700",
+    label: "Res. Release",
   },
 };
 
@@ -212,6 +239,7 @@ export default function WarehouseProductsPage() {
   >([]);
   const [selectedStockForTx, setSelectedStockForTx] =
     useState<ProductStock | null>(null);
+  const [expandedTx, setExpandedTx] = useState<string | null>(null); // for batch details
 
   /* ---- warehouses for selector ---- */
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -241,7 +269,6 @@ export default function WarehouseProductsPage() {
   async function fetchList() {
     setLoading(true);
     try {
-      // ✅ Keep the working pattern – locationType as top-level param
       const res = await api.get("/products", {
         params: { page, limit, q, locationType: "warehouse" },
       });
@@ -263,7 +290,6 @@ export default function WarehouseProductsPage() {
   async function fetchProductStocks(productId: string) {
     setStockLoading(true);
     try {
-      // ✅ locationType as top-level param (matches warehouse page pattern)
       const res = await api.get("/product-stocks", {
         params: { productId, page: 1, limit: 10000, locationType: "warehouse" },
       });
@@ -277,27 +303,29 @@ export default function WarehouseProductsPage() {
     }
   }
 
-  /* ---------- Fetch stock transactions ---------- */
+  /* ---------- Fetch stock transactions (enriched) ---------- */
   async function fetchStockTransactions(stock: ProductStock) {
     if (!selectedProduct) return;
     setTxLoading(true);
     try {
       const productId = selectedProduct._id;
       const warehouseId = idOf(stock.warehouseId);
-      // ✅ Use filter object for allowed filter fields
+      // ✅ Fetch with deep populate to get batch details (for reservations)
       const res = await api.get("/stock-transactions", {
         params: {
           sort: "-transactionDate",
-          limit: 100,
+          limit: 200,
           filter: {
             itemType: "Product",
             itemId: productId,
             locationId: warehouseId,
           },
+          populate: "batchDetails.batchId",   // get full batch info
         },
       });
       setStockTransactions(res.data.data || []);
       setSelectedStockForTx(stock);
+      setExpandedTx(null);
     } catch (err) {
       toast.error("Failed to load stock transactions");
       setStockTransactions([]);
@@ -886,7 +914,7 @@ export default function WarehouseProductsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ---------- Stock & Transactions Dashboard (Warehouse‑themed) ---------- */}
+      {/* ---------- Stock & Transactions Dashboard (Enhanced) ---------- */}
       <Dialog open={stockModalOpen} onOpenChange={setStockModalOpen}>
         <DialogContent className="w-full md:!min-w-4xl !max-w-4xl max-h-[90vh] overflow-y-auto">
           <div className="space-y-6">
@@ -897,7 +925,7 @@ export default function WarehouseProductsPage() {
                   {selectedProduct?.name}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Warehouse stock distribution & recent activity
+                  Warehouse stock distribution & detailed activity
                 </p>
               </div>
               <Button
@@ -1034,7 +1062,12 @@ export default function WarehouseProductsPage() {
                             <Button
                               size="sm"
                               variant={isSelected ? "default" : "outline"}
-                              onClick={() => fetchStockTransactions(s)}
+                              onClick={() =>
+                                isSelected
+                                  ? (setSelectedStockForTx(null),
+                                    setStockTransactions([]))
+                                  : fetchStockTransactions(s)
+                              }
                               className={
                                 isSelected
                                   ? "bg-teal-600 hover:bg-teal-700"
@@ -1072,7 +1105,7 @@ export default function WarehouseProductsPage() {
                           )}
                         </div>
 
-                        <div className="flex gap-2 mb-3">
+                        <div className="flex flex-wrap gap-2 mb-3">
                           <span className="px-2 py-1 rounded-lg bg-slate-100 text-xs font-medium">
                             Expiry:{" "}
                             {s.expiryDate
@@ -1084,11 +1117,22 @@ export default function WarehouseProductsPage() {
                           </span>
                           {(s.reservedForSales ?? 0) > 0 && (
                             <span className="px-2 py-1 rounded-lg bg-amber-100 text-xs font-medium">
-                              Reserved: {s.reservedForSales}
+                              Reserved Sales: {s.reservedForSales}
+                            </span>
+                          )}
+                          {(s.reservedForTransfer ?? 0) > 0 && (
+                            <span className="px-2 py-1 rounded-lg bg-orange-100 text-xs font-medium">
+                              Reserved Transfer: {s.reservedForTransfer}
+                            </span>
+                          )}
+                          {(s.incomingTransfer ?? 0) > 0 && (
+                            <span className="px-2 py-1 rounded-lg bg-blue-100 text-xs font-medium">
+                              Incoming: {s.incomingTransfer}
                             </span>
                           )}
                         </div>
 
+                        {/* ---------- Enhanced Transaction History ---------- */}
                         {isSelected && (
                           <div className="border-t pt-4 mt-4">
                             <div className="flex items-center justify-between mb-4">
@@ -1118,15 +1162,17 @@ export default function WarehouseProductsPage() {
                               </div>
                             ) : (
                               <div className="relative pl-8 border-l-2 border-slate-200 space-y-5">
-                                {stockTransactions.map((tx, i) => {
-                                  const config = txConfig[
-                                    tx.transactionType
-                                  ] || {
-                                    icon: FileText,
-                                    bg: "bg-gray-100 text-gray-700",
-                                    label: tx.transactionType,
-                                  };
+                                {stockTransactions.map((tx) => {
+                                  const config =
+                                    txConfig[tx.transactionType] || {
+                                      icon: FileText,
+                                      bg: "bg-gray-100 text-gray-700",
+                                      label: tx.transactionType,
+                                    };
                                   const Icon = config.icon;
+                                  const isExpanded = expandedTx === tx._id;
+                                  const hasBatchDetails =
+                                    tx.batchDetails && tx.batchDetails.length > 0;
                                   return (
                                     <div key={tx._id} className="relative">
                                       <div
@@ -1160,6 +1206,28 @@ export default function WarehouseProductsPage() {
                                             ৳ {tx.totalCost?.toFixed(2)}
                                           </span>
                                         </div>
+                                        {/* Extra details: batch string, remaining, reserved */}
+                                        {(tx.batch ||
+                                          tx.remainingQuantity != null ||
+                                          tx.reserved != null) && (
+                                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+                                            {tx.batch && (
+                                              <span>
+                                                Batch: {tx.batch}
+                                              </span>
+                                            )}
+                                            {tx.remainingQuantity != null && (
+                                              <span>
+                                                Remaining: {tx.remainingQuantity}
+                                              </span>
+                                            )}
+                                            {tx.reserved != null && (
+                                              <span>
+                                                Reserved: {tx.reserved}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
                                         {tx.sourceModel && (
                                           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                                             <FileText className="w-3 h-3" />
@@ -1167,6 +1235,95 @@ export default function WarehouseProductsPage() {
                                             {tx.sourceId
                                               ? `(${tx.sourceId.slice(-6)})`
                                               : ""}
+                                          </div>
+                                        )}
+                                        {/* Batch details for reservation transactions */}
+                                        {hasBatchDetails && (
+                                          <div className="mt-2">
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-auto p-1 text-xs text-indigo-600 hover:text-indigo-800"
+                                              onClick={() =>
+                                                setExpandedTx(
+                                                  isExpanded ? null : tx._id,
+                                                )
+                                              }
+                                            >
+                                              {isExpanded ? (
+                                                <ChevronUp className="w-3 h-3 mr-1" />
+                                              ) : (
+                                                <ChevronDown className="w-3 h-3 mr-1" />
+                                              )}
+                                              Batch Breakdown
+                                            </Button>
+                                            {isExpanded && (
+                                              <div className="mt-2 overflow-x-auto">
+                                                <table className="min-w-full text-xs border border-slate-200 rounded">
+                                                  <thead className="bg-slate-100">
+                                                    <tr>
+                                                      <th className="px-2 py-1 text-left">
+                                                        Batch ID
+                                                      </th>
+                                                      <th className="px-2 py-1 text-left">
+                                                        Qty
+                                                      </th>
+                                                      <th className="px-2 py-1 text-left">
+                                                        Unit Cost
+                                                      </th>
+                                                      <th className="px-2 py-1 text-left">
+                                                        Total
+                                                      </th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {tx.batchDetails!.map(
+                                                      (bd, i) => {
+                                                        const batchId =
+                                                          bd.batchId?._id ||
+                                                          (bd.batchId as any);
+                                                        const batchType =
+                                                          bd.batchId
+                                                            ?.transactionType ||
+                                                          "N/A";
+                                                        return (
+                                                          <tr
+                                                            key={i}
+                                                            className="border-t border-slate-100"
+                                                          >
+                                                            <td className="px-2 py-1 font-mono">
+                                                              <span className="text-slate-600">
+                                                                {String(
+                                                                  batchId,
+                                                                ).slice(-8)}
+                                                              </span>
+                                                              <span className="ml-1 text-slate-400">
+                                                                ({batchType})
+                                                              </span>
+                                                            </td>
+                                                            <td className="px-2 py-1">
+                                                              {bd.quantity}
+                                                            </td>
+                                                            <td className="px-2 py-1">
+                                                              ৳
+                                                              {bd.unitCost.toFixed(
+                                                                2,
+                                                              )}
+                                                            </td>
+                                                            <td className="px-2 py-1">
+                                                              ৳
+                                                              {bd.totalCost.toFixed(
+                                                                2,
+                                                              )}
+                                                            </td>
+                                                          </tr>
+                                                        );
+                                                      },
+                                                    )}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            )}
                                           </div>
                                         )}
                                       </div>

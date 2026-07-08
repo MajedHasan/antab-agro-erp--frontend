@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import {
   Popover,
   PopoverTrigger,
@@ -29,7 +28,6 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   Building2,
 } from "lucide-react";
@@ -169,6 +167,7 @@ export default function FactoryTransferCreatePage() {
 
   const productTimers = useRef<Record<string, number | null>>({});
   const stockTimers = useRef<Record<string, number | null>>({});
+  const costTimers = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
     generateTransferNo();
@@ -177,6 +176,7 @@ export default function FactoryTransferCreatePage() {
     return () => {
       Object.values(productTimers.current).forEach((t) => t && clearTimeout(t));
       Object.values(stockTimers.current).forEach((t) => t && clearTimeout(t));
+      Object.values(costTimers.current).forEach((t) => t && clearTimeout(t));
     };
   }, []);
 
@@ -189,6 +189,7 @@ export default function FactoryTransferCreatePage() {
     rows.forEach((r) => {
       if (r.productId) {
         fetchStockDebounced(r.id, r.productId, senderFactoryId || undefined);
+        fetchCostDebounced(r.id, r.productId, senderFactoryId || undefined);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,6 +252,10 @@ export default function FactoryTransferCreatePage() {
       clearTimeout(stockTimers.current[rowId]!);
       stockTimers.current[rowId] = null;
     }
+    if (costTimers.current[rowId]) {
+      clearTimeout(costTimers.current[rowId]!);
+      costTimers.current[rowId] = null;
+    }
     setRows((prev) =>
       prev.length > 1 ? prev.filter((r) => r.id !== rowId) : prev,
     );
@@ -289,6 +294,12 @@ export default function FactoryTransferCreatePage() {
     }, 250);
   }
 
+  function isProductAlreadySelected(productId: string, exceptRowId?: string) {
+    return rows.some(
+      (r) => r.productId === productId && r.id !== exceptRowId,
+    );
+  }
+
   async function selectProduct(rowId: string, product: Product | null) {
     if (!product) {
       updateRow(rowId, {
@@ -308,6 +319,12 @@ export default function FactoryTransferCreatePage() {
       return;
     }
 
+    // Prevent duplicate product selection
+    if (isProductAlreadySelected(product._id, rowId)) {
+      toast.error("This product is already added to the transfer");
+      return;
+    }
+
     updateRow(rowId, {
       productId: product._id,
       product,
@@ -315,13 +332,14 @@ export default function FactoryTransferCreatePage() {
       candidates: [],
       searching: false,
       unit: product.unit || "pcs",
-      costPrice: product.salePrice ?? 0,
+      costPrice: 0, // will be fetched from inventory
       requestedQty: 1,
       finalQty: 1,
       error: null,
     });
 
     fetchStockDebounced(rowId, product._id, senderFactoryId || undefined);
+    fetchCostDebounced(rowId, product._id, senderFactoryId || undefined);
   }
 
   function fetchStockDebounced(
@@ -369,6 +387,55 @@ export default function FactoryTransferCreatePage() {
       if (stockTimers.current[rowId]) {
         clearTimeout(stockTimers.current[rowId]!);
         stockTimers.current[rowId] = null;
+      }
+    }
+  }
+
+  // ----- inventory cost fetching -----
+  function fetchCostDebounced(
+    rowId: string,
+    productId?: string,
+    locationId?: string,
+  ) {
+    if (costTimers.current[rowId]) {
+      clearTimeout(costTimers.current[rowId]!);
+      costTimers.current[rowId] = null;
+    }
+    costTimers.current[rowId] = window.setTimeout(() => {
+      fetchCost(rowId, productId, locationId);
+    }, 200);
+  }
+
+  async function fetchCost(
+    rowId: string,
+    productId?: string,
+    locationId?: string,
+  ) {
+    try {
+      if (!productId || !locationId) {
+        // keep whatever cost is set (probably 0)
+        return;
+      }
+
+      const res = await api.get(
+        "/stock-transactions/latest-unit-cost",
+        {
+          params: {
+            itemType: "Product",
+            itemId: productId,
+            locationId,
+          },
+        },
+      );
+      const unitCost = Number(res.data?.unitCost) || 0;
+      updateRow(rowId, { costPrice: unitCost });
+    } catch (err) {
+      console.error("Failed to fetch inventory cost", err);
+      // silently ignore – user can still manually enter a cost
+    } finally {
+      if (costTimers.current[rowId]) {
+        clearTimeout(costTimers.current[rowId]!);
+        costTimers.current[rowId] = null;
       }
     }
   }
@@ -511,8 +578,9 @@ export default function FactoryTransferCreatePage() {
                 Create direct factory transfer
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-300">
-                Create a direct shipment from factory to warehouse. After this,
-                the factory can print and dispatch from the action page.
+                Create a direct shipment from factory to warehouse. The transfer
+                will be in <strong>Requested</strong> state. After creating,
+                you can print and send it from the action page.
               </p>
             </div>
 
@@ -657,9 +725,10 @@ export default function FactoryTransferCreatePage() {
                 </div>
 
                 <div className="rounded-xl border bg-slate-50 p-4 text-sm text-muted-foreground">
-                  Factory direct transfers reserve stock virtually at creation.
-                  The factory will later print and dispatch the sheet from the
-                  action page.
+                  <strong>Workflow:</strong> Factory Created → Sent → Hold →
+                  Awaiting Remaining → Completed. Factory direct transfers
+                  reserve stock virtually at creation and are ready to print
+                  and send immediately.
                 </div>
               </CardContent>
             </Card>
@@ -911,10 +980,13 @@ export default function FactoryTransferCreatePage() {
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">
                     Workflow
                   </div>
-                  <div className="mt-1 font-semibold">Factory → Warehouse</div>
+                  <div className="mt-1 font-semibold">
+                    Factory Created → Sent → Hold → Awaiting Remaining →
+                    Completed
+                  </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    Direct transfer will create virtual stock movement
-                    immediately, then the factory can print and dispatch.
+                    Direct transfer reserves stock immediately. After creating,
+                    you can print and send the transfer from the action page.
                   </div>
                 </div>
 

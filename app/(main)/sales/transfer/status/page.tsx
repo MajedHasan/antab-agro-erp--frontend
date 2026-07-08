@@ -32,6 +32,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+/* ---------- updated types ---------- */
 type Location = {
   _id: string;
   name?: string;
@@ -49,14 +50,14 @@ type Transfer = {
   transferType: "WAREHOUSE_TO_WAREHOUSE" | "FACTORY_TO_WAREHOUSE";
   transferMode: "REQUEST" | "DIRECT";
   status:
-    | "DRAFT"
+    | "REQUESTED"
     | "RECEIVER_NSM_APPROVED"
     | "SENDER_REVIEWED"
     | "SENDER_NSM_APPROVED"
-    | "DISPATCHED"
-    | "COMPLETED"
-    | "REJECTED"
-    | "CANCELLED";
+    | "SENT"
+    | "HOLD"
+    | "AWAITING_REMAINING"
+    | "COMPLETED";
   sender?: Location | null;
   receiver?: Location | null;
   createdBy?: { name?: string; email?: string } | null;
@@ -70,22 +71,25 @@ type Transfer = {
   printSnapshot?: any;
   documents?: {
     signed?: any;
+    damage?: any;
   };
   createdAt?: string;
   updatedAt?: string;
 };
 
+/* ---------- updated status styles ---------- */
 const STATUS_STYLES: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-800 border-slate-200",
+  REQUESTED: "bg-slate-100 text-slate-800 border-slate-200",
   RECEIVER_NSM_APPROVED: "bg-sky-100 text-sky-800 border-sky-200",
   SENDER_REVIEWED: "bg-violet-100 text-violet-800 border-violet-200",
   SENDER_NSM_APPROVED: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  DISPATCHED: "bg-amber-100 text-amber-800 border-amber-200",
+  SENT: "bg-amber-100 text-amber-800 border-amber-200",
+  HOLD: "bg-orange-100 text-orange-800 border-orange-200",
+  AWAITING_REMAINING: "bg-purple-100 text-purple-800 border-purple-200",
   COMPLETED: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  REJECTED: "bg-red-100 text-red-800 border-red-200",
-  CANCELLED: "bg-red-100 text-red-800 border-red-200",
 };
 
+/* ---------- helpers ---------- */
 function locationLabel(loc?: Location | null) {
   if (!loc) return "-";
   return (
@@ -114,77 +118,54 @@ function transferTypeLabel(type: Transfer["transferType"]) {
 }
 
 function stepLabel(status: Transfer["status"]) {
-  switch (status) {
-    case "DRAFT":
-      return "Draft request";
-    case "RECEIVER_NSM_APPROVED":
-      return "Receiver NSM approved";
-    case "SENDER_REVIEWED":
-      return "Sender reviewed";
-    case "SENDER_NSM_APPROVED":
-      return "Final approval";
-    case "DISPATCHED":
-      return "Dispatched";
-    case "COMPLETED":
-      return "Completed";
-    case "CANCELLED":
-      return "Cancelled";
-    case "REJECTED":
-      return "Rejected";
-    default:
-      return status;
-  }
+  const map: Record<string, string> = {
+    REQUESTED: "Requested",
+    RECEIVER_NSM_APPROVED: "Receiver NSM approved",
+    SENDER_REVIEWED: "Sender reviewed",
+    SENDER_NSM_APPROVED: "Sender NSM approved",
+    SENT: "Sent",
+    HOLD: "On hold",
+    AWAITING_REMAINING: "Awaiting remaining",
+    COMPLETED: "Completed",
+  };
+  return map[status] || status;
 }
 
 function stepHint(t: Transfer) {
   if (t.transferType === "WAREHOUSE_TO_WAREHOUSE") {
-    switch (t.status) {
-      case "DRAFT":
-        return "Waiting for receiver NSM approval";
-      case "RECEIVER_NSM_APPROVED":
-        return "Waiting for sender review";
-      case "SENDER_REVIEWED":
-        return "Waiting for sender NSM final approval";
-      case "SENDER_NSM_APPROVED":
-        return "Ready for print and dispatch";
-      case "DISPATCHED":
-        return "Waiting for receiver to receive and submit";
-      case "COMPLETED":
-        return "Transfer completed";
-      case "CANCELLED":
-        return "Transfer cancelled";
-      case "REJECTED":
-        return "Transfer rejected";
-      default:
-        return "In workflow";
-    }
+    const map: Record<string, string> = {
+      REQUESTED: "Waiting for receiver NSM approval",
+      RECEIVER_NSM_APPROVED: "Waiting for sender review",
+      SENDER_REVIEWED: "Waiting for sender NSM final approval",
+      SENDER_NSM_APPROVED: "Ready for print and send",
+      SENT: "Waiting for receiver to receive",
+      HOLD: "Received quantities don't match – on hold",
+      AWAITING_REMAINING: "Received qty processed, awaiting resolution",
+      COMPLETED: "Transfer completed",
+    };
+    return map[t.status] || "In workflow";
   }
 
-  switch (t.status) {
-    case "DRAFT":
-      return "Waiting for receiver NSM approval";
-    case "RECEIVER_NSM_APPROVED":
-      return "Waiting for factory dispatch";
-    case "DISPATCHED":
-      return "Waiting for receiver to receive and submit";
-    case "COMPLETED":
-      return "Transfer completed";
-    case "CANCELLED":
-      return "Transfer cancelled";
-    case "REJECTED":
-      return "Transfer rejected";
-    default:
-      return "In workflow";
-  }
+  const map: Record<string, string> = {
+    REQUESTED: "Waiting for receiver NSM approval",
+    RECEIVER_NSM_APPROVED: "Waiting for factory dispatch",
+    SENT: "Waiting for receiver to receive",
+    HOLD: "Received quantities don't match – on hold",
+    AWAITING_REMAINING: "Received qty processed, awaiting resolution",
+    COMPLETED: "Transfer completed",
+  };
+  return map[t.status] || "In workflow";
 }
 
 function documentState(t: Transfer) {
   const hasSnapshot = Boolean(t.printSnapshot);
   const hasSigned = Boolean(t.documents?.signed?.mediaId);
+  const hasDamage = Boolean(t.documents?.damage?.mediaId);
 
   if (hasSnapshot && hasSigned) return "Snapshot + Signed";
   if (hasSnapshot) return "Snapshot ready";
   if (hasSigned) return "Signed uploaded";
+  if (hasDamage) return "Damage reported";
   return "No docs";
 }
 
@@ -203,11 +184,13 @@ function documentTone(t: Transfer) {
 
 function isActiveStatus(status: Transfer["status"]) {
   return [
-    "DRAFT",
+    "REQUESTED",
     "RECEIVER_NSM_APPROVED",
     "SENDER_REVIEWED",
     "SENDER_NSM_APPROVED",
-    "DISPATCHED",
+    "SENT",
+    "HOLD",
+    "AWAITING_REMAINING",
   ].includes(status);
 }
 
@@ -233,7 +216,6 @@ export default function WarehouseTransferListPage() {
     "ALL",
   );
 
-  // TODO: later derive this from auth context / user.warehouseId and scope tabs automatically.
   const currentWarehouseId = "";
 
   useEffect(() => {
@@ -277,17 +259,12 @@ export default function WarehouseTransferListPage() {
       if (sender !== "ALL") params.sender = sender;
       if (receiver !== "ALL") params.receiver = receiver;
 
-      // TODO: later use auth-based filtering and permission-aware scoping.
       if (tab === "INCOMING" && currentWarehouseId) {
         params.receiver = currentWarehouseId;
       }
 
       if (tab === "OUTGOING" && currentWarehouseId) {
         params.sender = currentWarehouseId;
-      }
-
-      if (tab === "MINE") {
-        // TODO: later filter by current user / createdBy after auth is wired here.
       }
 
       const res = await api.get("/transfers", { params });
@@ -311,13 +288,7 @@ export default function WarehouseTransferListPage() {
     const pending = transfers.filter((t) => isActiveStatus(t.status)).length;
     const completed = transfers.filter((t) => t.status === "COMPLETED").length;
     const needAttention = transfers.filter((t) =>
-      [
-        "DRAFT",
-        "RECEIVER_NSM_APPROVED",
-        "SENDER_REVIEWED",
-        "SENDER_NSM_APPROVED",
-        "DISPATCHED",
-      ].includes(t.status),
+      isActiveStatus(t.status),
     ).length;
 
     return { totalItems, pending, completed, needAttention };
@@ -513,7 +484,7 @@ export default function WarehouseTransferListPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">All</SelectItem>
-                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="REQUESTED">Requested</SelectItem>
                     <SelectItem value="RECEIVER_NSM_APPROVED">
                       Receiver NSM Approved
                     </SelectItem>
@@ -523,10 +494,12 @@ export default function WarehouseTransferListPage() {
                     <SelectItem value="SENDER_NSM_APPROVED">
                       Sender NSM Approved
                     </SelectItem>
-                    <SelectItem value="DISPATCHED">Dispatched</SelectItem>
+                    <SelectItem value="SENT">Sent</SelectItem>
+                    <SelectItem value="HOLD">Hold</SelectItem>
+                    <SelectItem value="AWAITING_REMAINING">
+                      Awaiting Remaining
+                    </SelectItem>
                     <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                    <SelectItem value="REJECTED">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -782,10 +755,10 @@ export default function WarehouseTransferListPage() {
                             <Badge
                               variant="outline"
                               className={
-                                STATUS_STYLES[t.status] || STATUS_STYLES.DRAFT
+                                STATUS_STYLES[t.status] || STATUS_STYLES.REQUESTED
                               }
                             >
-                              {t.status}
+                              {stepLabel(t.status)}
                             </Badge>
                           </td>
 

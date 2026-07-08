@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import {
   Popover,
   PopoverTrigger,
@@ -29,7 +28,6 @@ import {
   Factory,
   Loader2,
   Plus,
-  Search,
   Trash2,
 } from "lucide-react";
 
@@ -178,6 +176,7 @@ export default function WarehouseTransferCreatePage() {
 
   const productTimers = useRef<Record<string, number | null>>({});
   const stockTimers = useRef<Record<string, number | null>>({});
+  const costTimers = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
     generateTransferNo();
@@ -187,6 +186,7 @@ export default function WarehouseTransferCreatePage() {
     return () => {
       Object.values(productTimers.current).forEach((t) => t && clearTimeout(t));
       Object.values(stockTimers.current).forEach((t) => t && clearTimeout(t));
+      Object.values(costTimers.current).forEach((t) => t && clearTimeout(t));
     };
   }, []);
 
@@ -203,6 +203,7 @@ export default function WarehouseTransferCreatePage() {
         stockDoc: null,
         available: null,
         error: null,
+        costPrice: 0, // reset cost when sender changes
       })),
     );
   }, [transferType]);
@@ -211,6 +212,11 @@ export default function WarehouseTransferCreatePage() {
     rows.forEach((row) => {
       if (row.productId) {
         fetchStockDebounced(
+          row.id,
+          row.productId,
+          senderLocationId || undefined,
+        );
+        fetchCostDebounced(
           row.id,
           row.productId,
           senderLocationId || undefined,
@@ -291,6 +297,10 @@ export default function WarehouseTransferCreatePage() {
       clearTimeout(stockTimers.current[rowId]!);
       stockTimers.current[rowId] = null;
     }
+    if (costTimers.current[rowId]) {
+      clearTimeout(costTimers.current[rowId]!);
+      costTimers.current[rowId] = null;
+    }
     setRows((prev) =>
       prev.length > 1 ? prev.filter((r) => r.id !== rowId) : prev,
     );
@@ -329,6 +339,12 @@ export default function WarehouseTransferCreatePage() {
     }, 250);
   }
 
+  function isProductAlreadySelected(productId: string, exceptRowId?: string) {
+    return rows.some(
+      (r) => r.productId === productId && r.id !== exceptRowId,
+    );
+  }
+
   async function selectProduct(rowId: string, product: Product | null) {
     if (!product) {
       updateRow(rowId, {
@@ -348,6 +364,12 @@ export default function WarehouseTransferCreatePage() {
       return;
     }
 
+    // Prevent duplicate product selection
+    if (isProductAlreadySelected(product._id, rowId)) {
+      toast.error("This product is already added to the transfer");
+      return;
+    }
+
     updateRow(rowId, {
       productId: product._id,
       product,
@@ -355,13 +377,14 @@ export default function WarehouseTransferCreatePage() {
       candidates: [],
       searching: false,
       unit: product.unit || "pcs",
-      costPrice: product.salePrice ?? 0,
+      costPrice: 0, // will be fetched from inventory
       requestedQty: 1,
       finalQty: 1,
       error: null,
     });
 
     fetchStockDebounced(rowId, product._id, senderLocationId || undefined);
+    fetchCostDebounced(rowId, product._id, senderLocationId || undefined);
   }
 
   function fetchStockDebounced(
@@ -409,6 +432,49 @@ export default function WarehouseTransferCreatePage() {
       if (stockTimers.current[rowId]) {
         clearTimeout(stockTimers.current[rowId]!);
         stockTimers.current[rowId] = null;
+      }
+    }
+  }
+
+  function fetchCostDebounced(
+    rowId: string,
+    productId?: string,
+    locationId?: string,
+  ) {
+    if (costTimers.current[rowId]) {
+      clearTimeout(costTimers.current[rowId]!);
+      costTimers.current[rowId] = null;
+    }
+    costTimers.current[rowId] = window.setTimeout(() => {
+      fetchCost(rowId, productId, locationId);
+    }, 200);
+  }
+
+  async function fetchCost(
+    rowId: string,
+    productId?: string,
+    locationId?: string,
+  ) {
+    try {
+      if (!productId || !locationId) {
+        return;
+      }
+
+      const res = await api.get("/stock-transactions/latest-unit-cost", {
+        params: {
+          itemType: "Product",
+          itemId: productId,
+          locationId,
+        },
+      });
+      const unitCost = Number(res.data?.unitCost) || 0;
+      updateRow(rowId, { costPrice: unitCost });
+    } catch (err) {
+      console.error("Failed to fetch inventory cost", err);
+    } finally {
+      if (costTimers.current[rowId]) {
+        clearTimeout(costTimers.current[rowId]!);
+        costTimers.current[rowId] = null;
       }
     }
   }
@@ -559,8 +625,8 @@ export default function WarehouseTransferCreatePage() {
 
   const flowText =
     transferType === "WAREHOUSE_TO_WAREHOUSE"
-      ? "Receiver Warehouse → Receiver NSM → Sender Warehouse → Sender NSM → Dispatch → Receive → Complete"
-      : "Receiver Warehouse → Receiver NSM → Factory → Dispatch → Receive → Complete";
+      ? "Requested → Receiver NSM → Sender Review → Sender NSM → Sent → Hold → Awaiting Remaining → Completed"
+      : "Requested → Receiver NSM → Sent → Hold → Awaiting Remaining → Completed";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -788,7 +854,7 @@ export default function WarehouseTransferCreatePage() {
               </Card>
             )}
 
-            {/* Step 3 */}
+            {/* Step 3 – unchanged */}
             {step === 3 && (
               <Card className="shadow-sm">
                 <CardHeader>
@@ -1007,7 +1073,7 @@ export default function WarehouseTransferCreatePage() {
               </Card>
             )}
 
-            {/* Step 4 */}
+            {/* Step 4 – unchanged */}
             {step === 4 && (
               <Card className="shadow-sm">
                 <CardHeader>

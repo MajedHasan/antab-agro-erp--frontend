@@ -31,6 +31,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+/* ---------- updated types ---------- */
 type Location = {
   _id: string;
   name?: string;
@@ -48,14 +49,14 @@ type Transfer = {
   transferType: "WAREHOUSE_TO_WAREHOUSE" | "FACTORY_TO_WAREHOUSE";
   transferMode: "REQUEST" | "DIRECT";
   status:
-    | "DRAFT"
+    | "REQUESTED"
     | "RECEIVER_NSM_APPROVED"
     | "SENDER_REVIEWED"
     | "SENDER_NSM_APPROVED"
-    | "DISPATCHED"
-    | "COMPLETED"
-    | "REJECTED"
-    | "CANCELLED";
+    | "SENT"
+    | "HOLD"
+    | "AWAITING_REMAINING"
+    | "COMPLETED";
   sender?: Location | null;
   receiver?: Location | null;
   createdBy?: { name?: string; email?: string } | null;
@@ -63,22 +64,25 @@ type Transfer = {
   printSnapshot?: any;
   documents?: {
     signed?: any;
+    damage?: any;
   };
   createdAt?: string;
   updatedAt?: string;
 };
 
+/* ---------- updated status styles ---------- */
 const STATUS_STYLES: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-800 border-slate-200",
+  REQUESTED: "bg-slate-100 text-slate-800 border-slate-200",
   RECEIVER_NSM_APPROVED: "bg-sky-100 text-sky-800 border-sky-200",
   SENDER_REVIEWED: "bg-violet-100 text-violet-800 border-violet-200",
   SENDER_NSM_APPROVED: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  DISPATCHED: "bg-amber-100 text-amber-800 border-amber-200",
+  SENT: "bg-amber-100 text-amber-800 border-amber-200",
+  HOLD: "bg-orange-100 text-orange-800 border-orange-200",
+  AWAITING_REMAINING: "bg-purple-100 text-purple-800 border-purple-200",
   COMPLETED: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  REJECTED: "bg-red-100 text-red-800 border-red-200",
-  CANCELLED: "bg-red-100 text-red-800 border-red-200",
 };
 
+/* ---------- helpers ---------- */
 function locationLabel(loc?: Location | null) {
   if (!loc) return "-";
   return (
@@ -107,62 +111,48 @@ function transferTypeLabel(type: Transfer["transferType"]) {
 }
 
 function stepLabel(status: Transfer["status"]) {
-  switch (status) {
-    case "DRAFT":
-      return "Draft request";
-    case "RECEIVER_NSM_APPROVED":
-      return "Receiver NSM approved";
-    case "SENDER_REVIEWED":
-      return "Sender reviewed";
-    case "SENDER_NSM_APPROVED":
-      return "Final approval";
-    case "DISPATCHED":
-      return "Dispatched";
-    case "COMPLETED":
-      return "Completed";
-    case "CANCELLED":
-      return "Cancelled";
-    case "REJECTED":
-      return "Rejected";
-    default:
-      return status;
-  }
+  const map: Record<string, string> = {
+    REQUESTED: "Requested",
+    RECEIVER_NSM_APPROVED: "Receiver NSM approved",
+    SENDER_REVIEWED: "Sender reviewed",
+    SENDER_NSM_APPROVED: "Sender NSM approved",
+    SENT: "Sent",
+    HOLD: "On hold",
+    AWAITING_REMAINING: "Awaiting remaining",
+    COMPLETED: "Completed",
+  };
+  return map[status] || status;
 }
 
 function stepHint(t: Transfer) {
-  switch (t.status) {
-    case "DRAFT":
-      return t.transferMode === "DIRECT"
-        ? "Waiting for factory action"
-        : "Waiting for receiver NSM approval";
-    case "RECEIVER_NSM_APPROVED":
-      return t.transferMode === "DIRECT"
+  const map: Record<string, string> = {
+    REQUESTED:
+      t.transferMode === "DIRECT"
+        ? "Ready to print and send"
+        : "Waiting for receiver NSM approval",
+    RECEIVER_NSM_APPROVED:
+      t.transferMode === "DIRECT"
         ? "Ready for factory processing"
-        : "Waiting for factory approval / dispatch";
-    case "SENDER_REVIEWED":
-      return "Waiting for sender NSM final approval";
-    case "SENDER_NSM_APPROVED":
-      return "Ready to print and dispatch";
-    case "DISPATCHED":
-      return "Waiting for receiver to submit signed document";
-    case "COMPLETED":
-      return "Transfer completed";
-    case "REJECTED":
-      return "Transfer rejected";
-    case "CANCELLED":
-      return "Transfer cancelled";
-    default:
-      return "In workflow";
-  }
+        : "Waiting for factory approval / dispatch",
+    SENDER_REVIEWED: "Waiting for sender NSM final approval",
+    SENDER_NSM_APPROVED: "Ready to print and send",
+    SENT: "Waiting for receiver to receive",
+    HOLD: "Received quantities don't match – on hold",
+    AWAITING_REMAINING: "Received qty processed, awaiting resolution",
+    COMPLETED: "Transfer completed",
+  };
+  return map[t.status] || "In workflow";
 }
 
 function documentState(t: Transfer) {
   const hasSnapshot = Boolean(t.printSnapshot);
   const hasSigned = Boolean(t.documents?.signed?.mediaId);
+  const hasDamage = Boolean(t.documents?.damage?.mediaId);
 
   if (hasSnapshot && hasSigned) return "Snapshot + Signed";
   if (hasSnapshot) return "Snapshot ready";
   if (hasSigned) return "Signed uploaded";
+  if (hasDamage) return "Damage reported";
   return "No docs";
 }
 
@@ -244,18 +234,12 @@ export default function FactoryTransferListPage() {
       if (sender !== "ALL") params.sender = sender;
       if (receiver !== "ALL") params.receiver = receiver;
 
-      // TODO: later scope by current factory or accessible factories automatically.
       if (tab === "DIRECT") {
         params.transferMode = "DIRECT";
       }
 
       if (tab === "REQUEST") {
         params.transferMode = "REQUEST";
-      }
-
-      if (tab === "NEED_ACTION") {
-        // This can later be scoped to current role/status rules
-        // e.g. pending factory dispatch / approval actions
       }
 
       if (tab === "COMPLETED") {
@@ -467,7 +451,7 @@ export default function FactoryTransferListPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">All</SelectItem>
-                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="REQUESTED">Requested</SelectItem>
                     <SelectItem value="RECEIVER_NSM_APPROVED">
                       Receiver NSM Approved
                     </SelectItem>
@@ -477,10 +461,12 @@ export default function FactoryTransferListPage() {
                     <SelectItem value="SENDER_NSM_APPROVED">
                       Sender NSM Approved
                     </SelectItem>
-                    <SelectItem value="DISPATCHED">Dispatched</SelectItem>
+                    <SelectItem value="SENT">Sent</SelectItem>
+                    <SelectItem value="HOLD">Hold</SelectItem>
+                    <SelectItem value="AWAITING_REMAINING">
+                      Awaiting Remaining
+                    </SelectItem>
                     <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                    <SelectItem value="REJECTED">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -715,10 +701,10 @@ export default function FactoryTransferListPage() {
                             <Badge
                               variant="outline"
                               className={
-                                STATUS_STYLES[t.status] || STATUS_STYLES.DRAFT
+                                STATUS_STYLES[t.status] || STATUS_STYLES.REQUESTED
                               }
                             >
-                              {t.status}
+                              {stepLabel(t.status)}
                             </Badge>
                           </td>
 

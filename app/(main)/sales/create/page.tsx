@@ -115,8 +115,8 @@ const defaultValues: FormValues = {
   customerId: "",
   warehouseId: "",
   orderDate: today,
-  paymentMethod: "CASH",
-  taxPercent: 5,
+  paymentMethod: "CREDIT",
+  taxPercent: 0,
   notes: "",
   items: [makeLine()],
 };
