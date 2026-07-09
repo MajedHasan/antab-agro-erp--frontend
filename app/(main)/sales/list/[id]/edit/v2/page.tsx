@@ -29,7 +29,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 import {
   Check,
   ChevronsUpDown,
@@ -44,13 +43,8 @@ import {
   ShieldCheck,
   Truck,
   Copy,
-  AlertTriangle,
-  CheckCircle2,
-  FileText,
-  ExternalLink,
 } from "lucide-react";
 
-/* --------------------------- Types --------------------------- */
 type LookupOption = {
   value: string;
   label: string;
@@ -150,29 +144,8 @@ type SalesOrderDetail = {
   updatedAt?: string;
 };
 
-type QrData = {
-  invoiceId: string;
-  orderId: string;
-  invoiceNo: string;
-  grandTotal: number;
-  dealer: {
-    code: string;
-    name: string;
-    phone: string;
-    creditLimit: number;
-    currentDue: number;
-    available: number;
-  };
-  products: Array<{
-    name: string;
-    qty: number;
-    unitPrice: number;
-  }>;
-};
-
-/* --------------------------- Helpers --------------------------- */
 const MEDIA_UPLOAD_ENDPOINT =
-  "/media/upload?module=sales-order&folder=signed-documents";
+  "/media/upload?module=sales-order&folder=signed-documents"; // change only if your upload route differs
 
 const makeLine = (): LineItem => ({
   productId: "",
@@ -224,10 +197,10 @@ function calcLine(item: LineItem, taxPercent: number) {
   const lineSubtotal = Math.max(0, base - discountAmount);
   const taxAmount = lineSubtotal * (Number(taxPercent || 0) / 100);
   const lineTotal = lineSubtotal + taxAmount;
+
   return { base, discountAmount, lineSubtotal, taxAmount, lineTotal };
 }
 
-/* --------------------------- Badges --------------------------- */
 function StatusBadge({ status }: { status: OrderStatus }) {
   const styles: Record<OrderStatus, string> = {
     PENDING_AM: "bg-slate-100 text-slate-700 border-slate-200",
@@ -239,6 +212,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
     REJECTED: "bg-red-100 text-red-700 border-red-200",
     CANCELLED: "bg-rose-100 text-rose-700 border-rose-200",
   };
+
   return (
     <span
       className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status]}`}
@@ -254,6 +228,7 @@ function PaymentBadge({ method }: { method?: "CASH" | "CREDIT" }) {
     method === "CREDIT"
       ? "bg-orange-100 text-orange-700 border-orange-200"
       : "bg-slate-100 text-slate-700 border-slate-200";
+
   return (
     <span
       className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${styles}`}
@@ -263,7 +238,6 @@ function PaymentBadge({ method }: { method?: "CASH" | "CREDIT" }) {
   );
 }
 
-/* --------------------------- LookupSelect --------------------------- */
 function LookupSelect({
   value,
   selectedLabel,
@@ -289,12 +263,14 @@ function LookupSelect({
 
   useEffect(() => {
     if (!open) return;
+
     const key = query.trim().toLowerCase();
     const timer = setTimeout(async () => {
       if (cacheRef.current[key]) {
         setOptions(cacheRef.current[key]);
         return;
       }
+
       setLoading(true);
       try {
         const list = await fetchOptions(query);
@@ -306,6 +282,7 @@ function LookupSelect({
         setLoading(false);
       }
     }, 250);
+
     return () => clearTimeout(timer);
   }, [open, query, fetchOptions]);
 
@@ -322,6 +299,7 @@ function LookupSelect({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
+
       <PopoverContent className="w-[360px] p-0" align="start">
         <Command>
           <CommandInput
@@ -367,271 +345,6 @@ function LookupSelect({
   );
 }
 
-/* =============================================================
-   PRINT HELPERS
-   ============================================================= */
-function buildSalesOrderPrintHtml(
-  order: SalesOrderDetail,
-  qrImageDataUrl: string,
-  dealerName: string,
-  dealerPhone: string,
-  warehouseName: string,
-  items: LineItem[],
-  taxPercent: number,
-  totals: ReturnType<typeof useMemo> | any,
-): string {
-  const dateFmt = (d: any) =>
-    d
-      ? new Date(d).toLocaleDateString("en-IN", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        })
-      : "—";
-
-  const invoiceNo =
-    order.invoiceId?.invoiceNo || order.orderNo.replace(/^SO/, "INV");
-  const paymentStatus = order.invoiceId?.paymentStatus || "UNPAID";
-
-  const rowsHtml = items
-    .map((item, idx) => {
-      const line = calcLine(item, taxPercent);
-      return `
-      <tr style="border-bottom:1px solid #e2e8f0;">
-        <td style="padding:8px 10px; font-weight:600;">${item.productName || "-"}</td>
-        <td style="padding:8px 10px; text-align:center;">${Number(item.qty || 0)}</td>
-        <td style="padding:8px 10px; text-align:center;">${
-          Number(item.bonusQty || 0) > 0 ? Number(item.bonusQty || 0) : "-"
-        }</td>
-        <td style="padding:8px 10px; text-align:right; font-family:monospace;">${Number(item.unitPrice || 0).toFixed(2)}</td>
-        <td style="padding:8px 10px; text-align:right; font-family:monospace;">${line.lineSubtotal.toFixed(2)}</td>
-        <td style="padding:8px 10px; text-align:right; font-family:monospace;">${line.taxAmount.toFixed(2)}</td>
-        <td style="padding:8px 10px; text-align:right; font-weight:700; font-family:monospace;">${line.lineTotal.toFixed(2)}</td>
-      </tr>`;
-    })
-    .join("");
-
-  return `
-<div style="font-family: 'Inter', sans-serif; max-width: 100%; margin: 0 auto; color: #1e293b; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
-  <div style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 18px 28px; display: flex; justify-content: space-between; align-items: center; color: white;">
-    <div>
-      <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">SALES INVOICE</div>
-      <div style="font-size: 13px; opacity: 0.9; margin-top: 2px;">
-        ${order.paymentMethod === "CREDIT" ? "Credit Sale" : "Cash Sale"}
-        · ${paymentStatus}
-      </div>
-    </div>
-    <div style="text-align: right;">
-      <div style="font-size: 22px; font-weight: 800;">#${invoiceNo}</div>
-      <div style="font-size: 12px; opacity: 0.8;">${dateFmt(order.orderDate || order.createdAt)}</div>
-      <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">Order: ${order.orderNo}</div>
-    </div>
-  </div>
-
-  <div style="padding: 14px 28px; display: flex; gap: 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Dealer</div>
-      <div style="font-weight: 700; margin-top: 2px;">${dealerName}</div>
-      <div style="font-size: 12px; color: #475569;">${dealerPhone}</div>
-    </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Warehouse</div>
-      <div style="font-weight: 700; margin-top: 2px;">${warehouseName}</div>
-      <div style="font-size: 12px; color: #475569;">Dispatch location</div>
-    </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Payment</div>
-      <div style="font-weight: 700; margin-top: 2px; color: ${order.paymentMethod === "CREDIT" ? "#f59e0b" : "#16a34a"};">${order.paymentMethod}</div>
-      <div style="font-size: 12px; color: #475569;">Grand Total: ৳ ${(order.grandTotal ?? 0).toFixed(2)}</div>
-    </div>
-  </div>
-
-  <div style="padding: 16px 28px;">
-    <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 10px;">Items (${items.length})</h3>
-    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-      <thead>
-        <tr style="background: #f1f5f9; font-weight: 700; color: #334155; text-transform: uppercase; font-size: 11px;">
-          <th style="padding: 10px 12px; text-align: left;">Product</th>
-          <th style="padding: 10px 12px; text-align: center;">Qty</th>
-          <th style="padding: 10px 12px; text-align: center;">Bonus</th>
-          <th style="padding: 10px 12px; text-align: right;">Unit Price</th>
-          <th style="padding: 10px 12px; text-align: right;">Subtotal</th>
-          <th style="padding: 10px 12px; text-align: right;">Tax</th>
-          <th style="padding: 10px 12px; text-align: right;">Total</th>
-        </tr>
-      </thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-  </div>
-
-  <div style="display: flex; justify-content: flex-end; padding: 14px 28px; background: #f8fafc; border-top: 2px solid #e2e8f0;">
-    <div style="width: 320px;">
-      <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom:1px solid #e2e8f0;">
-        <span style="color:#475569;">Subtotal</span>
-        <span style="font-weight:600;">৳ ${(order.subTotal ?? totals.subtotal).toFixed(2)}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom:1px solid #e2e8f0;">
-        <span style="color:#475569;">Discount</span>
-        <span style="font-weight:600; color:#dc2626;">- ৳ ${(order.totalDiscount ?? 0).toFixed(2)}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom:1px solid #e2e8f0;">
-        <span style="color:#475569;">Tax (${taxPercent}%)</span>
-        <span style="font-weight:600;">৳ ${(order.totalTax ?? 0).toFixed(2)}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 16px; font-weight: 800;">
-        <span>Grand Total</span>
-        <span style="color:#0f172a;">৳ ${(order.grandTotal ?? 0).toFixed(2)}</span>
-      </div>
-      <div style="margin-top: 8px; padding: 6px 10px; background: ${order.paymentMethod === "CREDIT" ? "#fef3c7" : "#d1fae5"}; border-radius: 8px; font-size: 11px; text-align: center; color: ${order.paymentMethod === "CREDIT" ? "#92400e" : "#065f46"};">
-        ${order.paymentMethod === "CREDIT" ? "This is a credit sale." : "This is a cash sale."}
-        Total bonus items: ${order.totalBonusQty || 0}
-      </div>
-    </div>
-  </div>
-
-  <div style="display: flex; gap: 16px; padding: 14px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">QR Code</div>
-      ${qrImageDataUrl ? `<img src="${qrImageDataUrl}" alt="QR" style="width:140px; height:140px; border:1px solid #e2e8f0; border-radius:10px;" />` : `<div style="width:140px; height:140px; border:2px dashed #cbd5e1; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; color:#94a3b8; font-size:11px;">QR not ready</div>`}
-      <div style="font-size: 10px; color: #94a3b8; margin-top: 6px;">Scan to verify</div>
-    </div>
-    <div style="flex: 2; background: white; border-radius: 10px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Dealer Signature</div>
-      <div style="height: 110px; border: 2px dashed #cbd5e1; border-radius: 10px; display: flex; align-items: flex-end; justify-content: center; padding: 10px; color: #94a3b8; font-size: 12px;">
-        Sign here after receiving goods
-      </div>
-      <div style="font-size: 10px; color: #94a3b8; margin-top: 6px;">I confirm receipt of the above items in good condition.</div>
-    </div>
-  </div>
-
-  <div style="background: #0f172a; color: #94a3b8; text-align: center; padding: 8px 28px; font-size: 10px; display: flex; justify-content: space-between;">
-    <div>Computer‑generated invoice</div>
-    <div>© Antab Agro LTD</div>
-  </div>
-</div>`;
-}
-
-function buildSalesOrderPrintHeaderRight(order: SalesOrderDetail): string {
-  const paymentStatus = order.invoiceId?.paymentStatus || "UNPAID";
-  return `
-    <div style="text-align:right;">
-      <div style="font-size: 20px; font-weight: 800; color: #0f172a;">#${order.orderNo}</div>
-      <div style="font-size: 13px; color: #475569; margin-top: 2px;">
-        ${order.paymentMethod === "CREDIT" ? "Credit Sale" : "Cash Sale"}
-        · ${paymentStatus}
-      </div>
-      <div style="
-        display: inline-block; background: ${order.status === "DELIVERED" ? "#065f46" : order.status === "CANCELLED" ? "#b91c1c" : "#1e40af"};
-        color: white; padding: 4px 16px; border-radius: 100px; font-size: 13px; margin-top: 8px; font-weight: 700;
-      ">${order.status.replaceAll("_", " ")}</div>
-    </div>`;
-}
-
-/* 🆕 Delivery Chalan (DC) print helper */
-function buildDCPrintHtml(
-  order: SalesOrderDetail,
-  dealerName: string,
-  dealerPhone: string,
-  warehouseName: string,
-  items: LineItem[],
-): string {
-  const dateFmt = (d: any) =>
-    d ? new Date(d).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "—";
-
-  const rowsHtml = items
-    .map((item, idx) => {
-      return `
-      <tr style="border-bottom:1px solid #e2e8f0;">
-        <td style="padding:8px 10px;">${idx + 1}</td>
-        <td style="padding:8px 10px; font-weight:600;">${item.productName || "-"}</td>
-        <td style="padding:8px 10px; text-align:center;">${Number(item.qty || 0)}</td>
-        <td style="padding:8px 10px; text-align:center;">${Number(item.bonusQty || 0) > 0 ? Number(item.bonusQty || 0) : "-"}</td>
-        <td style="padding:8px 10px; text-align:center;">
-          <div style="width:40px; height:24px; border:2px dashed #cbd5e1; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:#94a3b8;">/</div>
-        </td>
-        <td style="padding:8px 10px; text-align:center;">
-          <div style="width:40px; height:24px; border:2px dashed #cbd5e1; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:#94a3b8;">/</div>
-        </td>
-      </tr>`;
-    })
-    .join("");
-
-  return `
-<div style="font-family: 'Inter', sans-serif; max-width: 100%; margin: 0 auto; color: #1e293b; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
-  <div style="background: #1e293b; padding: 16px 28px; display: flex; justify-content: space-between; align-items: center; color: white;">
-    <div>
-      <div style="font-size: 22px; font-weight: 800;">DELIVERY CHALAN</div>
-      <div style="font-size: 13px; opacity: 0.9;">Original / Duplicate</div>
-    </div>
-    <div style="text-align: right;">
-      <div style="font-size: 18px; font-weight: 800;">DC #${order.orderNo}</div>
-      <div style="font-size: 12px; opacity: 0.8;">Date: ${dateFmt(order.orderDate || order.createdAt)}</div>
-    </div>
-  </div>
-
-  <div style="padding: 14px 28px; display: flex; gap: 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Dealer</div>
-      <div style="font-weight: 700;">${dealerName}</div>
-      <div style="font-size: 12px; color: #475569;">${dealerPhone}</div>
-    </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Warehouse</div>
-      <div style="font-weight: 700;">${warehouseName}</div>
-      <div style="font-size: 12px; color: #475569;">Dispatch Location</div>
-    </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Vehicle / Driver</div>
-      <div style="font-weight: 700; color: #94a3b8;">.............................</div>
-      <div style="font-size: 12px; color: #475569;">Phone: .............................</div>
-    </div>
-  </div>
-
-  <div style="padding: 16px 28px;">
-    <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 10px;">Items (${items.length})</h3>
-    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-      <thead>
-        <tr style="background: #f1f5f9; font-weight: 700; color: #334155; text-transform: uppercase; font-size: 11px;">
-          <th style="padding: 10px 8px; text-align: left;">#</th>
-          <th style="padding: 10px 8px; text-align: left;">Product</th>
-          <th style="padding: 10px 8px; text-align: center;">Qty</th>
-          <th style="padding: 10px 8px; text-align: center;">Bonus</th>
-          <th style="padding: 10px 8px; text-align: center;">Recv'd</th>
-          <th style="padding: 10px 8px; text-align: center;">Remarks</th>
-        </tr>
-      </thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-    <div style="margin-top: 16px; font-size: 12px; color: #475569; border-top: 2px solid #e2e8f0; padding-top: 10px;">
-      <strong>Total Qty:</strong> ${items.reduce((s, i) => s + Number(i.qty || 0), 0)} &nbsp;&nbsp;|&nbsp;&nbsp;
-      <strong>Total Bonus:</strong> ${order.totalBonusQty || 0}
-    </div>
-  </div>
-
-  <div style="display: flex; gap: 16px; padding: 14px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center;">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Prepared By</div>
-      <div style="border-top: 2px solid #cbd5e1; margin-top: 28px; padding-top: 8px; font-size: 11px; color: #94a3b8;">(Signature / Name)</div>
-    </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center;">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Security Check</div>
-      <div style="border-top: 2px solid #cbd5e1; margin-top: 28px; padding-top: 8px; font-size: 11px; color: #94a3b8;">(Signature / Name)</div>
-    </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center;">
-      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Received By</div>
-      <div style="border-top: 2px solid #cbd5e1; margin-top: 28px; padding-top: 8px; font-size: 11px; color: #94a3b8;">(Signature / Name)</div>
-    </div>
-  </div>
-
-  <div style="background: #0f172a; color: #94a3b8; text-align: center; padding: 8px 28px; font-size: 10px;">
-    Computer‑generated document · © Antab Agro LTD
-  </div>
-</div>`;
-}
-
-/* =============================================================
-   MAIN PAGE COMPONENT
-   ============================================================= */
 export default function SalesOrderEditActionPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -675,21 +388,16 @@ export default function SalesOrderEditActionPage() {
   const [order, setOrder] = useState<SalesOrderDetail | null>(null);
   const [dealerMeta, setDealerMeta] = useState<LookupOption | null>(null);
   const [warehouseMeta, setWarehouseMeta] = useState<LookupOption | null>(null);
-  const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
+  const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(
+    null,
+  );
   const [creditLoading, setCreditLoading] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofUploading, setProofUploading] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [qrImage, setQrImage] = useState<string>("");
-  const [qrParsed, setQrParsed] = useState<QrData | null>(null);
-  const [deliveryVerification, setDeliveryVerification] = useState<any>(null);
-  const [qrImageForPrint, setQrImageForPrint] = useState<string>("");
 
-  // 🆕 DC state
-  const [dcFile, setDcFile] = useState<File | null>(null);
-  const [dcUploadLoading, setDcUploadLoading] = useState(false);
-  const [dcMediaId, setDcMediaId] = useState<string | null>(null);
-
+  const printRef = useRef<HTMLDivElement | null>(null);
   const promoTimers = useRef<
     Record<string, ReturnType<typeof setTimeout> | undefined>
   >({});
@@ -698,11 +406,11 @@ export default function SalesOrderEditActionPage() {
     Record<string, { bonusQty: number; appliedPromotionId: string | null }>
   >({});
 
-  /* ---------- Lookups ---------- */
   const fetchDealers = useCallback(async (search: string) => {
     const res = await api.get("/dealers", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
+
     return (res.data?.data || []).map((d: any) => ({
       value: String(d._id || d.id),
       label: d.name || d.proprietor || String(d._id || d.id),
@@ -716,6 +424,7 @@ export default function SalesOrderEditActionPage() {
     const res = await api.get("/warehouses", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
+
     return (res.data?.data || []).map((w: any) => ({
       value: String(w._id || w.id),
       label: w.name || String(w._id || w.id),
@@ -727,6 +436,7 @@ export default function SalesOrderEditActionPage() {
     const res = await api.get("/products", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
+
     return (res.data?.data || []).map((p: any) => ({
       value: String(p._id || p.id),
       label: p.name || String(p._id || p.id),
@@ -748,12 +458,15 @@ export default function SalesOrderEditActionPage() {
           availableToSell: 0,
         };
       }
+
       const cacheKey = `${productId}|${wId}`;
       if (stockCache.current[cacheKey]) return stockCache.current[cacheKey];
+
       try {
         const res = await api.get("/product-stocks", {
           params: { productId, warehouseId: wId, page: 1, limit: 1 },
         });
+
         const row = res.data?.data?.[0] || {};
         const stock: StockInfo = {
           quantity: Number(row.quantity || 0),
@@ -762,18 +475,19 @@ export default function SalesOrderEditActionPage() {
           reservedForTransfer: Number(row.reservedForTransfer || 0),
           availableToSell: computeAvailable(row),
         };
+
         stockCache.current[cacheKey] = stock;
         return stock;
       } catch {
-        const fallback: StockInfo = {
+        const stock: StockInfo = {
           quantity: 0,
           incomingTransfer: 0,
           reservedForSales: 0,
           reservedForTransfer: 0,
           availableToSell: 0,
         };
-        stockCache.current[cacheKey] = fallback;
-        return fallback;
+        stockCache.current[cacheKey] = stock;
+        return stock;
       }
     },
     [],
@@ -784,33 +498,47 @@ export default function SalesOrderEditActionPage() {
       if (!productId || !qty || qty <= 0) {
         return { bonusQty: 0, appliedPromotionId: null };
       }
+
       const key = `${productId}|${qty}|${dId || ""}|${wId || ""}`;
       if (promoCache.current[key]) return promoCache.current[key];
+
       try {
         const res = await api.get("/promotions/calculate-bonus", {
-          params: { productId, qty, customerId: dId, warehouseId: wId },
+          params: {
+            productId,
+            qty,
+            customerId: dId,
+            warehouseId: wId,
+          },
         });
+
         const data = res.data?.data || {};
         const result = {
           bonusQty: Number(data.bonusQty || 0),
-          appliedPromotionId: (data.appliedPromotionId || null) as string | null,
+          appliedPromotionId: (data.appliedPromotionId || null) as
+            | string
+            | null,
         };
         promoCache.current[key] = result;
         return result;
       } catch {
-        const fallback = { bonusQty: 0, appliedPromotionId: null };
-        promoCache.current[key] = fallback;
-        return fallback;
+        const result = { bonusQty: 0, appliedPromotionId: null };
+        promoCache.current[key] = result;
+        return result;
       }
     },
     [],
   );
 
-  /* ---------- Permissions ---------- */
   const isEditable = useMemo(
     () =>
       !!order &&
-      ["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT"].includes(order.status),
+      [
+        "PENDING_AM",
+        "PENDING_RM",
+        "PENDING_NSM",
+        "PENDING_FULFILLMENT",
+      ].includes(order.status),
     [order],
   );
 
@@ -820,20 +548,22 @@ export default function SalesOrderEditActionPage() {
     ? !["DELIVERED", "CANCELLED"].includes(order.status)
     : false;
 
-  /* ---------- Load order & map to form ---------- */
   const mapOrderToForm = useCallback(
     async (data: SalesOrderDetail) => {
       const customer = data.customerId;
       const warehouse = data.warehouseId;
 
       const nextItems: LineItem[] = (data.items || []).map((it: any) => ({
-        productId: String(it.productId?._id || it.productId?.id || it.productId || ""),
+        productId: String(
+          it.productId?._id || it.productId?.id || it.productId || "",
+        ),
         productName: it.productId?.name || it.name || it.productName || "",
         qty: Number(it.qty || 0),
         bonusQty: Number(it.bonusQty || 0),
         unitPrice: Number(it.unitPrice || 0),
         discountPercent: Number(it.discountPercent || 0),
-        promoAppliedId: it.promotionId?._id || it.promotionId?.id || it.promotionId || null,
+        promoAppliedId:
+          it.promotionId?._id || it.promotionId?.id || it.promotionId || null,
         quantity: 0,
         incomingTransfer: 0,
         reservedForSales: 0,
@@ -848,7 +578,9 @@ export default function SalesOrderEditActionPage() {
         paymentMethod: data.paymentMethod || "CASH",
         taxPercent:
           Number(data.totalTax || 0) > 0 && Number(data.subTotal || 0) > 0
-            ? Math.round((Number(data.totalTax || 0) / Number(data.subTotal || 1)) * 100)
+            ? Math.round(
+                (Number(data.totalTax || 0) / Number(data.subTotal || 1)) * 100,
+              )
             : 0,
         notes: data.notes || "",
         items: nextItems.length ? nextItems : [makeLine()],
@@ -858,7 +590,10 @@ export default function SalesOrderEditActionPage() {
         customer
           ? {
               value: String(customer._id || customer.id || ""),
-              label: customer.name || customer.proprietor || String(customer._id || customer.id || ""),
+              label:
+                customer.name ||
+                customer.proprietor ||
+                String(customer._id || customer.id || ""),
               description: `${customer.phoneNumber || customer.phone || ""}${customer.status ? ` · ${customer.status}` : ""}`,
               dealerType: customer.type,
               status: customer.status,
@@ -870,7 +605,8 @@ export default function SalesOrderEditActionPage() {
         warehouse
           ? {
               value: String(warehouse._id || warehouse.id || ""),
-              label: warehouse.name || String(warehouse._id || warehouse.id || ""),
+              label:
+                warehouse.name || String(warehouse._id || warehouse.id || ""),
               description: warehouse.code || warehouse.type || "",
             }
           : null,
@@ -881,6 +617,7 @@ export default function SalesOrderEditActionPage() {
 
   const loadOrder = useCallback(async () => {
     if (!orderId) return;
+
     setLoading(true);
     try {
       const res = await api.get(`/sales-orders/${orderId}`);
@@ -889,7 +626,11 @@ export default function SalesOrderEditActionPage() {
       await mapOrderToForm(data);
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Failed to load sales order.");
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load sales order.",
+      );
     } finally {
       setLoading(false);
     }
@@ -899,18 +640,20 @@ export default function SalesOrderEditActionPage() {
     void loadOrder();
   }, [loadOrder]);
 
-  /* ---------- Live credit summary ---------- */
   useEffect(() => {
     let active = true;
+
     (async () => {
       if (!customerId) {
         setCreditSummary(null);
         return;
       }
+
       setCreditLoading(true);
       try {
         const res = await api.get(`/dealers/${customerId}/credit-summary`);
         if (!active) return;
+
         const data = res.data?.data;
         setCreditSummary(
           data
@@ -918,7 +661,9 @@ export default function SalesOrderEditActionPage() {
                 dealerId: String(data.dealerId || customerId),
                 dealerType: data.dealerType || dealerMeta?.dealerType || "CASH",
                 creditLimit: Number(data.creditLimit || 0),
-                currentDue: Number(data.currentDue ?? data.used ?? data.due ?? 0),
+                currentDue: Number(
+                  data.currentDue ?? data.used ?? data.due ?? 0,
+                ),
                 used: Number(data.used ?? data.due ?? 0),
                 due: Number(data.due ?? data.used ?? 0),
                 available: Number(data.available || 0),
@@ -932,47 +677,38 @@ export default function SalesOrderEditActionPage() {
         if (active) setCreditLoading(false);
       }
     })();
+
     return () => {
       active = false;
     };
   }, [customerId, dealerMeta?.dealerType]);
 
-  /* ---------- QR code generation ---------- */
   useEffect(() => {
+    // console.log("QR Image: ", qrImage);
+
     if (!order?.invoiceId) {
       setQrImage("");
-      setQrImageForPrint("");
-      setQrParsed(null);
-      return;
-    }
-    const qrPayload = typeof order.invoiceId?.qrCode === "string" ? order.invoiceId.qrCode : "";
-    if (!qrPayload) {
-      setQrImage("");
-      setQrImageForPrint("");
-      setQrParsed(null);
       return;
     }
 
-    try {
-      const parsed = JSON.parse(qrPayload) as QrData;
-      setQrParsed(parsed);
-    } catch {
-      setQrParsed(null);
+    const qrPayload =
+      typeof order.invoiceId?.qrCode === "string" ? order.invoiceId.qrCode : "";
+    if (!qrPayload) {
+      setQrImage("");
+      return;
     }
 
     let mounted = true;
-    QRCode.toDataURL(qrPayload, { width: 220, margin: 2, errorCorrectionLevel: "M" })
+    QRCode.toDataURL(qrPayload, {
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: "M",
+    })
       .then((dataUrl) => {
-        if (mounted) {
-          setQrImage(dataUrl);
-          setQrImageForPrint(dataUrl);
-        }
+        if (mounted) setQrImage(dataUrl);
       })
       .catch(() => {
-        if (mounted) {
-          setQrImage("");
-          setQrImageForPrint("");
-        }
+        if (mounted) setQrImage("");
       });
 
     return () => {
@@ -980,15 +716,25 @@ export default function SalesOrderEditActionPage() {
     };
   }, [order?.invoiceId]);
 
-  /* ---------- Refresh row helpers ---------- */
+  useEffect(() => {
+    return () => {
+      Object.keys(promoTimers.current).forEach((key) => {
+        const t = promoTimers.current[key];
+        if (t) clearTimeout(t);
+      });
+    };
+  }, []);
+
   const refreshRowById = useCallback(
     async (fieldId: string, opts?: { stock?: boolean; promo?: boolean }) => {
       const index = fields.findIndex((f) => f.id === fieldId);
       if (index < 0) return;
+
       const row = getValues(`items.${index}`) as LineItem | undefined;
       if (!row || !row.productId) return;
 
       const next: Partial<LineItem> = {};
+
       if (opts?.stock !== false && warehouseId) {
         const stock = await fetchStockInfo(row.productId, warehouseId);
         next.quantity = stock.quantity;
@@ -997,40 +743,83 @@ export default function SalesOrderEditActionPage() {
         next.reservedForTransfer = stock.reservedForTransfer;
         next.availableToSell = stock.availableToSell;
       }
+
       if (opts?.promo !== false) {
-        const promo = await fetchPromo(row.productId, Number(row.qty || 0), customerId || undefined, warehouseId || undefined);
+        const promo = await fetchPromo(
+          row.productId,
+          Number(row.qty || 0),
+          customerId || undefined,
+          warehouseId || undefined,
+        );
         next.bonusQty = promo.bonusQty || 0;
         next.promoAppliedId = promo.appliedPromotionId;
       }
-      update(index, { ...row, ...next });
+
+      update(index, {
+        ...row,
+        ...next,
+      });
     },
-    [fields, getValues, update, warehouseId, customerId, fetchStockInfo, fetchPromo],
+    [
+      fields,
+      getValues,
+      update,
+      warehouseId,
+      customerId,
+      fetchStockInfo,
+      fetchPromo,
+    ],
   );
 
   const refreshAllRows = useCallback(async () => {
-    await Promise.all(fields.map((f) => refreshRowById(f.id, { stock: true, promo: true })));
+    await Promise.all(
+      fields.map((f) => refreshRowById(f.id, { stock: true, promo: true })),
+    );
   }, [fields, refreshRowById]);
 
   useEffect(() => {
-    void refreshAllRows();
-  }, [warehouseId, customerId]); // eslint-disable-line
+    const currentWarehouse = warehouseId;
+    const currentCustomer = customerId;
 
-  /* ---------- Totals ---------- */
+    if (!currentWarehouse && !currentCustomer) return;
+
+    void refreshAllRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseId, customerId]);
+
   const totals = useMemo(() => {
     const lineData = watchedItems.map((item) => calcLine(item, taxPercent));
-    const totalQty = watchedItems.reduce((sum, item) => sum + Number(item.qty || 0), 0);
-    const totalBonusQty = watchedItems.reduce((sum, item) => sum + Number(item.bonusQty || 0), 0);
+    const totalQty = watchedItems.reduce(
+      (sum, item) => sum + Number(item.qty || 0),
+      0,
+    );
+    const totalBonusQty = watchedItems.reduce(
+      (sum, item) => sum + Number(item.bonusQty || 0),
+      0,
+    );
     const subtotal = lineData.reduce((sum, row) => sum + row.lineSubtotal, 0);
-    const totalDiscount = lineData.reduce((sum, row) => sum + row.discountAmount, 0);
+    const totalDiscount = lineData.reduce(
+      (sum, row) => sum + row.discountAmount,
+      0,
+    );
     const totalTax = lineData.reduce((sum, row) => sum + row.taxAmount, 0);
     const grandTotal = subtotal + totalTax;
-    return { lineData, totalQty, totalBonusQty, subtotal, totalDiscount, totalTax, grandTotal };
+
+    return {
+      lineData,
+      totalQty,
+      totalBonusQty,
+      subtotal,
+      totalDiscount,
+      totalTax,
+      grandTotal,
+    };
   }, [watchedItems, taxPercent]);
 
-  /* ---------- Actions ---------- */
   const updateOrder = useCallback(
     async (nextValues: FormValues) => {
       if (!orderId || !order) return;
+
       const items = nextValues.items.map((row) => {
         const line = calcLine(row, nextValues.taxPercent);
         return {
@@ -1048,10 +837,13 @@ export default function SalesOrderEditActionPage() {
           ...(row.promoAppliedId ? { promotionId: row.promoAppliedId } : {}),
         };
       });
+
       const payload = {
         customerId: nextValues.customerId,
         warehouseId: nextValues.warehouseId,
-        orderDate: nextValues.orderDate ? new Date(nextValues.orderDate).toISOString() : new Date().toISOString(),
+        orderDate: nextValues.orderDate
+          ? new Date(nextValues.orderDate).toISOString()
+          : new Date().toISOString(),
         paymentMethod: nextValues.paymentMethod,
         items,
         subTotal: totals.subtotal,
@@ -1061,6 +853,7 @@ export default function SalesOrderEditActionPage() {
         totalBonusQty: totals.totalBonusQty,
         notes: nextValues.notes || "",
       };
+
       setSaving(true);
       try {
         const res = await api.put(`/sales-orders/${orderId}`, payload);
@@ -1070,7 +863,11 @@ export default function SalesOrderEditActionPage() {
         await loadOrder();
       } catch (err: any) {
         console.error(err);
-        toast.error(err?.response?.data?.message || "Failed to update sales order.");
+        toast.error(
+          err?.response?.data?.message ||
+            err?.message ||
+            "Failed to update sales order.",
+        );
       } finally {
         setSaving(false);
       }
@@ -1078,37 +875,93 @@ export default function SalesOrderEditActionPage() {
     [orderId, order, totals, loadOrder],
   );
 
+  const openPrint = () => {
+    if (!printRef.current) return window.print();
+
+    const win = window.open("", "_blank", "width=1100,height=800");
+    if (!win) return window.print();
+
+    win.document.write(`
+      <html>
+        <head>
+          <title>Sales Order ${order?.orderNo || ""}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+            .wrap { max-width: 980px; margin: 0 auto; }
+            .row { display: flex; justify-content: space-between; gap: 16px; }
+            .muted { color: #6b7280; }
+            .card { border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 12px; }
+            th { background: #f9fafb; text-align: left; }
+            .right { text-align: right; }
+            .signature-box { height: 110px; border: 1px dashed #9ca3af; border-radius: 10px; display: flex; align-items: flex-end; justify-content: center; padding: 12px; }
+            .qr-box { width: 150px; height: 150px; border: 1px solid #d1d5db; border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+            .qr-box img { width: 150px; height: 150px; object-fit: contain; }
+            .small { font-size: 11px; }
+          </style>
+        </head>
+        <body>
+          ${printRef.current.innerHTML}
+        </body>
+      </html>
+    `);
+    win.document.close();
+    setTimeout(() => {
+      win.focus();
+      win.print();
+      win.close();
+    }, 400);
+  };
+
   const uploadProofFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
+
     const res = await api.post(MEDIA_UPLOAD_ENDPOINT, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
+
     const data = res.data?.data || res.data;
     const mediaId = data?._id || data?.id;
-    if (!mediaId) throw new Error("Uploaded file id not returned by upload API.");
+    if (!mediaId) {
+      throw new Error("Uploaded file id not returned by upload API.");
+    }
+
     return String(mediaId);
   };
 
   const currentApprovalRole = useMemo(() => {
     switch (order?.status) {
-      case "PENDING_AM": return "A.M";
-      case "PENDING_RM": return "R.M";
-      case "PENDING_NSM": return "N.S.M";
-      default: return null;
+      case "PENDING_AM":
+        return "A.M";
+      case "PENDING_RM":
+        return "R.M";
+      case "PENDING_NSM":
+        return "N.S.M";
+      default:
+        return null;
     }
   }, [order?.status]);
 
   const handleApprove = async () => {
     if (!orderId || !currentApprovalRole) return;
+
     setSavingAction("approve");
     try {
-      await api.post(`/sales-orders/${orderId}/approve`, { role: currentApprovalRole, remarks });
+      await api.post(`/sales-orders/${orderId}/approve`, {
+        role: currentApprovalRole,
+        remarks,
+      });
       toast.success(`${currentApprovalRole} approved.`);
       setRemarks("");
       await loadOrder();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to approve order.");
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to approve order.",
+      );
     } finally {
       setSavingAction(null);
     }
@@ -1116,14 +969,18 @@ export default function SalesOrderEditActionPage() {
 
   const handleShip = async () => {
     if (!orderId) return;
+
     if (!confirm("Create invoice and move this order to fulfillment?")) return;
+
     setSavingAction("ship");
     try {
-      const res = await api.post(`/sales-orders/${orderId}/ship`);
+      await api.post(`/sales-orders/${orderId}/ship`);
       toast.success("Invoice created.");
       await loadOrder();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to ship order.");
+      toast.error(
+        err?.response?.data?.message || err?.message || "Failed to ship order.",
+      );
     } finally {
       setSavingAction(null);
     }
@@ -1131,14 +988,20 @@ export default function SalesOrderEditActionPage() {
 
   const handleCancel = async () => {
     if (!orderId) return;
+
     if (!confirm("Cancel this sales order?")) return;
+
     setSavingAction("cancel");
     try {
       await api.post(`/sales-orders/${orderId}/cancel`);
       toast.success("Order cancelled.");
       await loadOrder();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to cancel order.");
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to cancel order.",
+      );
     } finally {
       setSavingAction(null);
     }
@@ -1146,51 +1009,37 @@ export default function SalesOrderEditActionPage() {
 
   const handleDeliver = async () => {
     if (!orderId) return;
+
     if (!proofFile) {
       toast.error("Please upload the signed invoice first.");
       return;
     }
+
     setSavingAction("deliver");
     setProofUploading(true);
     try {
       const uploadedDocumentFileId = await uploadProofFile(proofFile);
-      const res = await api.post(`/sales-orders/${orderId}/deliver`, { uploadedDocumentFileId });
-      const data = res.data?.data || res.data;
-      if (data?.verification) {
-        setDeliveryVerification(data.verification);
-      }
+
+      await api.post(`/sales-orders/${orderId}/deliver`, {
+        uploadedDocumentFileId,
+      });
+
       toast.success("Delivery approved.");
       setProofFile(null);
       await loadOrder();
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Failed to deliver order.");
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to deliver order.",
+      );
     } finally {
       setProofUploading(false);
       setSavingAction(null);
     }
   };
 
-  /* 🆕 DC Upload handler */
-  const handleDCUpload = async () => {
-    if (!dcFile) {
-      toast.error("Select a DC file first");
-      return;
-    }
-    setDcUploadLoading(true);
-    try {
-      const mediaId = await uploadProofFile(dcFile);
-      setDcMediaId(mediaId);
-      toast.success("Delivery Chalan uploaded.");
-      // Later we can save dcMediaId to the order via a separate API call
-    } catch (err: any) {
-      toast.error(err?.message || "DC upload failed");
-    } finally {
-      setDcUploadLoading(false);
-    }
-  };
-
-  /* ---------- Event handlers ---------- */
   const onPickDealer = async (opt: LookupOption) => {
     setValue("customerId", opt.value, { shouldDirty: true, shouldTouch: true });
     setDealerMeta(opt);
@@ -1199,7 +1048,10 @@ export default function SalesOrderEditActionPage() {
   };
 
   const onPickWarehouse = async (opt: LookupOption) => {
-    setValue("warehouseId", opt.value, { shouldDirty: true, shouldTouch: true });
+    setValue("warehouseId", opt.value, {
+      shouldDirty: true,
+      shouldTouch: true,
+    });
     setWarehouseMeta(opt);
     await refreshAllRows();
   };
@@ -1207,6 +1059,7 @@ export default function SalesOrderEditActionPage() {
   const onPickProduct = async (index: number, opt: LookupOption) => {
     const row = getValues(`items.${index}`) as LineItem | undefined;
     if (!row) return;
+
     const stock = warehouseId
       ? await fetchStockInfo(opt.value, warehouseId)
       : {
@@ -1216,7 +1069,14 @@ export default function SalesOrderEditActionPage() {
           reservedForTransfer: 0,
           availableToSell: Number(opt.stock || 0),
         };
-    const promo = await fetchPromo(opt.value, Number(row.qty || 0), customerId || undefined, warehouseId || undefined);
+
+    const promo = await fetchPromo(
+      opt.value,
+      Number(row.qty || 0),
+      customerId || undefined,
+      warehouseId || undefined,
+    );
+
     update(index, {
       ...row,
       productId: opt.value,
@@ -1235,32 +1095,44 @@ export default function SalesOrderEditActionPage() {
   const onQtyChange = (index: number, qty: number) => {
     const row = getValues(`items.${index}`) as LineItem | undefined;
     if (!row) return;
+
     update(index, { ...row, qty: Math.max(0, qty) });
+
     const fieldId = fields[index]?.id;
     if (!fieldId) return;
+
     const existingTimer = promoTimers.current[fieldId];
     if (existingTimer) clearTimeout(existingTimer);
+
     promoTimers.current[fieldId] = setTimeout(async () => {
       await refreshRowById(fieldId, { stock: false, promo: true });
     }, 300);
   };
 
   const addRow = () => append(makeLine());
+
   const duplicateRow = (index: number) => {
     const row = getValues(`items.${index}`) as LineItem | undefined;
     if (!row) return;
-    append({ ...row, promoAppliedId: row.promoAppliedId || null });
+
+    append({
+      ...row,
+      promoAppliedId: row.promoAppliedId || null,
+    });
   };
+
   const removeRow = (index: number) => {
     const fieldId = fields[index]?.id;
     if (fieldId && promoTimers.current[fieldId]) {
       clearTimeout(promoTimers.current[fieldId]);
       delete promoTimers.current[fieldId];
     }
+
     if (fields.length === 1) {
       replace([makeLine()]);
       return;
     }
+
     remove(index);
   };
 
@@ -1268,7 +1140,6 @@ export default function SalesOrderEditActionPage() {
     await handleSubmit(updateOrder)();
   };
 
-  /* ---------- Loading state ---------- */
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -1289,7 +1160,10 @@ export default function SalesOrderEditActionPage() {
             <div className="mt-2 text-sm text-muted-foreground">
               The requested record may have been removed or the URL is invalid.
             </div>
-            <Button className="mt-4" onClick={() => router.push("/sales-orders")}>
+            <Button
+              className="mt-4"
+              onClick={() => router.push("/sales-orders")}
+            >
               Back to list
             </Button>
           </CardContent>
@@ -1299,6 +1173,7 @@ export default function SalesOrderEditActionPage() {
   }
 
   const invoice = order.invoiceId || null;
+  const qrPayload = typeof invoice?.qrCode === "string" ? invoice.qrCode : "";
   const dealerSignatureId =
     dealerMeta?.value ||
     order?.customerId?.attachments?.required?.signature?._id ||
@@ -1306,18 +1181,15 @@ export default function SalesOrderEditActionPage() {
     order?.customerId?.attachments?.required?.signature ||
     "";
 
-  const dealerName = dealerMeta?.label || order.customerId?.name || order.customerId?.proprietor || "-";
-  const dealerPhone = order.customerId?.phoneNumber || order.customerId?.phone || "-";
-  const warehouseName = warehouseMeta?.label || order.warehouseId?.name || "-";
-
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        {/* ----- Header ----- */}
         <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="text-sm text-muted-foreground">Sales Order Action</div>
+              <div className="text-sm text-muted-foreground">
+                Sales Order Action
+              </div>
               <h1 className="text-2xl font-semibold">{order.orderNo}</h1>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <StatusBadge status={order.status} />
@@ -1325,92 +1197,89 @@ export default function SalesOrderEditActionPage() {
                 <span className="text-sm text-muted-foreground">
                   Created: {fmtDate(order.createdAt || order.orderDate)}
                 </span>
-                {invoice && (
-                  <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    Invoice: {invoice.invoiceNo}
-                  </span>
-                )}
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => void loadOrder()}>
-                <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void loadOrder()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
               </Button>
 
-              {isEditable && (
+              {isEditable ? (
                 <Button
                   type="button"
                   variant="outline"
                   onClick={saveChanges}
                   disabled={saving || isSubmitting}
                 >
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
                   Save
                 </Button>
-              )}
+              ) : null}
 
-              {currentApprovalRole && (
-                <Button type="button" variant="outline" onClick={() => void handleApprove()}>
-                  {savingAction === "approve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+              {currentApprovalRole ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleApprove()}
+                >
+                  {savingAction === "approve" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                  )}
                   Approve {currentApprovalRole}
                 </Button>
-              )}
+              ) : null}
 
-              {canShip && (
+              {canShip ? (
                 <Button type="button" onClick={() => void handleShip()}>
-                  {savingAction === "ship" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
+                  {savingAction === "ship" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Truck className="mr-2 h-4 w-4" />
+                  )}
                   Ship
                 </Button>
-              )}
+              ) : null}
 
-              {invoice && (
-                <GlobalPrintButton
-                  contentHtml={buildSalesOrderPrintHtml(
-                    order,
-                    qrImageForPrint,
-                    dealerName,
-                    dealerPhone,
-                    warehouseName,
-                    watchedItems,
-                    taxPercent,
-                    totals,
-                  )}
-                  headerRightHtml={buildSalesOrderPrintHeaderRight(order)}
-                  label="Print Invoice"
-                  title="Sales Invoice"
-                  orientation="portrait"
-                  company={{
-                    name: "Antab Agro LTD",
-                    address: "123 Agro Street, Dhaka",
-                    phone: "+880 1711-111111",
-                    email: "info@antabagro.com",
-                  }}
-                  showHeader={false}
-                  showFooter={false}
-                />
-              )}
+              {invoice ? (
+                <Button type="button" variant="outline" onClick={openPrint}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print invoice
+                </Button>
+              ) : null}
 
-              {canCancel && (
+              {canCancel ? (
                 <Button
                   type="button"
                   variant="outline"
                   className="text-red-600 hover:text-red-700"
                   onClick={() => void handleCancel()}
                 >
-                  {savingAction === "cancel" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+                  {savingAction === "cancel" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Ban className="mr-2 h-4 w-4" />
+                  )}
                   Cancel
                 </Button>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
 
-        {/* ----- Main layout ----- */}
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Left column (unchanged) */}
           <div className="space-y-6">
-            {/* Basics */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
                 <CardTitle>Order basics</CardTitle>
@@ -1428,9 +1297,11 @@ export default function SalesOrderEditActionPage() {
                     disabled={!isEditable}
                   />
                   <div className="text-xs text-muted-foreground">
-                    {dealerMeta?.description || "Open and search to load dealers."}
+                    {dealerMeta?.description ||
+                      "Open and search to load dealers."}
                   </div>
                 </div>
+
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Warehouse</div>
                   <LookupSelect
@@ -1443,13 +1314,20 @@ export default function SalesOrderEditActionPage() {
                     disabled={!isEditable}
                   />
                   <div className="text-xs text-muted-foreground">
-                    {warehouseMeta?.description || "Open and search to load warehouses."}
+                    {warehouseMeta?.description ||
+                      "Open and search to load warehouses."}
                   </div>
                 </div>
+
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Order date</div>
-                  <Input type="date" {...register("orderDate")} disabled={!isEditable} />
+                  <Input
+                    type="date"
+                    {...register("orderDate")}
+                    disabled={!isEditable}
+                  />
                 </div>
+
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Payment method</div>
                   <select
@@ -1467,14 +1345,14 @@ export default function SalesOrderEditActionPage() {
               </CardContent>
             </Card>
 
-            {/* Items */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Order items</CardTitle>
-                {isEditable && (
+                {isEditable ? (
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" onClick={addRow}>
-                      <Plus className="mr-2 h-4 w-4" /> Add item
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add item
                     </Button>
                     <Button
                       type="button"
@@ -1482,16 +1360,20 @@ export default function SalesOrderEditActionPage() {
                       onClick={() => void refreshAllRows()}
                       disabled={!customerId || !warehouseId}
                     >
-                      <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Refresh
                     </Button>
                   </div>
-                )}
+                ) : null}
               </CardHeader>
+
               <CardContent className="space-y-4">
                 {fields.map((field, index) => {
                   const row = watchedItems[index] || makeLine();
                   const line = calcLine(row, taxPercent);
-                  const lowStock = Number(row.availableToSell || 0) < Number(row.qty || 0);
+                  const lowStock =
+                    Number(row.availableToSell || 0) < Number(row.qty || 0);
+
                   return (
                     <div
                       key={field.id}
@@ -1499,13 +1381,23 @@ export default function SalesOrderEditActionPage() {
                     >
                       <div className="mb-4 flex items-center justify-between gap-2">
                         <div>
-                          <div className="text-sm font-semibold">Item #{index + 1}</div>
-                          <div className="text-xs text-muted-foreground">{row.productName || "Select a product"}</div>
+                          <div className="text-sm font-semibold">
+                            Item #{index + 1}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.productName || "Select a product"}
+                          </div>
                         </div>
-                        {isEditable && (
+
+                        {isEditable ? (
                           <div className="flex gap-2">
-                            <Button type="button" variant="ghost" onClick={() => duplicateRow(index)}>
-                              <Copy className="mr-2 h-4 w-4" /> Duplicate
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => duplicateRow(index)}
+                            >
+                              <Copy className="mr-2 h-4 w-4" />
+                              Duplicate
                             </Button>
                             <Button
                               type="button"
@@ -1513,10 +1405,11 @@ export default function SalesOrderEditActionPage() {
                               onClick={() => removeRow(index)}
                               className="text-red-600 hover:text-red-700"
                             >
-                              <Trash2 className="mr-2 h-4 w-4" /> Remove
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove
                             </Button>
                           </div>
-                        )}
+                        ) : null}
                       </div>
 
                       <div className="grid gap-4 md:grid-cols-12">
@@ -1532,47 +1425,64 @@ export default function SalesOrderEditActionPage() {
                             disabled={!isEditable}
                           />
                           <div className="text-xs text-muted-foreground">
-                            {row.productName ? `Price: ${money(row.unitPrice)} BDT` : "Open and search to load products."}
+                            {row.productName
+                              ? `Price: ${money(row.unitPrice)} BDT`
+                              : "Open and search to load products."}
                           </div>
                         </div>
+
                         <div className="space-y-2 md:col-span-2">
                           <div className="text-sm font-medium">Available</div>
                           <div
                             className={`flex h-10 items-center rounded-md border px-3 text-sm font-semibold ${
-                              lowStock ? "border-red-300 bg-red-100 text-red-700" : "bg-slate-50"
+                              lowStock
+                                ? "border-red-300 bg-red-100 text-red-700"
+                                : "bg-slate-50"
                             }`}
                           >
                             {Number(row.availableToSell || 0)}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            Sellable = qty + incoming - reserved sales - reserved transfer
+                            Sellable = quantity + incoming - reserved sales -
+                            reserved transfer
                           </div>
                         </div>
+
                         <div className="space-y-2 md:col-span-1">
                           <div className="text-sm font-medium">Qty</div>
                           <Input
                             type="number"
                             min={0}
                             value={row.qty}
-                            onChange={(e) => onQtyChange(index, Number(e.target.value || 0))}
+                            onChange={(e) =>
+                              onQtyChange(index, Number(e.target.value || 0))
+                            }
                             disabled={!isEditable}
                           />
                         </div>
+
                         <div className="space-y-2 md:col-span-1">
                           <div className="text-sm font-medium">Bonus</div>
                           <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm">
                             {Number(row.bonusQty || 0)}
                           </div>
                         </div>
+
                         <div className="space-y-2 md:col-span-2">
                           <div className="text-sm font-medium">Unit price</div>
                           <Input
                             type="number"
                             value={row.unitPrice}
-                            onChange={(e) => update(index, { ...row, unitPrice: Number(e.target.value || 0) })}
+                            onChange={(e) =>
+                              update(index, {
+                                ...row,
+                                unitPrice: Number(e.target.value || 0),
+                              })
+                            }
                             disabled={!isEditable}
                           />
                         </div>
+
                         <div className="space-y-2 md:col-span-1">
                           <div className="text-sm font-medium">Disc %</div>
                           <Input
@@ -1580,16 +1490,23 @@ export default function SalesOrderEditActionPage() {
                             min={0}
                             step="0.01"
                             value={row.discountPercent}
-                            onChange={(e) => update(index, { ...row, discountPercent: Number(e.target.value || 0) })}
+                            onChange={(e) =>
+                              update(index, {
+                                ...row,
+                                discountPercent: Number(e.target.value || 0),
+                              })
+                            }
                             disabled={!isEditable}
                           />
                         </div>
+
                         <div className="space-y-2 md:col-span-1">
                           <div className="text-sm font-medium">Subtotal</div>
                           <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-medium">
                             {money(line.lineSubtotal)} BDT
                           </div>
                         </div>
+
                         <div className="space-y-2 md:col-span-1">
                           <div className="text-sm font-medium">Total</div>
                           <div className="flex h-10 items-center rounded-md border bg-indigo-50 px-3 text-sm font-semibold text-indigo-700">
@@ -1604,17 +1521,22 @@ export default function SalesOrderEditActionPage() {
                         <div>Reserved sales: {row.reservedForSales}</div>
                         <div>Reserved transfer: {row.reservedForTransfer}</div>
                       </div>
+
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <div className="text-muted-foreground">
                           {row.promoAppliedId ? (
-                            <span className="text-emerald-600">Promotion applied automatically</span>
+                            <span className="text-emerald-600">
+                              Promotion applied automatically
+                            </span>
                           ) : (
                             <span>No promotion applied yet</span>
                           )}
                         </div>
-                        {lowStock && (
-                          <div className="font-medium text-red-600">Quantity exceeds available to sell</div>
-                        )}
+                        {lowStock ? (
+                          <div className="font-medium text-red-600">
+                            Quantity exceeds available to sell
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1622,7 +1544,6 @@ export default function SalesOrderEditActionPage() {
               </CardContent>
             </Card>
 
-            {/* Notes */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
                 <CardTitle>Notes</CardTitle>
@@ -1638,39 +1559,71 @@ export default function SalesOrderEditActionPage() {
               </CardContent>
             </Card>
 
-            {/* Workflow timeline */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
                 <CardTitle>Workflow timeline</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT", "IN_SHIPPING", "DELIVERED"].map((step) => {
-                    const matched = order.approvalLogs?.find((l) => l.role === step);
+                  {[
+                    "PENDING_AM",
+                    "PENDING_RM",
+                    "PENDING_NSM",
+                    "PENDING_FULFILLMENT",
+                    "IN_SHIPPING",
+                    "DELIVERED",
+                  ].map((step) => {
+                    const matched = order.approvalLogs?.find(
+                      (l) => l.role === step,
+                    );
                     const active = step === order.status;
                     const done =
                       matched?.status === "APPROVED" ||
                       ["DELIVERED"].includes(order.status) ||
-                      ["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT", "IN_SHIPPING", "DELIVERED"].indexOf(step) <
-                        ["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT", "IN_SHIPPING", "DELIVERED"].indexOf(order.status);
+                      [
+                        "PENDING_AM",
+                        "PENDING_RM",
+                        "PENDING_NSM",
+                        "PENDING_FULFILLMENT",
+                        "IN_SHIPPING",
+                        "DELIVERED",
+                      ].indexOf(step) <
+                        [
+                          "PENDING_AM",
+                          "PENDING_RM",
+                          "PENDING_NSM",
+                          "PENDING_FULFILLMENT",
+                          "IN_SHIPPING",
+                          "DELIVERED",
+                        ].indexOf(order.status);
 
                     return (
                       <div
                         key={step}
                         className={`rounded-md border p-4 ${
-                          active ? "border-indigo-300 bg-indigo-50" : done ? "border-emerald-200 bg-emerald-50/70" : "bg-white"
+                          active
+                            ? "border-indigo-300 bg-indigo-50"
+                            : done
+                              ? "border-emerald-200 bg-emerald-50/70"
+                              : "bg-white"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{step.replaceAll("_", " ")}</div>
+                          <div className="font-medium">
+                            {step.replaceAll("_", " ")}
+                          </div>
                           <StatusBadge status={step as OrderStatus} />
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {matched?.actionDate ? fmtDate(matched.actionDate) : "No action yet"}
+                          {matched?.actionDate
+                            ? fmtDate(matched.actionDate)
+                            : "No action yet"}
                         </div>
-                        {matched?.remarks && (
-                          <div className="mt-2 text-xs text-muted-foreground">{matched.remarks}</div>
-                        )}
+                        {matched?.remarks ? (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {matched.remarks}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -1679,9 +1632,7 @@ export default function SalesOrderEditActionPage() {
             </Card>
           </div>
 
-          {/* Right column */}
           <div className="space-y-6">
-            {/* Summary */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
                 <CardTitle>Summary</CardTitle>
@@ -1692,20 +1643,32 @@ export default function SalesOrderEditActionPage() {
                   <span className="font-medium">{totals.totalQty}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Bonus qty</span>
+                  <span className="text-sm text-muted-foreground">
+                    Bonus qty
+                  </span>
                   <span className="font-medium">{totals.totalBonusQty}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Sub total</span>
-                  <span className="font-medium">{money(order.subTotal ?? totals.subtotal)} BDT</span>
+                  <span className="text-sm text-muted-foreground">
+                    Sub total
+                  </span>
+                  <span className="font-medium">
+                    {money(order.subTotal ?? totals.subtotal)} BDT
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Discount</span>
-                  <span className="font-medium">{money(order.totalDiscount)} BDT</span>
+                  <span className="text-sm text-muted-foreground">
+                    Discount
+                  </span>
+                  <span className="font-medium">
+                    {money(order.totalDiscount)} BDT
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Tax</span>
-                  <span className="font-medium">{money(order.totalTax)} BDT</span>
+                  <span className="font-medium">
+                    {money(order.totalTax)} BDT
+                  </span>
                 </div>
                 <div className="flex items-center justify-between border-t pt-3">
                   <span className="text-base font-semibold">Grand total</span>
@@ -1716,7 +1679,6 @@ export default function SalesOrderEditActionPage() {
               </CardContent>
             </Card>
 
-            {/* Credit summary */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
                 <CardTitle>Credit summary</CardTitle>
@@ -1724,34 +1686,37 @@ export default function SalesOrderEditActionPage() {
               <CardContent className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Credit limit</span>
-                  <span className="font-medium">{money(order.creditSnapshot?.creditLimit)} BDT</span>
+                  <span className="font-medium">
+                    {money(order.creditSnapshot?.creditLimit)} BDT
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Used</span>
-                  <span className="font-medium">{money(order.creditSnapshot?.used)} BDT</span>
+                  <span className="font-medium">
+                    {money(order.creditSnapshot?.used)} BDT
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Available</span>
-                  <span className="font-medium">{money(order.creditSnapshot?.available)} BDT</span>
+                  <span className="font-medium">
+                    {money(order.creditSnapshot?.available)} BDT
+                  </span>
                 </div>
 
                 {creditLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading live credit...
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading credit summary...
                   </div>
                 ) : creditSummary ? (
-                  <div className="rounded-md bg-slate-50 p-3 text-xs">
-                    <div className="mb-1 font-medium text-muted-foreground">Live dealer credit</div>
-                    <div className="space-y-1">
-                      <div>Current due: {money(creditSummary.currentDue)} BDT</div>
-                      <div>Available: {money(creditSummary.available)} BDT</div>
-                    </div>
+                  <div className="rounded-md bg-slate-50 p-3 text-xs text-muted-foreground">
+                    Dealer credit available: {money(creditSummary.available)}{" "}
+                    BDT
                   </div>
                 ) : null}
               </CardContent>
             </Card>
 
-            {/* Invoice & QR */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
                 <CardTitle>Invoice</CardTitle>
@@ -1760,8 +1725,12 @@ export default function SalesOrderEditActionPage() {
                 {invoice ? (
                   <>
                     <div className="rounded-md border bg-slate-50 p-4">
-                      <div className="text-xs text-muted-foreground">Invoice No</div>
-                      <div className="mt-1 font-semibold">{invoice.invoiceNo || "-"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Invoice No
+                      </div>
+                      <div className="mt-1 font-semibold">
+                        {invoice.invoiceNo || "-"}
+                      </div>
                       <div className="mt-2 text-xs text-muted-foreground">
                         Date: {fmtDate(invoice.invoiceDate || order.createdAt)}
                       </div>
@@ -1771,78 +1740,56 @@ export default function SalesOrderEditActionPage() {
                     </div>
 
                     <div className="rounded-md border bg-white p-4">
-                      <div className="text-xs font-medium text-muted-foreground">QR image</div>
+                      <div className="text-xs font-medium text-muted-foreground">
+                        QR image
+                      </div>
                       <div className="mt-3 flex items-center justify-center rounded-md border bg-slate-50 p-3">
                         {qrImage ? (
-                          <img src={qrImage} alt="Invoice QR" className="h-44 w-44" />
+                          <img
+                            src={qrImage}
+                            alt="Invoice QR"
+                            className="h-44 w-44"
+                          />
                         ) : (
-                          <div className="text-sm text-muted-foreground">QR not ready yet</div>
+                          <div className="text-sm text-muted-foreground">
+                            QR not ready yet
+                          </div>
                         )}
                       </div>
-                      {qrParsed && (
-                        <div className="mt-3 space-y-2 rounded-md bg-blue-50 p-3 text-xs">
-                          <div className="font-medium text-blue-800">Decoded QR data</div>
-                          <div>
-                            <span className="text-muted-foreground">Dealer: </span>
-                            <span className="font-medium">
-                              {qrParsed?.dealer?.name} ({qrParsed?.dealer?.code})
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Phone: </span>
-                            {qrParsed?.dealer?.phone}
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Credit: </span>
-                            {money(qrParsed?.dealer?.creditLimit)} limit / {money(qrParsed?.dealer?.available)} avail
-                          </div>
-                          <div className="mt-1 font-medium">Products:</div>
-                          {qrParsed?.products?.map((p, i) => (
-                            <div key={i} className="ml-2 text-slate-600">
-                              {p.name} – {p.qty} × {money(p.unitPrice)} BDT
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <div className="mt-3 text-xs text-muted-foreground break-words">
+                        {qrPayload || "-"}
+                      </div>
                     </div>
 
                     <div className="rounded-md border bg-white p-4">
-                      <div className="text-xs font-medium text-muted-foreground">Dealer signature template</div>
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Dealer signature template
+                      </div>
                       <div className="mt-2 rounded-md border border-dashed bg-slate-50 p-4 text-sm">
                         {dealerSignatureId ? (
                           <div>
-                            Signature media linked: <span className="font-medium">{String(dealerSignatureId)}</span>
+                            Signature media linked:{" "}
+                            <span className="font-medium">
+                              {String(dealerSignatureId)}
+                            </span>
                           </div>
                         ) : (
-                          <div className="text-muted-foreground">No dealer signature uploaded.</div>
+                          <div className="text-muted-foreground">
+                            No dealer signature uploaded.
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    <GlobalPrintButton
-                      contentHtml={buildSalesOrderPrintHtml(
-                        order,
-                        qrImageForPrint,
-                        dealerName,
-                        dealerPhone,
-                        warehouseName,
-                        watchedItems,
-                        taxPercent,
-                        totals,
-                      )}
-                      headerRightHtml={buildSalesOrderPrintHeaderRight(order)}
-                      label="Print Invoice"
-                      title="Sales Invoice"
-                      orientation="portrait"
-                      company={{
-                        name: "Antab Agro LTD",
-                        address: "123 Agro Street, Dhaka",
-                        phone: "+880 1711-111111",
-                        email: "info@antabagro.com",
-                      }}
-                      showHeader={false}
-                      showFooter={false}
-                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={openPrint}
+                    >
+                      <Printer className="mr-2 h-4 w-4" />
+                      Print invoice
+                    </Button>
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -1852,80 +1799,7 @@ export default function SalesOrderEditActionPage() {
               </CardContent>
             </Card>
 
-            {/* 🆕 Delivery Chalan Card */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Delivery Chalan (DC)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <GlobalPrintButton
-                  contentHtml={buildDCPrintHtml(
-                    order,
-                    dealerName,
-                    dealerPhone,
-                    warehouseName,
-                    watchedItems,
-                  )}
-                  headerRightHtml={`<div style="text-align:right;"><div style="font-size: 20px; font-weight: 800; color: #0f172a;">DC #${order.orderNo}</div></div>`}
-                  label="Print D.C."
-                  title="Delivery Chalan"
-                  orientation="portrait"
-                  company={{
-                    name: "Antab Agro LTD",
-                    address: "123 Agro Street, Dhaka",
-                    phone: "+880 1711-111111",
-                    email: "info@antabagro.com",
-                  }}
-                  showHeader={false}
-                  showFooter={false}
-                />
-
-                <div className="text-sm text-muted-foreground">
-                  Upload the signed Delivery Chalan (optional).
-                </div>
-
-                <Input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setDcFile(e.target.files?.[0] || null)}
-                />
-
-                {dcFile && (
-                  <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                    Selected file: <span className="font-medium">{dcFile.name}</span>
-                  </div>
-                )}
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleDCUpload}
-                  disabled={dcUploadLoading || !dcFile}
-                >
-                  {dcUploadLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="mr-2 h-4 w-4" />
-                  )}
-                  Upload DC
-                </Button>
-
-                {dcMediaId && (
-                  <div className="rounded-md bg-emerald-50 p-3 text-sm">
-                    <div className="flex items-center gap-1 font-medium text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" /> DC uploaded
-                    </div>
-                    <div className="mt-1 text-xs text-emerald-600">
-                      Media ID: {dcMediaId}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Approval remarks & button */}
-            {currentApprovalRole && (
+            {currentApprovalRole ? (
               <Card className="border-slate-200 shadow-sm">
                 <CardHeader>
                   <CardTitle>Approval remarks</CardTitle>
@@ -1938,6 +1812,7 @@ export default function SalesOrderEditActionPage() {
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
                     placeholder="Optional remarks before approval..."
                   />
+
                   <Button
                     type="button"
                     className="w-full"
@@ -1953,17 +1828,17 @@ export default function SalesOrderEditActionPage() {
                   </Button>
                 </CardContent>
               </Card>
-            )}
+            ) : null}
 
-            {/* Delivery verification */}
-            {canDeliver && (
+            {canDeliver ? (
               <Card className="border-slate-200 shadow-sm">
                 <CardHeader>
                   <CardTitle>Delivery verification</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="text-sm text-muted-foreground">
-                    Upload the signed invoice scan/photo. The backend will verify QR and dealer signature.
+                    Upload the signed invoice scan/photo. The backend will
+                    verify QR and dealer signature before delivery.
                   </div>
 
                   <Input
@@ -1972,17 +1847,20 @@ export default function SalesOrderEditActionPage() {
                     onChange={(e) => setProofFile(e.target.files?.[0] || null)}
                   />
 
-                  {proofFile && (
+                  {proofFile ? (
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                      Selected file: <span className="font-medium">{proofFile.name}</span>
+                      Selected file:{" "}
+                      <span className="font-medium">{proofFile.name}</span>
                     </div>
-                  )}
+                  ) : null}
 
                   <Button
                     type="button"
                     className="w-full"
                     onClick={() => void handleDeliver()}
-                    disabled={proofUploading || savingAction === "deliver" || !proofFile}
+                    disabled={
+                      proofUploading || savingAction === "deliver" || !proofFile
+                    }
                   >
                     {proofUploading || savingAction === "deliver" ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1991,20 +1869,145 @@ export default function SalesOrderEditActionPage() {
                     )}
                     Verify and deliver
                   </Button>
-
-                  {deliveryVerification && (
-                    <div className="rounded-md bg-emerald-50 p-3 text-sm">
-                      <div className="flex items-center gap-1 font-medium text-emerald-700">
-                        <CheckCircle2 className="h-4 w-4" /> Delivery verified
-                      </div>
-                      <div className="mt-1 text-xs text-emerald-600">
-                        Signature similarity: {((deliveryVerification.signatureSimilarity || 0) * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
-            )}
+            ) : null}
+          </div>
+        </div>
+
+        <div ref={printRef} className="hidden">
+          <div className="wrap">
+            <div className="card">
+              <div className="row">
+                <div>
+                  <div>
+                    <strong>Sales Order / Invoice</strong>
+                  </div>
+                  <div className="muted small">Order No: {order.orderNo}</div>
+                  <div className="muted small">
+                    Date: {fmtDate(order.orderDate || order.createdAt)}
+                  </div>
+                </div>
+                <div className="right">
+                  <div>
+                    <strong>
+                      {dealerMeta?.label ||
+                        order.customerId?.name ||
+                        order.customerId?.proprietor ||
+                        "-"}
+                    </strong>
+                  </div>
+                  <div className="muted small">
+                    {order.customerId?.phoneNumber ||
+                      order.customerId?.phone ||
+                      "-"}
+                  </div>
+                  <div className="muted small">
+                    Warehouse:{" "}
+                    {warehouseMeta?.label || order.warehouseId?.name || "-"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Product</th>
+                    <th className="right">Qty</th>
+                    <th className="right">Bonus</th>
+                    <th className="right">Price</th>
+                    <th className="right">Subtotal</th>
+                    <th className="right">Tax</th>
+                    <th className="right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {watchedItems.map((item, index) => {
+                    const line = calcLine(item, taxPercent);
+                    return (
+                      <tr key={item.productId || index}>
+                        <td>{index + 1}</td>
+                        <td>{item.productName || item.productId || "-"}</td>
+                        <td className="right">{Number(item.qty || 0)}</td>
+                        <td className="right">{Number(item.bonusQty || 0)}</td>
+                        <td className="right">
+                          {money(Number(item.unitPrice || 0))}
+                        </td>
+                        <td className="right">{money(line.lineSubtotal)}</td>
+                        <td className="right">{money(line.taxAmount)}</td>
+                        <td className="right">{money(line.lineTotal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="row">
+              <div className="card" style={{ width: "48%" }}>
+                <div>
+                  <strong>QR Code Area</strong>
+                </div>
+                <div className="muted small">QR payload</div>
+                <div className="qr-box">
+                  {qrImage ? (
+                    <img src={qrImage} alt="Invoice QR" />
+                  ) : (
+                    <span>QR not ready</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="card" style={{ width: "48%" }}>
+                <div>
+                  <strong>Dealer Signature</strong>
+                </div>
+                <div className="muted small">
+                  Sign in this box after receiving the goods
+                </div>
+                <div className="signature-box">Dealer signature</div>
+                <div className="muted small" style={{ marginTop: "10px" }}>
+                  Template media:{" "}
+                  {dealerSignatureId ? String(dealerSignatureId) : "Not linked"}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="row">
+                <div>
+                  <div className="muted small">Subtotal</div>
+                  <div>
+                    <strong>
+                      {money(order.subTotal ?? totals.subtotal)} BDT
+                    </strong>
+                  </div>
+                </div>
+                <div>
+                  <div className="muted small">Discount</div>
+                  <div>
+                    <strong>{money(order.totalDiscount)} BDT</strong>
+                  </div>
+                </div>
+                <div>
+                  <div className="muted small">Tax</div>
+                  <div>
+                    <strong>{money(order.totalTax)} BDT</strong>
+                  </div>
+                </div>
+                <div>
+                  <div className="muted small">Grand Total</div>
+                  <div>
+                    <strong>
+                      {money(order.grandTotal ?? totals.grandTotal)} BDT
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -403,8 +403,9 @@ export default function SalesOrderListPage() {
     router.push(`/sales/list/${id}/edit`);
   };
 
-  const openInvoice = (invoiceId: string) => {
-    window.open(`/sales/invoice/${invoiceId}`, "_blank");
+  // Updated: now goes to the view page where full print options (Invoice, DC) are available
+  const openInvoice = (orderId: string) => {
+    router.push(`/sales/list/${orderId}`);
   };
 
   const handleCancel = async (orderId: string) => {
@@ -550,10 +551,6 @@ export default function SalesOrderListPage() {
                 className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
               >
                 <option value="">All</option>
-                <option value="PENDING_AM, PENDING_AM, PENDING_NSM, PENDING_FULFILLMENT">
-                  All Pending (Not Ready Now, Later will need to do that
-                  separately for better control)
-                </option>
                 <option value="PENDING_AM">Pending AM</option>
                 <option value="PENDING_RM">Pending RM</option>
                 <option value="PENDING_NSM">Pending NSM</option>
@@ -659,10 +656,10 @@ export default function SalesOrderListPage() {
                         order.warehouseId?._id ||
                         "-";
 
-                      const invoiceId =
+                      const invoiceExists =
                         typeof order.invoiceId === "object"
-                          ? order.invoiceId?._id || order.invoiceId?.id
-                          : order.invoiceId;
+                          ? !!order.invoiceId?._id || !!order.invoiceId?.id
+                          : !!order.invoiceId;
 
                       const editableStatuses: OrderStatus[] = [
                         "PENDING_AM",
@@ -737,12 +734,12 @@ export default function SalesOrderListPage() {
                                 </Button>
                               ) : null}
 
-                              {invoiceId ? (
+                              {invoiceExists ? (
                                 <Button
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => openInvoice(String(invoiceId))}
+                                  onClick={() => openInvoice(order._id)}
                                 >
                                   <Printer className="mr-2 h-4 w-4" />
                                   Invoice
