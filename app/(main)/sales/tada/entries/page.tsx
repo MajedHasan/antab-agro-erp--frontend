@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -55,7 +55,7 @@ function getCurrentUserId() {
   return "";
 }
 
-export default function MyEntriesPage() {
+function MyEntriesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -256,5 +256,14 @@ export default function MyEntriesPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <MyEntriesPage />
+    </Suspense>
   );
 }
