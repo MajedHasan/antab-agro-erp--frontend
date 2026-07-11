@@ -1232,6 +1232,7 @@ export default function CollectionCreatePage() {
                                                   className="mt-1 rounded-xl"
                                                 />
                                               </div>
+
                                               <div>
                                                 <Label className="text-xs font-medium text-slate-600">
                                                   Cash Amount
@@ -1266,6 +1267,34 @@ export default function CollectionCreatePage() {
                                                   </p>
                                                 )}
                                               </div>
+
+
+                                              {/* ------------ Checking (Testing) ------------ */}
+                                              {mr.deductCommission === true && (
+                                                <div>
+                                                  <Label className="text-[8px] font-medium text-slate-600">
+                                                    Actual Cash Amount (after commission) {String(mr.taka)} - {String(commission)} = {String(reduction)}
+                                                  </Label>
+                                                  <Input
+                                                    type="number"
+                                                    value={commission ? mr.taka - commission : mr.taka || ""}
+                                                    onChange={(e) => {
+                                                      const val = Number(
+                                                        e.target.value || 0,
+                                                      );
+                                                      updateMr(
+                                                        dealer.id,
+                                                        inv.id,
+                                                        mr.id,
+                                                        { taka: val },
+                                                      );
+                                                    }}
+                                                    className={`mt-1 rounded-xl ${exceedsDue ? "border-red-400 bg-red-50" : ""}`}
+                                                  />
+                                                </div>
+                                              )}
+                                              {/* --------xx-- Checking (Testing) --xx-------- */}
+
 
                                               {/* Commission Mode Toggle */}
                                               <div className="sm:col-span-2">
@@ -1473,7 +1502,7 @@ export default function CollectionCreatePage() {
 
                                               <div className="sm:col-span-2">
                                                 <FileUpload
-                                                  label="Supporting Document"
+                                                  label="Supporting Document (Money Receipt File)"
                                                   fileName={mr.mediaName}
                                                   fileUrl={mr.mediaUrl}
                                                   onUpload={(file: File) =>

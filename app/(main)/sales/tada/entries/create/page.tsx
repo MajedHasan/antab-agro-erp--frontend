@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -103,7 +103,7 @@ function validateBackdateRule(entryDateValue: string) {
   }
 }
 
-export default function TadaEntryCreatePage() {
+function TadaEntryCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -451,5 +451,15 @@ export default function TadaEntryCreatePage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <TadaEntryCreatePage />
+    </Suspense>
   );
 }
