@@ -109,6 +109,14 @@ const DealerViewModal = ({
                   value={String(viewing?.creditLimit ?? "-")}
                 />
                 <InfoRow
+                  label="Due / Current Due"
+                  value={String(viewing?.currentDue ?? "-")}
+                />
+                <InfoRow
+                  label="Available Credit"
+                  value={String( (viewing?.creditLimit - viewing?.currentDue)?.toFixed(2) ?? "-")}
+                />
+                <InfoRow
                   label="Opening Balance"
                   value={String(viewing?.openingBalance ?? "-")}
                 />

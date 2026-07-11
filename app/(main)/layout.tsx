@@ -203,6 +203,11 @@ const menuItems: MenuItem[] = [
             ],
           },
           {
+            key: "Ledger",
+            href: "/sales/dealer/ledger",
+            permissions: ["dealerledger.view", "dealerledger.edit"],
+          },
+          {
             key: "Zone",
             href: "/sales/dealer/zones",
             permissions: [

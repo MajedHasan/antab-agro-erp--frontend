@@ -37,6 +37,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+/* --------------------------- Types --------------------------- */
 type DealerOption = {
   value: string;
   label: string;
@@ -65,6 +66,7 @@ type InvoiceOption = {
   invoiceNo: string;
   orderId: string;
   orderNo?: string;
+  orderStatus?: string;
   warehouseId: string;
   warehouseName?: string;
   paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
@@ -106,6 +108,7 @@ type ReturnInvoiceSection = {
   rows: ReturnRow[];
 };
 
+/* --------------------------- Helpers --------------------------- */
 const today = new Date().toISOString().slice(0, 10);
 
 const money = (n: number) =>
@@ -154,24 +157,54 @@ function makeBlankRow(): ReturnRow {
   };
 }
 
+/** Fetches returnable quantities from the backend for an invoice */
+async function fetchReturnableQuantities(
+  invoiceId: string,
+): Promise<
+  Map<string, { alreadyReturnedQty: number; remainingQty: number }>
+> {
+  try {
+    const res = await api.get("/sales-returns/returnable-quantities", {
+      params: { invoiceId },
+    });
+    const data: Array<{
+      productId: string;
+      soldQty: number;
+      alreadyReturnedQty: number;
+      remainingQty: number;
+    }> = res.data?.data || [];
+    const map = new Map<
+      string,
+      { alreadyReturnedQty: number; remainingQty: number }
+    >();
+    for (const item of data) {
+      map.set(item.productId, {
+        alreadyReturnedQty: item.alreadyReturnedQty,
+        remainingQty: item.remainingQty,
+      });
+    }
+    return map;
+  } catch {
+    toast.error("Failed to load returnable quantities.");
+    return new Map();
+  }
+}
+
+/** Normalises a raw invoice item (expects populated productId) */
 function normalizeInvoiceItem(item: any): InvoiceItemOption {
+  const product = item.productId || {};
+  const productName = product.name || item.productName || "Unknown Product";
   const invoiceQty = Number(item.qty || 0) + Number(item.bonusQty || 0);
-  const alreadyReturnedQty = Number(
-    item.returnedQty || item.returnQuantity || 0,
-  );
-  const maxReturnQty = Math.max(0, invoiceQty - alreadyReturnedQty);
   const lineTotal = Number(item.lineTotal ?? item.lineSubtotal ?? 0);
   const unitPrice = calcEffectiveUnitPrice(lineTotal, invoiceQty);
 
   return {
-    productId: String(item.productId?._id || item.productId || ""),
-    productName: String(
-      item.productId?.name || item.productName || "Unknown product",
-    ),
-    sku: item.productId?.sku || item.sku || "",
+    productId: String(product._id || item.productId || ""),
+    productName,
+    sku: product.sku || item.sku || "",
     invoiceQty,
-    alreadyReturnedQty,
-    maxReturnQty,
+    alreadyReturnedQty: 0, // will be overridden by real data
+    maxReturnQty: invoiceQty,
     unitPrice,
     invoiceLineTotal: lineTotal,
     warehouseId: String(item.warehouseId?._id || item.warehouseId || ""),
@@ -179,6 +212,7 @@ function normalizeInvoiceItem(item: any): InvoiceItemOption {
   };
 }
 
+/** Normalises a raw invoice (expects populated orderId and items.productId) */
 function normalizeInvoice(invoice: any): InvoiceOption {
   return {
     value: String(invoice._id || invoice.id),
@@ -195,6 +229,7 @@ function normalizeInvoice(invoice: any): InvoiceOption {
     invoiceNo: String(invoice.invoiceNo || invoice._id || "Invoice"),
     orderId: String(invoice.orderId?._id || invoice.orderId || ""),
     orderNo: String(invoice.orderId?.orderNo || ""),
+    orderStatus: invoice.orderId?.status,
     warehouseId: String(invoice.warehouseId?._id || invoice.warehouseId || ""),
     warehouseName: invoice.warehouseId?.name,
     paymentStatus: invoice.paymentStatus || "UNPAID",
@@ -209,6 +244,7 @@ function normalizeInvoice(invoice: any): InvoiceOption {
   };
 }
 
+/* --------------------------- SearchSelect (unchanged) --------------------------- */
 function SearchSelect({
   value,
   selectedLabel,
@@ -234,14 +270,12 @@ function SearchSelect({
 
   useEffect(() => {
     if (!open) return;
-
     const key = query.trim().toLowerCase();
     const timer = setTimeout(async () => {
       if (cacheRef.current[key]) {
         setOptions(cacheRef.current[key]);
         return;
       }
-
       setLoading(true);
       try {
         const list = await fetchOptions(query);
@@ -253,7 +287,6 @@ function SearchSelect({
         setLoading(false);
       }
     }, 250);
-
     return () => clearTimeout(timer);
   }, [open, query, fetchOptions]);
 
@@ -270,7 +303,6 @@ function SearchSelect({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-
       <PopoverContent className="w-[360px] p-0" align="start">
         <Command>
           <CommandInput
@@ -316,6 +348,7 @@ function SearchSelect({
   );
 }
 
+/* --------------------------- InvoicePicker --------------------------- */
 function InvoicePicker({
   dealerId,
   selectedIds,
@@ -345,13 +378,14 @@ function InvoicePicker({
             status: "ACTIVE",
             q: search || undefined,
             page: 1,
-            limit: 100,
+            limit: 200,
+            populate: "orderId,items.productId",
           },
         });
 
-        const list = (res.data?.data || []).map((inv: any) =>
-          normalizeInvoice(inv),
-        );
+        const list = (res.data?.data || [])
+          .map((inv: any) => normalizeInvoice(inv))
+          .filter((inv: InvoiceOption) => inv.orderStatus === "DELIVERED");
         cacheRef.current[key] = list;
         return list;
       } finally {
@@ -363,12 +397,10 @@ function InvoicePicker({
 
   useEffect(() => {
     if (!open || !dealerId) return;
-
     const timer = setTimeout(async () => {
       const list = await fetchInvoices(query);
       setOptions(list);
     }, 250);
-
     return () => clearTimeout(timer);
   }, [open, query, fetchInvoices, dealerId]);
 
@@ -389,7 +421,6 @@ function InvoicePicker({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-
       <PopoverContent className="w-[560px] p-0" align="start">
         <Command>
           <CommandInput
@@ -423,7 +454,6 @@ function InvoicePicker({
                     <div className="mr-2 flex h-5 w-5 items-center justify-center">
                       {selected ? <Check className="h-4 w-4" /> : null}
                     </div>
-
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium">
@@ -439,6 +469,11 @@ function InvoicePicker({
                             Fully paid
                           </span>
                         ) : null}
+                        {invoice.orderStatus !== "DELIVERED" && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Order not delivered
+                          </span>
+                        )}
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {invoice.description || "No extra details"}
@@ -455,6 +490,7 @@ function InvoicePicker({
   );
 }
 
+/* --------------------------- ProductPicker --------------------------- */
 function ProductPicker({
   value,
   options,
@@ -495,7 +531,6 @@ function ProductPicker({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-
       <PopoverContent className="w-[420px] p-0" align="start">
         <Command>
           <CommandInput
@@ -559,6 +594,7 @@ function ProductPicker({
   );
 }
 
+/* ===================== Main Page Component ===================== */
 export default function SalesReturnCreatePage() {
   const router = useRouter();
 
@@ -570,6 +606,14 @@ export default function SalesReturnCreatePage() {
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdReturn, setCreatedReturn] = useState<any>(null);
+
+  // Cached returnable quantities per invoice
+  const [returnableMap, setReturnableMap] = useState<
+    Map<
+      string,
+      Map<string, { alreadyReturnedQty: number; remainingQty: number }>
+    >
+  >(new Map());
 
   const selectedInvoiceIds = useMemo(
     () => sections.map((s) => s.invoiceId),
@@ -586,7 +630,6 @@ export default function SalesReturnCreatePage() {
     const res = await api.get("/dealers", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
-
     return (res.data?.data || []).map((d: any) => ({
       value: String(d._id || d.id),
       label: d.name || d.proprietor || String(d._id || d.id),
@@ -596,6 +639,7 @@ export default function SalesReturnCreatePage() {
     })) as DealerOption[];
   }, []);
 
+  // Load invoices for a dealer, populate product names, and fetch returnable quantities
   const loadInvoicesForDealer = useCallback(async (dealerId: string) => {
     if (!dealerId) return [];
 
@@ -604,14 +648,32 @@ export default function SalesReturnCreatePage() {
         customerId: dealerId,
         status: "ACTIVE",
         page: 1,
-        limit: 100,
+        limit: 200,
+        populate: "orderId,items.productId",
       },
     });
 
-    const list = (res.data?.data || []).map((inv: any) =>
-      normalizeInvoice(inv),
-    );
+    const list = (res.data?.data || [])
+      .map((inv: any) => normalizeInvoice(inv))
+      .filter((inv: InvoiceOption) => inv.orderStatus === "DELIVERED");
+
     setInvoiceOptions(list);
+
+    // Fetch real returnable quantities for each invoice
+    const map = new Map<
+      string,
+      Map<string, { alreadyReturnedQty: number; remainingQty: number }>
+    >();
+    for (const inv of list) {
+      try {
+        const qtyMap = await fetchReturnableQuantities(inv.value);
+        map.set(inv.value, qtyMap);
+      } catch {
+        // ignore errors; keep empty
+      }
+    }
+    setReturnableMap(map);
+
     return list;
   }, []);
 
@@ -619,63 +681,61 @@ export default function SalesReturnCreatePage() {
     if (!dealer?.value) {
       setInvoiceOptions([]);
       setSections([]);
+      setReturnableMap(new Map());
       return;
     }
-
     setLoadingInvoices(true);
     loadInvoicesForDealer(dealer.value)
       .catch(() => {
         setInvoiceOptions([]);
         setSections([]);
+        setReturnableMap(new Map());
       })
       .finally(() => setLoadingInvoices(false));
   }, [dealer?.value, loadInvoicesForDealer]);
 
-  useEffect(() => {
-    if (!dealer?.value) return;
-
-    setSections((current) =>
-      current.filter(
-        (section) =>
-          section.invoiceId &&
-          invoiceOptions.some((inv) => inv.value === section.invoiceId),
-      ),
-    );
-  }, [invoiceOptions, dealer?.value]);
-
-  const toggleInvoice = useCallback((invoice: InvoiceOption) => {
-    setSections((current) => {
-      const exists = current.some(
-        (section) => section.invoiceId === invoice.value,
-      );
-
-      if (exists) {
-        return current.filter((section) => section.invoiceId !== invoice.value);
-      }
-
-      if (Number(invoice.balanceAmount || 0) <= 0) {
-        toast.error("Fully paid invoices cannot be returned.");
-        return current;
-      }
-
-      return [
-        ...current,
-        {
-          invoiceId: invoice.value,
-          invoiceNo: invoice.invoiceNo,
-          orderId: invoice.orderId,
-          warehouseId: invoice.warehouseId,
-          warehouseName: invoice.warehouseName,
-          paymentStatus: invoice.paymentStatus,
-          status: invoice.status,
-          grandTotal: invoice.grandTotal,
-          paidAmount: invoice.paidAmount,
-          balanceAmount: invoice.balanceAmount,
-          rows: [makeBlankRow()],
-        },
-      ];
-    });
-  }, []);
+  // Toggle invoice selection – also ensure returnable quantities are loaded
+  const toggleInvoice = useCallback(
+    (invoice: InvoiceOption) => {
+      setSections((current) => {
+        const exists = current.some((s) => s.invoiceId === invoice.value);
+        if (exists) {
+          return current.filter((s) => s.invoiceId !== invoice.value);
+        }
+        if (Number(invoice.balanceAmount || 0) <= 0) {
+          toast.error("Fully paid invoices cannot be returned.");
+          return current;
+        }
+        // If returnable quantities for this invoice not yet loaded, fetch now
+        if (!returnableMap.has(invoice.value)) {
+          fetchReturnableQuantities(invoice.value).then((qtyMap) => {
+            setReturnableMap((prev) => {
+              const next = new Map(prev);
+              next.set(invoice.value, qtyMap);
+              return next;
+            });
+          });
+        }
+        return [
+          ...current,
+          {
+            invoiceId: invoice.value,
+            invoiceNo: invoice.invoiceNo,
+            orderId: invoice.orderId,
+            warehouseId: invoice.warehouseId,
+            warehouseName: invoice.warehouseName,
+            paymentStatus: invoice.paymentStatus,
+            status: invoice.status,
+            grandTotal: invoice.grandTotal,
+            paidAmount: invoice.paidAmount,
+            balanceAmount: invoice.balanceAmount,
+            rows: [makeBlankRow()],
+          },
+        ];
+      });
+    },
+    [returnableMap],
+  );
 
   const updateSection = useCallback(
     (
@@ -701,23 +761,19 @@ export default function SalesReturnCreatePage() {
     (invoiceId: string) => {
       const invoice = selectedInvoiceMap.get(invoiceId);
       if (!invoice) return;
-
       updateSection(invoiceId, (section) => {
         const productCount = invoice.items.length;
         if (section.rows.length >= productCount) {
           toast.error("You have already used all products from this invoice.");
           return section;
         }
-
         const remainingProducts = invoice.items.filter(
           (opt) => !section.rows.some((row) => row.productId === opt.productId),
         );
-
         if (!remainingProducts.length) {
           toast.error("No more products are available from this invoice.");
           return section;
         }
-
         return { ...section, rows: [...section.rows, makeBlankRow()] };
       });
     },
@@ -730,7 +786,6 @@ export default function SalesReturnCreatePage() {
         if (section.rows.length === 1) {
           return { ...section, rows: [makeBlankRow()] };
         }
-
         return {
           ...section,
           rows: section.rows.filter((r) => r.id !== rowId),
@@ -758,11 +813,15 @@ export default function SalesReturnCreatePage() {
         const alreadyUsedElsewhere = section.rows.some(
           (row) => row.id !== rowId && row.productId === option.productId,
         );
-
         if (alreadyUsedElsewhere) {
           toast.error("This product is already used in this invoice.");
           return section;
         }
+        // Get real returnable quantities from returnableMap
+        const qtyMap = returnableMap.get(invoiceId);
+        const info = qtyMap?.get(option.productId);
+        const realAlreadyReturned = info?.alreadyReturnedQty ?? option.alreadyReturnedQty;
+        const realRemaining = info?.remainingQty ?? option.maxReturnQty;
 
         return {
           ...section,
@@ -774,8 +833,8 @@ export default function SalesReturnCreatePage() {
                   productName: option.productName,
                   sku: option.sku,
                   invoiceQty: option.invoiceQty,
-                  alreadyReturnedQty: option.alreadyReturnedQty,
-                  maxReturnQty: option.maxReturnQty,
+                  alreadyReturnedQty: realAlreadyReturned,
+                  maxReturnQty: realRemaining,
                   returnQty: "",
                   reason: row.reason || "",
                   unitPrice: option.unitPrice,
@@ -788,42 +847,44 @@ export default function SalesReturnCreatePage() {
         };
       });
     },
-    [updateSection],
+    [returnableMap, updateSection],
   );
 
-  function getInvoiceRemainingQty(
-    section: ReturnInvoiceSection,
-    invoice: InvoiceOption,
-  ) {
-    return Math.max(
-      0,
-      invoice.items.reduce(
-        (sum, item) => sum + Number(item.maxReturnQty || 0),
+  // Get remaining returnable qty for the whole invoice
+  const getInvoiceRemainingQty = useCallback(
+    (section: ReturnInvoiceSection) => {
+      const qtyMap = returnableMap.get(section.invoiceId);
+      if (!qtyMap) return 0;
+      let remaining = 0;
+      for (const [, info] of qtyMap) {
+        remaining += info.remainingQty;
+      }
+      const usedBySection = section.rows.reduce(
+        (sum, row) => sum + toNumber(row.returnQty, 0),
         0,
-      ) -
-        section.rows.reduce((sum, row) => sum + toNumber(row.returnQty, 0), 0),
-    );
-  }
+      );
+      return Math.max(0, remaining - usedBySection);
+    },
+    [returnableMap],
+  );
 
-  function getEffectiveMaxForRow(
-    section: ReturnInvoiceSection,
-    row: ReturnRow,
-  ) {
-    if (!row.productId) return 0;
+  // Effective max for a single row, considering other rows in the same section
+  const getEffectiveMaxForRow = useCallback(
+    (section: ReturnInvoiceSection, row: ReturnRow) => {
+      if (!row.productId) return 0;
+      const qtyMap = returnableMap.get(section.invoiceId);
+      if (!qtyMap) return 0;
+      const info = qtyMap.get(row.productId);
+      if (!info) return 0;
+      const otherRowsQty = section.rows
+        .filter((r) => r.id !== row.id && r.productId === row.productId)
+        .reduce((sum, r) => sum + toNumber(r.returnQty, 0), 0);
+      return Math.max(0, info.remainingQty - otherRowsQty);
+    },
+    [returnableMap],
+  );
 
-    const invoice = selectedInvoiceMap.get(section.invoiceId);
-    if (!invoice) return 0;
-
-    const item = invoice.items.find((p) => p.productId === row.productId);
-    if (!item) return 0;
-
-    const otherRowsQty = section.rows
-      .filter((r) => r.id !== row.id && r.productId === row.productId)
-      .reduce((sum, r) => sum + toNumber(r.returnQty, 0), 0);
-
-    return Math.max(0, Number(item.maxReturnQty || 0) - otherRowsQty);
-  }
-
+  // 🆕 Build product options with real quantities from returnableMap
   const availableProductOptions = useCallback(
     (section: ReturnInvoiceSection, currentRowId: string) => {
       const invoice = selectedInvoiceMap.get(section.invoiceId);
@@ -835,38 +896,41 @@ export default function SalesReturnCreatePage() {
           .map((row) => row.productId),
       );
 
-      return invoice.items.map((opt) => ({
-        ...opt,
-        blocked: usedProductIds.has(opt.productId) || opt.maxReturnQty <= 0,
-      }));
+      const qtyMap = returnableMap.get(section.invoiceId);
+
+      return invoice.items.map((item) => {
+        const realInfo = qtyMap?.get(item.productId);
+        const alreadyReturned = realInfo?.alreadyReturnedQty ?? item.alreadyReturnedQty;
+        const remaining = realInfo?.remainingQty ?? item.maxReturnQty;
+
+        return {
+          ...item,
+          alreadyReturnedQty: alreadyReturned,
+          maxReturnQty: remaining,
+          blocked:
+            usedProductIds.has(item.productId) || remaining <= 0,
+        };
+      });
     },
-    [selectedInvoiceMap],
+    [selectedInvoiceMap, returnableMap],
   );
 
+  // Compute card summaries
   const invoiceCards = useMemo(() => {
     return sections.map((section) => {
       const invoice = selectedInvoiceMap.get(section.invoiceId);
-
       const validRows = section.rows.filter(
         (r) => r.productId && toNumber(r.returnQty, 0) > 0,
       );
-
       const returnAmount = validRows.reduce(
         (sum, row) => sum + calcRowAmount(row),
         0,
       );
-
       const returnQty = validRows.reduce(
         (sum, row) => sum + toNumber(row.returnQty, 0),
         0,
       );
-
-      return {
-        section,
-        invoice,
-        returnAmount,
-        returnQty,
-      };
+      return { section, invoice, returnAmount, returnQty };
     });
   }, [sections, selectedInvoiceMap]);
 
@@ -890,68 +954,56 @@ export default function SalesReturnCreatePage() {
       toast.error("Please select a dealer.");
       return false;
     }
-
     if (!returnDate) {
       toast.error("Please select return date.");
       return false;
     }
-
     if (!sections.length) {
       toast.error("Please select at least one invoice.");
       return false;
     }
-
     for (const card of invoiceCards) {
       const invoice = card.invoice;
       const section = card.section;
-
       if (!invoice) {
         toast.error(`Invoice ${section.invoiceNo} could not be loaded.`);
         return false;
       }
-
       if (Number(invoice.balanceAmount || 0) <= 0) {
         toast.error(
           `Invoice ${invoice.invoiceNo} is fully paid and cannot be returned.`,
         );
         return false;
       }
-
       const validRows = section.rows.filter(
         (r) => r.productId && toNumber(r.returnQty, 0) > 0,
       );
-
       if (!validRows.length) {
         toast.error(
           `Add at least one product for invoice ${invoice.invoiceNo}.`,
         );
         return false;
       }
-
       const invoiceBalance = Number(invoice.balanceAmount || 0);
       const invoiceReturnAmount = validRows.reduce(
         (sum, row) => sum + calcRowAmount(row),
         0,
       );
-
       if (invoiceReturnAmount > invoiceBalance + 0.0001) {
         toast.error(
           `Invoice ${invoice.invoiceNo}: return amount cannot exceed remaining balance.`,
         );
         return false;
       }
-
       for (const row of validRows) {
         const qty = toNumber(row.returnQty, 0);
         const maxQty = getEffectiveMaxForRow(section, row);
-
         if (qty <= 0) {
           toast.error(
             `Return qty must be greater than zero for ${row.productName}.`,
           );
           return false;
         }
-
         if (qty > maxQty) {
           toast.error(
             `${row.productName}: return qty cannot exceed ${maxQty}.`,
@@ -960,7 +1012,6 @@ export default function SalesReturnCreatePage() {
         }
       }
     }
-
     return true;
   };
 
@@ -971,7 +1022,6 @@ export default function SalesReturnCreatePage() {
       customerId: dealer?.value,
       returnDate: new Date(returnDate).toISOString(),
       notes,
-      // invoices: sections.map((section) => {
       invoiceReturns: sections.map((section) => {
         const invoice = selectedInvoiceMap.get(section.invoiceId)!;
         const items = section.rows
@@ -1144,7 +1194,7 @@ export default function SalesReturnCreatePage() {
                     onToggle={toggleInvoice}
                   />
                   <div className="text-xs text-muted-foreground">
-                    Fully paid invoices are blocked automatically.
+                    Fully paid invoices and undelivered orders are blocked.
                   </div>
                 </div>
               </CardContent>
@@ -1182,10 +1232,7 @@ export default function SalesReturnCreatePage() {
                 if (!invoice) return null;
 
                 const fullyPaid = Number(section.balanceAmount || 0) <= 0;
-                const invoiceRemainingQty = getInvoiceRemainingQty(
-                  section,
-                  invoice,
-                );
+                const invoiceRemainingQty = getInvoiceRemainingQty(section);
 
                 return (
                   <Card
@@ -1406,7 +1453,6 @@ export default function SalesReturnCreatePage() {
                                       Math.max(current, 0),
                                       max,
                                     );
-
                                     updateRow(section.invoiceId, row.id, {
                                       returnQty:
                                         e.target.value === ""
@@ -1572,6 +1618,7 @@ export default function SalesReturnCreatePage() {
                   <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                     <div>Only invoice products can be returned.</div>
                     <div>Fully paid invoices are blocked.</div>
+                    <div>Only orders that have been delivered are shown.</div>
                     <div>
                       Same product cannot be added twice in the same invoice.
                     </div>
@@ -1645,7 +1692,7 @@ export default function SalesReturnCreatePage() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
                 <div>1. Pick dealer.</div>
-                <div>2. Select one or more invoices.</div>
+                <div>2. Select one or more invoices (delivered only).</div>
                 <div>3. Add product rows for each invoice.</div>
                 <div>4. Choose products manually from the invoice only.</div>
                 <div>5. Enter return quantity and reason.</div>

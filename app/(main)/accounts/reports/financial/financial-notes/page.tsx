@@ -1,12 +1,50 @@
-// app/accounts/reports/financial-reports/financial-statement-notes/page.tsx
+// src/app/(main)/reports/financial-notes/page.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/card";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useForm, useFieldArray } from "react-hook-form";
+import api from "@/lib/api";
+import { toast } from "sonner";
+import {
+  Plus,
+  Search,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Edit,
+  Trash2,
+  CheckCircle,
+  History,
+  Printer,
+  DollarSign,
+  BookOpen,
+  Calendar,
+  Filter,
+  X,
+  FileText,
+  Layers,
+  Clock,
+  BadgeCheck,
+} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -14,31 +52,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog,
-  DialogContent,
-  DialogTrigger,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Download, Printer, Eye, Trash2, Plus } from "lucide-react";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 
-type StatementType =
-  | "Balance Sheet"
-  | "Income Statement"
-  | "Cash Flow"
-  | "Equity Statement"
-  | "Notes";
-
-type RelatedAccount = {
-  code: string;
-  name: string;
-  balance: number; // signed
+/* --------------------------- Types --------------------------- */
+type AccountOption = {
+  value: string;
+  label: string;
+  description?: string;
+  balance?: number;
 };
 
-type NoteVersion = {
-  id: string;
+type RelatedAccount = {
+  account: string;
+  snapshotBalance: number;
+  currentBalance?: number;
+  name?: string;
+  code?: string;
+};
+
+type Version = {
+  _id?: string;
   versionNo: number;
   content: string;
   author: string;
@@ -46,902 +93,727 @@ type NoteVersion = {
 };
 
 type FinancialNote = {
-  id: string;
+  _id: string;
   noteNo: string;
   title: string;
-  statement: StatementType;
+  statement: "Balance Sheet" | "Income Statement" | "Cash Flow" | "Equity Statement" | "Notes";
   year: number;
   summary?: string;
   relatedAccounts: RelatedAccount[];
-  versions: NoteVersion[]; // latest first
-  isDraft?: boolean;
+  versions: Version[];
+  isDraft: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
-const STORAGE_KEY = "demo_fin_statement_notes_v1";
+type FormValues = {
+  title: string;
+  statement: string;
+  year: number;
+  content: string;
+  author: string;
+  summary: string;
+  isDraft: boolean;
+  relatedAccounts: { accountId: string; accountName?: string }[];
+};
 
-/* ----------------- Demo data ----------------- */
-function uid(prefix = "") {
-  return prefix + Math.random().toString(36).slice(2, 9);
-}
-
-const DEMO_NOTES: FinancialNote[] = [
-  {
-    id: "n1",
-    noteNo: "1",
-    title: "Property, Plant & Equipment (PPE)",
-    statement: "Balance Sheet",
-    year: 2025,
-    summary: "Summary of PPE carrying amounts, depreciation and movements.",
-    relatedAccounts: [
-      { code: "1001", name: "Land", balance: 5_000_000 },
-      { code: "1002", name: "Buildings", balance: 12_000_000 },
-      { code: "1003", name: "Plant & Machinery", balance: 3_500_000 },
-    ],
-    versions: [
-      {
-        id: uid("v_"),
-        versionNo: 2,
-        content:
-          "**Carrying amount:** PPE is carried at cost less accumulated depreciation and impairment. \n\n**Depreciation policy:** Depreciation is charged on a straight-line basis over the estimated useful life of the asset. \n\n**Revaluations:** No revaluations were made during the year.",
-        author: "Finance Manager",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: uid("v_"),
-        versionNo: 1,
-        content: "Initial disclosure for PPE.",
-        author: "Accountant",
-        createdAt: new Date(
-          Date.now() - 1000 * 60 * 60 * 24 * 60
-        ).toISOString(),
-      },
-    ],
-  },
-  {
-    id: "n2",
-    noteNo: "2",
-    title: "Borrowings and Bank Facilities",
-    statement: "Balance Sheet",
-    year: 2025,
-    summary: "Details on bank loans, interest rates and covenants.",
-    relatedAccounts: [
-      { code: "2100", name: "Short Term Loan", balance: -500_000 },
-      { code: "2110", name: "Long Term Loan", balance: -2_000_000 },
-    ],
-    versions: [
-      {
-        id: uid("v_"),
-        versionNo: 1,
-        content:
-          "Borrowings are measured at amortized cost. The company has undrawn committed facilities of INR 10,000,000 at year end.",
-        author: "CFO",
-        createdAt: new Date().toISOString(),
-      },
-    ],
-  },
-  {
-    id: "n3",
-    noteNo: "1",
-    title: "Revenue Recognition",
-    statement: "Income Statement",
-    year: 2025,
-    summary:
-      "Principles used to recognize revenue from sale of goods and services.",
-    relatedAccounts: [
-      { code: "4000", name: "Sales Revenue", balance: -6_000_000 },
-    ],
-    versions: [
-      {
-        id: uid("v_"),
-        versionNo: 1,
-        content:
-          "Revenue is recognized when control of goods or services is transferred to the customer, at the transaction price, net of discounts and returns.",
-        author: "Controller",
-        createdAt: new Date().toISOString(),
-      },
-    ],
-  },
+/* --------------------------- Helpers --------------------------- */
+const STATEMENT_OPTIONS = [
+  "Balance Sheet",
+  "Income Statement",
+  "Cash Flow",
+  "Equity Statement",
+  "Notes",
 ];
 
-/* ----------------- Utilities ----------------- */
-
-const currency = (n: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
+const money = (n: number) =>
+  Number(n || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Math.abs(n));
-
-function drCrLabel(n: number) {
-  if (Math.abs(n) < 0.005) return "-";
-  return `${currency(n)} ${n >= 0 ? "DR" : "CR"}`;
-}
-
-// tiny markdown-ish converter for bold/italic and paragraphs (safe-ish)
-function simpleMarkdownToHtml(md?: string) {
-  if (!md) return "";
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  let html = esc(md);
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/_(.+?)_/g, "<em>$1</em>");
-  // paragraphs: split by two newlines
-  const paragraphs = html
-    .split(/\n{2,}/)
-    .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`);
-  return paragraphs.join("");
-}
-
-/* ----------------- Component ----------------- */
-
-export default function FinancialStatementNotesPage() {
-  const [notes, setNotes] = useState<FinancialNote[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw) as FinancialNote[];
-    } catch {}
-    return DEMO_NOTES;
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-    } catch {}
-  }, [notes]);
+const formatDate = (v?: string) =>
+  v ? new Date(v).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "-";
 
-  // UI state
+// 🆕 Moved outside component to be accessible by child components
+function buildPrintHtml(note: FinancialNote) {
+  const latestVersion = note.versions[0];
+  const accountsHtml = note.relatedAccounts
+    .map(
+      (ra) => `
+      <tr>
+        <td style="padding:6px 8px;">${ra.name || ra.account}</td>
+        <td style="padding:6px 8px; text-align:right;">${money(ra.snapshotBalance)}</td>
+        <td style="padding:6px 8px; text-align:right;">${money(ra.currentBalance || ra.snapshotBalance)}</td>
+      </tr>`
+    )
+    .join("");
+
+  return `
+<div style="font-family: 'Inter', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
+  <div style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 24px 32px; color: white;">
+    <div style="font-size: 28px; font-weight: 800;">${note.noteNo}: ${note.title}</div>
+    <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">${note.statement} · ${note.year} · ${note.isDraft ? "Draft" : "Final"}</div>
+  </div>
+  <div style="padding: 24px 32px;">
+    <p style="font-size: 15px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 24px;">${latestVersion?.content || ""}</p>
+    <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 12px;">Related Accounts</h3>
+    <table style="width:100%; border-collapse: collapse; font-size: 14px;">
+      <thead>
+        <tr style="background: #f8fafc;">
+          <th style="padding:8px 12px; text-align:left;">Account</th>
+          <th style="padding:8px 12px; text-align:right;">Snapshot Balance</th>
+          <th style="padding:8px 12px; text-align:right;">Current Balance</th>
+        </tr>
+      </thead>
+      <tbody>${accountsHtml}</tbody>
+    </table>
+  </div>
+  <div style="background: #f8fafc; padding: 16px 32px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between;">
+    <div>Version ${latestVersion?.versionNo || 1} · ${latestVersion?.author || "System"}</div>
+    <div>Printed on ${new Date().toLocaleDateString()}</div>
+  </div>
+</div>`;
+}
+
+/* --------------------------- Account Picker (Multi‑select) --------------------------- */
+function AccountPicker({
+  selectedIds,
+  onAdd,
+  onRemove,
+}: {
+  selectedIds: { accountId: string; accountName?: string }[];
+  onAdd: (acc: AccountOption) => void;
+  onRemove: (accountId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [yearFilter, setYearFilter] = useState<number | "All">("All");
-  const [statementFilter, setStatementFilter] = useState<StatementType | "All">(
-    "All"
-  );
-  const [viewing, setViewing] = useState<FinancialNote | null>(null);
-  const [editing, setEditing] = useState<FinancialNote | null>(null);
-  const [openCreate, setOpenCreate] = useState(false);
+  const [options, setOptions] = useState<AccountOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const cacheRef = useRef<Record<string, AccountOption[]>>({});
 
-  // derived
-  const years = useMemo(() => {
-    const s = new Set<number>();
-    notes.forEach((n) => s.add(n.year));
-    return Array.from(s).sort((a, b) => b - a);
-  }, [notes]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return notes.filter((n) => {
-      if (yearFilter !== "All" && n.year !== yearFilter) return false;
-      if (statementFilter !== "All" && n.statement !== statementFilter)
-        return false;
-      if (!q) return true;
-      return (
-        n.noteNo.toLowerCase().includes(q) ||
-        n.title.toLowerCase().includes(q) ||
-        (n.summary ?? "").toLowerCase().includes(q) ||
-        n.versions.some((v) => v.content.toLowerCase().includes(q))
-      );
+  const fetchAccounts = useCallback(async (search: string) => {
+    const res = await api.get("/accounts", {
+      params: { q: search || undefined, page: 1, limit: 30, status: "Active" },
     });
-  }, [notes, query, yearFilter, statementFilter]);
-
-  /* --------- View / Export / Print single note --------- */
-
-  function exportNoteCsv(n: FinancialNote) {
-    const header = [
-      "NoteNo",
-      "Title",
-      "Statement",
-      "Year",
-      "VersionNo",
-      "Author",
-      "CreatedAt",
-      "Content",
-    ];
-    const rows = [header.join(",")];
-    n.versions.forEach((v) => {
-      rows.push(
-        [
-          n.noteNo,
-          `"${n.title.replace(/"/g, '""')}"`,
-          n.statement,
-          String(n.year),
-          String(v.versionNo),
-          v.author,
-          v.createdAt,
-          `"${v.content.replace(/"/g, '""')}"`,
-        ].join(",")
-      );
-    });
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${n.noteNo}_financial_note.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function printNote(n: FinancialNote) {
-    const latest = n.versions[0];
-    const accountsHtml = n.relatedAccounts.length
-      ? `<table style="width:100%;border-collapse:collapse;margin-top:12px"><thead><tr><th style="padding:6px;border:1px solid #ddd;text-align:left">Code</th><th style="padding:6px;border:1px solid #ddd;text-align:left">Account</th><th style="padding:6px;border:1px solid #ddd;text-align:right">Balance</th></tr></thead><tbody>${n.relatedAccounts
-          .map(
-            (a) =>
-              `<tr><td style="padding:6px;border:1px solid #ddd">${
-                a.code
-              }</td><td style="padding:6px;border:1px solid #ddd">${
-                a.name
-              }</td><td style="padding:6px;border:1px solid #ddd;text-align:right">${drCrLabel(
-                a.balance
-              )}</td></tr>`
-          )
-          .join("")}</tbody></table>`
-      : "";
-
-    const html = `
-      <html>
-        <head><title>${n.noteNo} - ${n.title}</title></head>
-        <body style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;padding:24px">
-          <h1 style="margin:0">${n.noteNo} — ${n.title}</h1>
-          <div style="margin-top:6px;color:#555">${n.statement} • ${
-      n.year
-    }</div>
-          <hr style="margin:12px 0"/>
-          <div style="margin-top:8px">${simpleMarkdownToHtml(
-            latest.content
-          )}</div>
-          ${accountsHtml}
-          <div style="margin-top:18px;font-size:12px;color:#666">Prepared by: ${
-            latest.author
-          } • Saved: ${latest.createdAt}</div>
-        </body>
-      </html>
-    `;
-    const w = window.open("", "_blank", "width=900,height=700");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    w.print();
-  }
-
-  /* --------- Export/print list --------- */
-
-  function exportAllCsv(list: FinancialNote[]) {
-    const header = [
-      "NoteNo",
-      "Title",
-      "Statement",
-      "Year",
-      "LatestVersionNo",
-      "LatestAuthor",
-      "LatestCreatedAt",
-      "Summary",
-    ];
-    const rows = [header.join(",")];
-    list.forEach((n) => {
-      const latest = n.versions[0];
-      rows.push(
-        [
-          n.noteNo,
-          `"${n.title.replace(/"/g, '""')}"`,
-          n.statement,
-          String(n.year),
-          String(latest.versionNo),
-          latest.author,
-          latest.createdAt,
-          `"${(n.summary ?? "").replace(/"/g, '""')}"`,
-        ].join(",")
-      );
-    });
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `financial_notes_list.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function printAll(list: FinancialNote[]) {
-    const htmlNotes = list
-      .map((n) => {
-        const latest = n.versions[0];
-        return `<div style="page-break-after:always"><h2 style="margin:0">${
-          n.noteNo
-        } — ${n.title}</h2><div style="color:#555">${n.statement} • ${
-          n.year
-        }</div><div style="margin-top:8px">${simpleMarkdownToHtml(
-          latest.content
-        )}</div></div>`;
-      })
-      .join("");
-    const html = `<html><head><title>Financial Notes</title></head><body style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;padding:20px">${htmlNotes}</body></html>`;
-    const w = window.open("", "_blank", "width=900,height=700");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    w.print();
-  }
-
-  /* --------- Simple create note modal (client/demo) --------- */
-  const emptyNote = (): FinancialNote => ({
-    id: uid("n_"),
-    noteNo: String(notes.length + 1),
-    title: "",
-    statement: "Notes",
-    year: new Date().getFullYear(),
-    summary: "",
-    relatedAccounts: [],
-    versions: [
-      {
-        id: uid("v_"),
-        versionNo: 1,
-        content: "",
-        author: "Demo User",
-        createdAt: new Date().toISOString(),
-      },
-    ],
-    isDraft: true,
-  });
-
-  const [form, setForm] = useState<FinancialNote>(emptyNote());
+    return (res.data?.data || []).map((a: any) => ({
+      value: String(a._id),
+      label: `${a.name} (${a.code || ""})`,
+      description: `Type: ${a.type} · Balance: ${money(a.balance || 0)}`,
+    }));
+  }, []);
 
   useEffect(() => {
-    if (!openCreate) setForm(emptyNote());
-  }, [openCreate]); // eslint-disable-line
-
-  function openNew() {
-    setForm(emptyNote());
-    setEditing(null);
-    setOpenCreate(true);
-  }
-
-  function openEdit(n: FinancialNote) {
-    setForm(JSON.parse(JSON.stringify(n)));
-    setEditing(n);
-    setOpenCreate(true);
-  }
-
-  function saveForm(asDraft = false) {
-    if (!form.title.trim()) {
-      alert("Please enter a title.");
-      return;
-    }
-    const now = new Date().toISOString();
-    const versionNo = (form.versions[0]?.versionNo ?? 0) + 1;
-    const newVersion: NoteVersion = {
-      id: uid("v_"),
-      versionNo,
-      content: form.versions[0].content,
-      author: "Demo User",
-      createdAt: now,
-    };
-    const noteToSave: FinancialNote = {
-      ...form,
-      isDraft: asDraft,
-      versions: [newVersion, ...(form.versions.slice(1) ?? [])],
-    };
-    setNotes((prev) => {
-      const found = prev.find((p) => p.id === noteToSave.id);
-      if (found)
-        return prev.map((p) => (p.id === noteToSave.id ? noteToSave : p));
-      return [noteToSave, ...prev];
-    });
-    setOpenCreate(false);
-    alert("Note saved (demo). Replace with API calls.");
-  }
-
-  function deleteNote(id: string) {
-    if (!confirm("Delete this note?")) return;
-    setNotes((s) => s.filter((n) => n.id !== id));
-    setViewing(null);
-  }
-
-  /* ---------------- Render ---------------- */
+    if (!open) return;
+    const key = query.trim().toLowerCase();
+    const timer = setTimeout(async () => {
+      if (cacheRef.current[key]) {
+        setOptions(cacheRef.current[key]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const list = await fetchAccounts(query);
+        cacheRef.current[key] = list;
+        setOptions(list);
+      } catch {
+        setOptions([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, query, fetchAccounts]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold">Financial Statement Notes</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Notes that accompany your financial statements (Balance Sheet,
-            Income Statement, Cash Flow, Equity).
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" /> New Note
+    <div>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button type="button" variant="outline" className="w-full justify-between">
+            <span className="truncate">
+              {selectedIds.length ? `${selectedIds.length} account(s) selected` : "Add account..."}
+            </span>
+            <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
-          <Button variant="outline" onClick={() => exportAllCsv(filtered)}>
-            <Download className="mr-2 h-4 w-4" />
-            Export List
-          </Button>
-          <Button variant="secondary" onClick={() => printAll(filtered)}>
-            <Printer className="mr-2 h-4 w-4" />
-            Print All
-          </Button>
-        </div>
-      </header>
-
-      {/* Filters */}
-      <Card className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-          <div>
-            <Label>Search</Label>
-            <Input
+        </PopoverTrigger>
+        <PopoverContent className="w-[480px] p-0" align="start">
+          <Command>
+            <CommandInput
+              placeholder="Search accounts..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search note no, title or content..."
+              onValueChange={setQuery}
             />
-          </div>
-
-          <div>
-            <Label>Year</Label>
-            <Select
-              onValueChange={(v) =>
-                setYearFilter(v === "All" ? "All" : Number(v))
-              }
-              defaultValue={"All"}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All</SelectItem>
-                {years.map((y) => (
-                  <SelectItem key={y} value={String(y)}>
-                    {y}
-                  </SelectItem>
-                ))}
-                <SelectItem value={String(new Date().getFullYear())}>
-                  {new Date().getFullYear()}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>Statement</Label>
-            <Select
-              onValueChange={(v) => setStatementFilter(v as any)}
-              defaultValue={"All"}
-            >
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All</SelectItem>
-                <SelectItem value="Balance Sheet">Balance Sheet</SelectItem>
-                <SelectItem value="Income Statement">
-                  Income Statement
-                </SelectItem>
-                <SelectItem value="Cash Flow">Cash Flow</SelectItem>
-                <SelectItem value="Equity Statement">
-                  Equity Statement
-                </SelectItem>
-                <SelectItem value="Notes">Notes</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery("");
-                setYearFilter("All");
-                setStatementFilter("All");
-              }}
-            >
-              Clear
-            </Button>
-            <div className="text-sm text-slate-500">
-              Showing <strong>{filtered.length}</strong> notes
+            <CommandList>
+              <CommandEmpty>{loading ? "Loading..." : "No account found."}</CommandEmpty>
+              <CommandGroup>
+                {options.map((opt) => {
+                  const alreadySelected = selectedIds.some((s) => s.accountId === opt.value);
+                  return (
+                    <CommandItem
+                      key={opt.value}
+                      value={`${opt.label} ${opt.description || ""}`}
+                      onSelect={() => {
+                        if (alreadySelected) {
+                          onRemove(opt.value);
+                        } else {
+                          onAdd(opt);
+                        }
+                      }}
+                    >
+                      <CheckCircle
+                        className={`mr-2 h-4 w-4 ${alreadySelected ? "opacity-100 text-emerald-600" : "opacity-0"}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{opt.label}</div>
+                        {opt.description && (
+                          <div className="truncate text-xs text-muted-foreground">{opt.description}</div>
+                        )}
+                      </div>
+                      {alreadySelected && (
+                        <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          Selected
+                        </span>
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {selectedIds.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {selectedIds.map((acc) => (
+            <div key={acc.accountId} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1 text-xs">
+              <span className="font-medium">{acc.accountName || acc.accountId}</span>
+              <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => onRemove(acc.accountId)}>
+                <X className="h-3 w-3" />
+              </Button>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------- Main Page --------------------------- */
+export default function FinancialNotesPage() {
+  const [notes, setNotes] = useState<FinancialNote[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statementFilter, setStatementFilter] = useState<string>("");
+  const [yearFilter, setYearFilter] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 12;
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<FinancialNote | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [noteDetails, setNoteDetails] = useState<FinancialNote | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    control,
+    formState: { isSubmitting },
+  } = useForm<FormValues>({
+    defaultValues: {
+      title: "",
+      statement: "Balance Sheet",
+      year: new Date().getFullYear(),
+      content: "",
+      author: "System",
+      summary: "",
+      isDraft: true,
+      relatedAccounts: [],
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "relatedAccounts",
+  });
+
+  // Fetch notes list
+  const fetchNotes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params: any = { page, limit };
+      if (search) params.q = search;
+      if (statementFilter) params.statement = statementFilter;
+      if (yearFilter) params.year = yearFilter;
+      const res = await api.get("/reports/financial-notes", { params });
+      setNotes(res.data?.data || []);
+      setTotal(res.data?.total || 0);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to load notes");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit, search, statementFilter, yearFilter]);
+
+  useEffect(() => {
+    fetchNotes();
+  }, [fetchNotes]);
+
+  // Expand row – fetch live balances
+  const toggleExpand = async (id: string) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      setNoteDetails(null);
+      return;
+    }
+    setExpandedId(id);
+    setDetailsLoading(true);
+    try {
+      const res = await api.get(`/reports/financial-notes/${id}`);
+      setNoteDetails(res.data?.data);
+    } catch {
+      toast.error("Failed to load note details");
+      setExpandedId(null);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  // Open form for create/edit
+  const openCreate = () => {
+    reset({
+      title: "",
+      statement: "Balance Sheet",
+      year: new Date().getFullYear(),
+      content: "",
+      author: "System",
+      summary: "",
+      isDraft: true,
+      relatedAccounts: [],
+    });
+    setEditingNote(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (note: FinancialNote) => {
+    reset({
+      title: note.title,
+      statement: note.statement,
+      year: note.year,
+      content: note.versions[0]?.content || "",
+      author: "System",
+      summary: note.summary || "",
+      isDraft: note.isDraft,
+      relatedAccounts: note.relatedAccounts.map((ra) => ({
+        accountId: ra.account,
+        accountName: ra.name || ra.account,
+      })),
+    });
+    setEditingNote(note);
+    setDialogOpen(true);
+  };
+
+  // Submit form
+  const onSubmit = async (data: FormValues) => {
+    try {
+      const payload = {
+        ...data,
+        relatedAccounts: data.relatedAccounts.map((ra) => ({ accountId: ra.accountId })),
+      };
+      if (editingNote) {
+        await api.put(`/reports/financial-notes/${editingNote._id}`, payload);
+        toast.success("Note updated");
+      } else {
+        await api.post("/reports/financial-notes", payload);
+        toast.success("Note created");
+      }
+      setDialogOpen(false);
+      fetchNotes();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Save failed");
+    }
+  };
+
+  // Delete
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this note?")) return;
+    try {
+      await api.delete(`/reports/financial-notes/${id}`);
+      toast.success("Note deleted");
+      fetchNotes();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Delete failed");
+    }
+  };
+
+  // Finalise
+  const handleFinalise = async (id: string) => {
+    try {
+      await api.post(`/reports/financial-notes/${id}/finalise`);
+      toast.success("Note finalised with current balances");
+      fetchNotes();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Finalise failed");
+    }
+  };
+
+  // Account picker handlers
+  const addAccount = (acc: AccountOption) => {
+    const current = watch("relatedAccounts") || [];
+    if (!current.some((a) => a.accountId === acc.value)) {
+      append({ accountId: acc.value, accountName: acc.label });
+    }
+  };
+
+  const removeAccount = (accountId: string) => {
+    const index = fields.findIndex((f) => f.accountId === accountId);
+    if (index !== -1) remove(index);
+  };
+
+  const selectedAccounts = watch("relatedAccounts") || [];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-slate-100">
+      <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
+        {/* Header */}
+        <div className="mb-8 rounded-3xl border bg-white/70 backdrop-blur-sm p-6 shadow-xl">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-slate-800 flex items-center gap-3">
+                <BookOpen className="h-8 w-8 text-indigo-600" />
+                Financial Notes
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Craft and manage detailed notes for every financial statement with full version control.
+              </p>
+            </div>
+            <Button onClick={openCreate} className="gap-2 bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200">
+              <Plus className="h-4 w-4" /> New Note
+            </Button>
           </div>
         </div>
-      </Card>
 
-      {/* Notes list + preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          {filtered.length === 0 && (
-            <Card className="p-6 text-center text-slate-500">
-              No notes found.
-            </Card>
-          )}
-          {filtered.map((n) => {
-            const latest = n.versions[0];
-            return (
-              <Card key={n.id} className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-baseline gap-3">
-                      <div className="text-sm text-slate-500">{n.noteNo}</div>
-                      <h2 className="text-lg font-semibold">{n.title}</h2>
-                      <div className="ml-3 px-2 py-1 text-xs rounded bg-slate-100 text-slate-600">
-                        {n.statement} • {n.year}
-                      </div>
+        {/* Filters */}
+        <Card className="mb-6 border-0 shadow-md bg-white/80 backdrop-blur-sm">
+          <CardContent className="grid gap-4 p-5 md:grid-cols-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-slate-600">Search</div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search notes..."
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  className="pl-9 border-slate-200 focus:border-indigo-400"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-slate-600">Statement</div>
+              <Select value={statementFilter} onValueChange={(v) => { setStatementFilter(v); setPage(1); }}>
+                <SelectTrigger className="border-slate-200">
+                  <SelectValue placeholder="All Statements" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value=" ">All</SelectItem>
+                  {STATEMENT_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-slate-600">Year</div>
+              <Input
+                type="number"
+                placeholder="e.g. 2025"
+                value={yearFilter}
+                onChange={(e) => { setYearFilter(e.target.value); setPage(1); }}
+                className="border-slate-200 focus:border-indigo-400"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button variant="outline" onClick={() => { setSearch(""); setStatementFilter(""); setYearFilter(""); setPage(1); }}
+                className="border-slate-200 text-slate-600 hover:bg-slate-50">
+                Clear Filters
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Notes Grid – Card layout for a stunning visual */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+          </div>
+        ) : notes.length === 0 ? (
+          <Card className="border-dashed border-2 border-slate-300 bg-white/60 py-20 shadow-sm">
+            <CardContent className="flex flex-col items-center justify-center gap-4">
+              <BookOpen className="h-12 w-12 text-slate-300" />
+              <p className="text-lg text-muted-foreground font-medium">No financial notes yet.</p>
+              <Button variant="outline" onClick={openCreate}>Create your first note</Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {notes.map((note) => (
+              <Card
+                key={note._id}
+                className={`group relative overflow-hidden border-0 shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer ${
+                  expandedId === note._id ? "ring-2 ring-indigo-300" : ""
+                }`}
+                onClick={() => toggleExpand(note._id)}
+              >
+                <div className={`absolute top-0 left-0 right-0 h-1.5 ${note.isDraft ? "bg-amber-400" : "bg-emerald-400"}`} />
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-bold text-slate-800 group-hover:text-indigo-700 transition-colors">
+                        {note.title}
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">{note.noteNo}</p>
                     </div>
-                    <p className="text-sm text-slate-600 mt-2">{n.summary}</p>
-                    <div className="mt-3 text-sm">
-                      <strong>Latest:</strong> v{latest.versionNo} •{" "}
-                      <span className="text-slate-500">
-                        By {latest.author} on{" "}
-                        {new Date(latest.createdAt).toLocaleDateString()}
-                      </span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => { e.stopPropagation(); openEdit(note); }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(note._id); }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    {n.relatedAccounts.length > 0 && (
-                      <div className="mt-3 text-sm text-slate-600">
-                        Related accounts: {n.relatedAccounts.length}
-                      </div>
-                    )}
                   </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="flex gap-2">
-                      <Button variant="ghost" onClick={() => setViewing(n)}>
-                        <Eye className="h-4 w-4 mr-2" />
-                        View
-                      </Button>
-                      <Button variant="outline" onClick={() => openEdit(n)}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Edit
-                      </Button>
-                      <Button variant="ghost" onClick={() => exportNoteCsv(n)}>
-                        <Download className="h-4 w-4 mr-2" />
-                        CSV
-                      </Button>
-                      <Button variant="outline" onClick={() => printNote(n)}>
-                        <Printer className="h-4 w-4 mr-2" />
-                        Print
-                      </Button>
-                    </div>
-                    <div className="text-sm text-slate-500">
-                      Accounts: {n.relatedAccounts.length}
-                    </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">{note.statement}</span>
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">{note.year}</span>
+                    <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 font-medium">
+                      v{note.versions[0]?.versionNo || 1}
+                    </span>
                   </div>
-                </div>
-
-                {/* small related accounts preview */}
-                {n.relatedAccounts.length > 0 && (
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-slate-500 text-xs">
-                        <tr>
-                          <th className="text-left px-2">Code</th>
-                          <th className="text-left px-2">Account</th>
-                          <th className="text-right px-2">Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {n.relatedAccounts.map((a) => (
-                          <tr key={a.code} className="border-t">
-                            <td className="px-2 py-2">{a.code}</td>
-                            <td className="px-2 py-2">{a.name}</td>
-                            <td className="px-2 py-2 text-right">
-                              {drCrLabel(a.balance)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  {note.summary && (
+                    <p className="text-xs text-slate-600 line-clamp-2">{note.summary}</p>
+                  )}
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{note.relatedAccounts.length} linked account(s)</span>
+                    <span className="flex items-center gap-1">
+                      {note.isDraft ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">Draft</span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">Final</span>
+                      )}
+                    </span>
+                  </div>
+                </CardContent>
+                {expandedId === note._id && (
+                  <div className="border-t bg-slate-50/50 p-4" onClick={(e) => e.stopPropagation()}>
+                    {detailsLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                      </div>
+                    ) : noteDetails ? (
+                      <ExpandedDetails note={noteDetails} onFinalise={handleFinalise} />
+                    ) : null}
                   </div>
                 )}
               </Card>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
 
-        {/* Right column */}
-        <aside className="space-y-4">
-          <Card className="p-4">
-            <div className="text-sm text-slate-500">Quick Preview</div>
-            {filtered[0] ? (
-              <>
-                <div className="mt-3">
-                  <div className="text-xs text-slate-400">Note</div>
-                  <div className="font-medium">
-                    {filtered[0].noteNo} — {filtered[0].title}
-                  </div>
-                  <div className="text-sm text-slate-500 mt-1">
-                    v{filtered[0].versions[0].versionNo} •{" "}
-                    {filtered[0].versions[0].author}
-                  </div>
-                </div>
-                <div
-                  className="mt-3 text-sm prose max-w-none"
-                  dangerouslySetInnerHTML={{
-                    __html: simpleMarkdownToHtml(
-                      filtered[0].versions[0].content
-                    ),
-                  }}
-                />
-              </>
-            ) : (
-              <div className="mt-3 text-sm text-slate-500">
-                Select a note to preview its latest content.
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-4">
-            <div className="text-sm text-slate-500">Guidance</div>
-            <ul className="list-disc ml-5 text-sm mt-2 text-slate-600">
-              <li>
-                Use concise titles and include a short summary for the statement
-                reader.
-              </li>
-              <li>
-                Link note to specific account codes to show amounts in the
-                statements.
-              </li>
-              <li>
-                Use versions for audit trail — each save creates a new version
-                (demo).
-              </li>
-            </ul>
-          </Card>
-        </aside>
+        {/* Pagination */}
+        {total > limit && (
+          <div className="mt-8 flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              Page {page} of {Math.ceil(total / limit)} (Total {total})
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                Previous
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * limit >= total}>
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* View Dialog */}
-      <Dialog
-        open={!!viewing}
-        onOpenChange={(open) => !open && setViewing(null)}
-      >
-        <DialogContent className="max-w-4xl">
+      {/* Create/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl">
           <DialogHeader>
-            <DialogTitle>
-              {viewing?.noteNo} — {viewing?.title}
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+              <FileText className="h-6 w-6 text-indigo-600" />
+              {editingNote ? "Edit Note" : "New Financial Note"}
             </DialogTitle>
-            <DialogDescription>{viewing?.summary}</DialogDescription>
           </DialogHeader>
-
-          <div className="mt-4 space-y-4">
-            <div>
-              <div className="text-xs text-slate-500">Statement</div>
-              <div className="font-medium">
-                {viewing?.statement} • {viewing?.year}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs text-slate-500">Latest version</div>
-              <div
-                className="mt-2 prose max-w-none"
-                dangerouslySetInnerHTML={{
-                  __html: simpleMarkdownToHtml(
-                    viewing?.versions[0].content ?? ""
-                  ),
-                }}
-              />
-              <div className="text-xs text-slate-400 mt-2">
-                Prepared by: {viewing?.versions[0].author} •{" "}
-                {viewing?.versions[0].createdAt}
-              </div>
-            </div>
-
-            {viewing?.relatedAccounts.length ? (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid grid-cols-2 gap-5">
               <div>
-                <div className="text-xs text-slate-500">Related accounts</div>
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-xs text-slate-500">
-                      <tr>
-                        <th className="text-left px-2">Code</th>
-                        <th className="text-left px-2">Account</th>
-                        <th className="text-right px-2">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {viewing.relatedAccounts.map((a) => (
-                        <tr key={a.code} className="border-t">
-                          <td className="px-2 py-2">{a.code}</td>
-                          <td className="px-2 py-2">{a.name}</td>
-                          <td className="px-2 py-2 text-right">
-                            {drCrLabel(a.balance)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <label className="text-sm font-medium text-slate-700">Title *</label>
+                <Input {...register("title", { required: true })} className="mt-1" placeholder="e.g. Inventory Valuation Note" />
               </div>
-            ) : null}
-
-            <div className="flex items-center gap-2 justify-end">
-              <Button variant="ghost" onClick={() => setViewing(null)}>
-                Close
-              </Button>
-              <Button onClick={() => viewing && exportNoteCsv(viewing)}>
-                Export CSV
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => viewing && printNote(viewing)}
-              >
-                <Printer className="mr-2 h-4 w-4" />
-                Print
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => viewing && deleteNote(viewing.id)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Statement</label>
+                <Select value={watch("statement")} onValueChange={(v) => setValue("statement", v)}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATEMENT_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Year</label>
+                <Input type="number" {...register("year", { valueAsNumber: true })} className="mt-1" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Author</label>
+                <Input {...register("author")} className="mt-1" placeholder="Your name" />
+              </div>
             </div>
-          </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Content *</label>
+              <Textarea rows={10} {...register("content", { required: true })} className="mt-1 font-mono text-sm" placeholder="Write your detailed note content here... (Markdown or plain text)" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Summary</label>
+              <Input {...register("summary")} className="mt-1" placeholder="Brief summary (optional)" />
+            </div>
+            <div className="flex items-center gap-3">
+              <input type="checkbox" id="isDraft" {...register("isDraft")} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <label htmlFor="isDraft" className="text-sm font-medium text-slate-700">Save as Draft</label>
+            </div>
+
+            {/* Related Accounts – Dynamic Account Picker */}
+            <div>
+              <label className="text-sm font-medium text-slate-700 mb-2 block">Related Accounts</label>
+              <AccountPicker
+                selectedIds={selectedAccounts}
+                onAdd={addAccount}
+                onRemove={removeAccount}
+              />
+            </div>
+
+            <DialogFooter className="gap-3">
+              <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200">
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                {editingNote ? "Update Note" : "Create Note"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
 
-      {/* Create / Edit Dialog */}
-      <Dialog open={openCreate} onOpenChange={(open) => setOpenCreate(open)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit Note" : "Create Note"}</DialogTitle>
-            <DialogDescription>
-              Notes support **bold** and _italic_. Save creates a new version
-              (demo).
-            </DialogDescription>
-          </DialogHeader>
+/* --------------------------- Expanded Details Component --------------------------- */
+function ExpandedDetails({ note, onFinalise }: { note: FinancialNote; onFinalise: (id: string) => void }) {
+  const latestVersion = note.versions[0];
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-slate-800">{note.title}</h3>
+        <div className="flex gap-2">
+          {note.isDraft && (
+            <Button size="sm" variant="outline" onClick={() => onFinalise(note._id)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+              <BadgeCheck className="mr-1 h-4 w-4" /> Finalise
+            </Button>
+          )}
+          <GlobalPrintButton
+            contentHtml={buildPrintHtml(note)}
+            headerRightHtml={`<div style="text-align:right;"><div style="font-size:20px;font-weight:800;">${note.noteNo}</div></div>`}
+            label="Print"
+            title="Financial Note"
+            orientation="portrait"
+            company={{ name: "Antab Agro LTD", address: "123 Agro Street, Dhaka", phone: "+880 1711-111111", email: "info@antabagro.com" }}
+            showHeader={false}
+            showFooter={false}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div><span className="text-muted-foreground">Statement:</span> {note.statement}</div>
+        <div><span className="text-muted-foreground">Year:</span> {note.year}</div>
+        <div className="col-span-2"><span className="text-muted-foreground">Summary:</span> {note.summary || "-"}</div>
+      </div>
 
-          <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <Label>Note No</Label>
-                <Input
-                  value={form.noteNo}
-                  onChange={(e) =>
-                    setForm((s) => ({ ...s, noteNo: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Title</Label>
-                <Input
-                  value={form.title}
-                  onChange={(e) =>
-                    setForm((s) => ({ ...s, title: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Statement</Label>
-                <select
-                  className="w-full border rounded-md px-3 py-2"
-                  value={form.statement}
-                  onChange={(e) =>
-                    setForm((s) => ({
-                      ...s,
-                      statement: e.target.value as StatementType,
-                    }))
-                  }
-                >
-                  <option>Balance Sheet</option>
-                  <option>Income Statement</option>
-                  <option>Cash Flow</option>
-                  <option>Equity Statement</option>
-                  <option>Notes</option>
-                </select>
-              </div>
-              <div>
-                <Label>Year</Label>
-                <Input
-                  type="number"
-                  value={form.year}
-                  onChange={(e) =>
-                    setForm((s) => ({ ...s, year: Number(e.target.value) }))
-                  }
-                />
-              </div>
-            </div>
+      {/* Latest Version */}
+      <div className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-semibold text-indigo-700 mb-2">
+          <Clock className="h-4 w-4" /> Version {latestVersion?.versionNo} (current)
+        </div>
+        <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">{latestVersion?.content}</div>
+        <div className="mt-3 text-xs text-muted-foreground">
+          By {latestVersion?.author} on {formatDate(latestVersion?.createdAt)}
+        </div>
+      </div>
 
-            <div>
-              <Label>Summary</Label>
-              <Input
-                value={form.summary}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, summary: e.target.value }))
-                }
-              />
-            </div>
+      {/* Related Accounts */}
+      <div>
+        <h4 className="text-sm font-semibold text-slate-700 mb-2">Linked Accounts</h4>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Account</TableHead>
+              <TableHead className="text-right">Snapshot Balance</TableHead>
+              <TableHead className="text-right">Current Balance</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {note.relatedAccounts.map((ra, i) => (
+              <TableRow key={i}>
+                <TableCell className="text-xs font-medium">{ra.name || ra.account}</TableCell>
+                <TableCell className="text-right">{money(ra.snapshotBalance)}</TableCell>
+                <TableCell className="text-right">{money(ra.currentBalance || ra.snapshotBalance)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
-            <div>
-              <Label>Related accounts (simple)</Label>
-              <div className="space-y-2 mt-2">
-                {form.relatedAccounts.map((ra, idx) => (
-                  <div key={idx} className="flex gap-2 items-center">
-                    <Input
-                      placeholder="Code"
-                      value={ra.code}
-                      onChange={(e) => {
-                        const copy = [...form.relatedAccounts];
-                        copy[idx].code = e.target.value;
-                        setForm((s) => ({ ...s, relatedAccounts: copy }));
-                      }}
-                    />
-                    <Input
-                      placeholder="Name"
-                      value={ra.name}
-                      onChange={(e) => {
-                        const copy = [...form.relatedAccounts];
-                        copy[idx].name = e.target.value;
-                        setForm((s) => ({ ...s, relatedAccounts: copy }));
-                      }}
-                    />
-                    <Input
-                      placeholder="Balance"
-                      type="number"
-                      value={ra.balance}
-                      onChange={(e) => {
-                        const copy = [...form.relatedAccounts];
-                        copy[idx].balance = Number(e.target.value);
-                        setForm((s) => ({ ...s, relatedAccounts: copy }));
-                      }}
-                    />
-                    <button
-                      className="text-rose-600"
-                      onClick={() => {
-                        const copy = form.relatedAccounts.filter(
-                          (_, i) => i !== idx
-                        );
-                        setForm((s) => ({ ...s, relatedAccounts: copy }));
-                      }}
-                    >
-                      Remove
-                    </button>
+      {/* Older Versions Timeline */}
+      {note.versions.length > 1 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer font-medium text-indigo-600 hover:text-indigo-800">
+            View older versions ({note.versions.length - 1})
+          </summary>
+          <div className="mt-3 space-y-4 pl-4 border-l-2 border-indigo-100">
+            {note.versions.slice(1).map((v) => (
+              <div key={v._id || v.versionNo} className="relative pl-6">
+                <div className="absolute -left-[13px] top-1.5 h-3 w-3 rounded-full bg-indigo-200 border-2 border-white" />
+                <div className="rounded-xl border bg-white p-4 shadow-sm">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span className="font-semibold">Version {v.versionNo}</span>
+                    <span>{v.author} · {formatDate(v.createdAt)}</span>
                   </div>
-                ))}
-                <div>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      setForm((s) => ({
-                        ...s,
-                        relatedAccounts: [
-                          ...s.relatedAccounts,
-                          { code: "", name: "", balance: 0 },
-                        ],
-                      }))
-                    }
-                  >
-                    Add account
-                  </Button>
+                  <div className="whitespace-pre-wrap text-sm text-slate-700">{v.content}</div>
                 </div>
               </div>
-            </div>
-
-            <div>
-              <Label>Note content (supports **bold** and _italic_)</Label>
-              <Textarea
-                rows={8}
-                value={form.versions[0].content}
-                onChange={(e) =>
-                  setForm((s) => ({
-                    ...s,
-                    versions: [
-                      { ...s.versions[0], content: e.target.value },
-                      ...s.versions.slice(1),
-                    ],
-                  }))
-                }
-              />
-            </div>
-
-            <div className="flex items-center gap-2 justify-end">
-              <Button variant="outline" onClick={() => setOpenCreate(false)}>
-                Cancel
-              </Button>
-              <Button onClick={() => saveForm(false)}>Save & Publish</Button>
-              <Button variant="ghost" onClick={() => saveForm(true)}>
-                Save Draft
-              </Button>
-            </div>
+            ))}
           </div>
-        </DialogContent>
-      </Dialog>
+        </details>
+      )}
     </div>
   );
 }

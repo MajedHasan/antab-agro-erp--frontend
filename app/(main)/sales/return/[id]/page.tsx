@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 import {
   ArrowLeft,
   Ban,
@@ -26,7 +27,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 
+// ----------------------------------------------------------------------
+// Types
+// ----------------------------------------------------------------------
 type ReturnRole =
   | "M.O"
   | "A.M"
@@ -128,6 +133,9 @@ type DraftMap = Record<
   >
 >;
 
+// ----------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------
 const money = (n: number) =>
   Number(n || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -429,6 +437,128 @@ function buildInitialDrafts(doc: ReturnDoc | null): DraftMap {
   return drafts;
 }
 
+// ----------------------------------------------------------------------
+// Print helpers
+// ----------------------------------------------------------------------
+function buildReturnPrintHtml(doc: ReturnDoc, qrImageDataUrl: string): string {
+  const dealer = doc.customerId || {};
+  const dateFmt = (d: any) =>
+    d ? new Date(d).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "—";
+
+  const itemsHtml = doc.invoiceReturns
+    .map((block) => {
+      return `
+      <div style="margin-top: 16px;">
+        <div style="font-size: 14px; font-weight: 700; background: #f1f5f9; padding: 8px 12px; border-radius: 8px; margin-bottom: 8px;">
+          Invoice: ${block.invoiceNoSnapshot || "-"} (${block.paymentStatusSnapshot || ""}) – Balance: ৳${money(block.balanceAmountSnapshot || 0)}
+        </div>
+        <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr style="background: #f8fafc;">
+              <th style="padding:6px 8px; text-align:left;">Product</th>
+              <th style="padding:6px 8px; text-align:center;">Sold</th>
+              <th style="padding:6px 8px; text-align:center;">Req</th>
+              <th style="padding:6px 8px; text-align:center;">Final Approved</th>
+              <th style="padding:6px 8px; text-align:center;">Recv'd</th>
+              <th style="padding:6px 8px; text-align:right;">Return Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${block.items
+              .map(
+                (item) => `
+              <tr style="border-bottom:1px solid #e2e8f0;">
+                <td style="padding:6px 8px; font-weight:600;">${item.productName}</td>
+                <td style="padding:6px 8px; text-align:center;">${soldPieces(item)}</td>
+                <td style="padding:6px 8px; text-align:center;">${item.requestedQty}</td>
+                <td style="padding:6px 8px; text-align:center;">${
+                  item.finalApprovedQty ||
+                  Number(item.nsmQty || item.rmQty || item.amQty || item.requestedQty || 0)
+                }</td>
+                <td style="padding:6px 8px; text-align:center;">${item.warehouseReceivedQty || "-"}</td>
+                <td style="padding:6px 8px; text-align:right; font-weight:700;">৳${money(
+                  item.finalReturnAmount || item.returnAmountEstimate || 0
+                )}</td>
+              </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>`;
+    })
+    .join("");
+
+  return `
+<div style="font-family: 'Inter', sans-serif; max-width: 100%; margin: 0 auto; color: #1e293b; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
+  <div style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 18px 28px; display: flex; justify-content: space-between; align-items: center; color: white;">
+    <div>
+      <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">SALES RETURN</div>
+      <div style="font-size: 13px; opacity: 0.9; margin-top: 2px;">${statusLabel(doc.status)} · ${dealer.name || dealer.proprietor || "-"}</div>
+    </div>
+    <div style="text-align: right;">
+      <div style="font-size: 22px; font-weight: 800;">#${doc.returnNo}</div>
+      <div style="font-size: 12px; opacity: 0.8;">Date: ${dateFmt(doc.createdAt)}</div>
+      ${doc.printCount ? `<div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">Print count: ${doc.printCount}</div>` : ""}
+    </div>
+  </div>
+
+  <div style="padding: 14px 28px; display: flex; gap: 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Dealer</div>
+      <div style="font-weight: 700;">${dealer.name || dealer.proprietor || "-"}</div>
+      <div style="font-size: 12px; color: #475569;">${dealer.phoneNumber || dealer.phone || "-"}</div>
+    </div>
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
+      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Totals</div>
+      <div style="font-weight: 700;">Req: ৳${money(doc.totalRequestedAmount || 0)}</div>
+      <div style="font-size: 12px; color: #475569;">Approved: ৳${money(doc.totalApprovedAmount || 0)} | Received: ৳${money(doc.totalReceivedAmount || 0)}</div>
+    </div>
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; text-align: center;">
+      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">QR Code</div>
+      ${qrImageDataUrl ? `<img src="${qrImageDataUrl}" alt="QR" style="width:120px; height:120px; border:1px solid #e2e8f0; border-radius:10px;" />` : `<div style="width:120px; height:120px; border:2px dashed #cbd5e1; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; color:#94a3b8; font-size:11px;">QR not ready</div>`}
+    </div>
+  </div>
+
+  <div style="padding: 16px 28px;">
+    ${itemsHtml}
+  </div>
+
+  <div style="display: flex; gap: 16px; padding: 14px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center;">
+      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Prepared By</div>
+      <div style="border-top: 2px solid #cbd5e1; margin-top: 28px; padding-top: 8px; font-size: 11px; color: #94a3b8;">(Signature / Name)</div>
+    </div>
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center;">
+      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Security Check</div>
+      <div style="border-top: 2px solid #cbd5e1; margin-top: 28px; padding-top: 8px; font-size: 11px; color: #94a3b8;">(Signature / Name)</div>
+    </div>
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center;">
+      <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Received By</div>
+      <div style="border-top: 2px solid #cbd5e1; margin-top: 28px; padding-top: 8px; font-size: 11px; color: #94a3b8;">(Signature / Name)</div>
+    </div>
+  </div>
+
+  <div style="background: #0f172a; color: #94a3b8; text-align: center; padding: 8px 28px; font-size: 10px;">
+    Computer‑generated document · © Antab Agro LTD
+  </div>
+</div>`;
+}
+
+function buildReturnPrintHeaderRight(doc: ReturnDoc): string {
+  return `
+    <div style="text-align:right;">
+      <div style="font-size: 20px; font-weight: 800; color: #0f172a;">#${doc.returnNo}</div>
+      <div style="font-size: 13px; color: #475569; margin-top: 2px;">${statusLabel(doc.status)}</div>
+      <div style="
+        display: inline-block; background: ${doc.status === "COMPLETED" ? "#065f46" : doc.status === "CANCELLED" || doc.status === "REJECTED" ? "#b91c1c" : "#1e40af"};
+        color: white; padding: 4px 16px; border-radius: 100px; font-size: 13px; margin-top: 8px; font-weight: 700;
+      ">${statusLabel(doc.status)}</div>
+    </div>`;
+}
+
+// ----------------------------------------------------------------------
+// UI Sub-components
+// ----------------------------------------------------------------------
 function Stepper({ status }: { status: SalesReturnStatus }) {
   const step = workflowStepIndex(status);
   const steps = [
@@ -486,6 +616,9 @@ function MetricCard({
   );
 }
 
+// ----------------------------------------------------------------------
+// Main Page Component
+// ----------------------------------------------------------------------
 export default function SalesReturnActionPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -499,6 +632,7 @@ export default function SalesReturnActionPage() {
   const [holdReason, setHoldReason] = useState("");
   const [invoiceReturns, setInvoiceReturns] = useState<ReturnBlockUI[]>([]);
   const [drafts, setDrafts] = useState<DraftMap>({});
+  const [qrImage, setQrImage] = useState<string>("");
 
   const load = async () => {
     if (!id) return;
@@ -509,6 +643,18 @@ export default function SalesReturnActionPage() {
       setDoc(data);
       setInvoiceReturns(data.invoiceReturns);
       setDrafts(buildInitialDrafts(data));
+      // Generate QR image for print
+      if (data.qrCode) {
+        QRCode.toDataURL(data.qrCode, {
+          width: 220,
+          margin: 2,
+          errorCorrectionLevel: "M",
+        })
+          .then(setQrImage)
+          .catch(() => setQrImage(""));
+      } else {
+        setQrImage("");
+      }
     } catch (err: any) {
       toast.error(
         err?.response?.data?.message ||
@@ -542,8 +688,7 @@ export default function SalesReturnActionPage() {
 
   const totalInvoices = doc?.invoiceReturns?.length || 0;
   const totalProducts =
-    doc?.invoiceReturns?.reduce((sum, b) => sum + (b.items?.length || 0), 0) ||
-    0;
+    doc?.invoiceReturns?.reduce((sum, b) => sum + (b.items?.length || 0), 0) || 0;
 
   const requestedQty = doc?.invoiceReturns?.reduce(
     (sum, b) =>
@@ -837,22 +982,6 @@ export default function SalesReturnActionPage() {
       );
     } finally {
       setBusy(false);
-    }
-  };
-
-  const handlePrint = () => {
-    if (!doc) return;
-    if (!canPrint(doc.status, role)) {
-      toast.error(
-        "Print is only available for M.O when status is READY_FOR_PRINT.",
-      );
-      return;
-    }
-
-    const url = `/sales/return/${doc._id}/print`;
-    const popup = window.open(url, "_blank", "noopener,noreferrer");
-    if (!popup) {
-      toast.error("Popup blocked. Please allow popups for this site.");
     }
   };
 
@@ -1517,16 +1646,24 @@ export default function SalesReturnActionPage() {
 
                   {doc.status === "READY_FOR_PRINT" && role === "M.O" ? (
                     <>
-                      <Button
+                      <GlobalPrintButton
+                        contentHtml={buildReturnPrintHtml(doc, qrImage)}
+                        headerRightHtml={buildReturnPrintHeaderRight(doc)}
+                        label="Print Return"
+                        title="Sales Return"
+                        orientation="portrait"
+                        company={{
+                          name: "Antab Agro LTD",
+                          address: "123 Agro Street, Dhaka",
+                          phone: "+880 1711-111111",
+                          email: "info@antabagro.com",
+                        }}
+                        showHeader={false}
+                        showFooter={false}
                         className="w-full"
-                        onClick={handlePrint}
-                        disabled={busy}
-                      >
-                        <FileDown className="mr-2 h-4 w-4" />
-                        Print
-                      </Button>
+                      />
                       <Button
-                        className="w-full"
+                        className="w-full mt-2"
                         variant="outline"
                         onClick={markPrinted}
                         disabled={busy}
