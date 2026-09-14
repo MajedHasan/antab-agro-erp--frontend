@@ -13,6 +13,9 @@ import UserForm from "@/components/forms/UserForm";
 import { toast } from "sonner";
 import Image from "next/image";
 import ProtectedPage from "@/components/global/ProtectedPage";
+import { canAccess } from "@/utils/rbac";
+import { RootState } from "@/store/store";
+import { useSelector } from "react-redux";
 
 export default function UsersPage() {
   // useCrud gives full data management
@@ -45,11 +48,12 @@ export default function UsersPage() {
     roles: [],
     permissions: [],
   });
+  const {currentUser} = useSelector((state: RootState) => state.user);
 
   // fetch meta: roles & permissions used in forms
   useEffect(() => {
     let mounted = true;
-    Promise.all([api.get("/roles"), api.get("/permissions")])
+    Promise.all([api.get("/roles?limit=100"), api.get("/permissions")])
       .then(([r1, r2]) => {
         if (!mounted) return;
         setMeta({
@@ -188,23 +192,37 @@ export default function UsersPage() {
             <Button variant="ghost" size="sm" onClick={() => handleView(u)}>
               <Eye className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => handleEdit(u)}>
-              <Edit className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleDeactivate(u._id)}
-            >
-              <ToggleLeft className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => handleDelete(u._id)}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {
+              canAccess(currentUser, {
+                permissions: ["users.edit"],
+                match: "any",
+              }) && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => handleEdit(u)}>
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeactivate(u._id)}
+                  >
+                    <ToggleLeft className="w-4 h-4" />
+                  </Button>
+                </>
+              )
+            }
+            {canAccess(currentUser, {
+              permissions: ["users.delete"],
+              match: "any",
+            }) && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleDelete(u._id)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         ),
       },
@@ -234,15 +252,30 @@ export default function UsersPage() {
             <Button onClick={() => window.open(`/api/users/export?format=csv`)}>
               Export CSV
             </Button>
-            <Button variant="destructive" onClick={handleBulkDelete}>
-              Delete selected
-            </Button>
+            {canAccess(currentUser, {
+              permissions: ["users.delete"],
+              match: "any",
+            }) && (
+              <Button
+                variant="destructive"
+                onClick={handleBulkDelete}
+                disabled={selectedIds.size === 0}
+              >
+                Delete Selected ({selectedIds.size})
+              </Button>
+            )}
 
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" /> Add
-                </Button>
+                {canAccess(currentUser, {
+                  permissions: ["users.create"],
+                  match: "any",
+                }) && (
+                  <Button onClick={handleAdd}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add User
+                  </Button>
+                )}
               </DialogTrigger>
               <DialogContent>
                 <h2 className="text-lg font-semibold mb-2">
