@@ -74,26 +74,65 @@ const menuItems: MenuItem[] = [
     icon: <ShoppingCartIcon className="w-5 h-5" />,
     badge: 3,
     submenu: [
-      { key: "Supplier", href: "/inventory/supplier" },
-      { key: "Work Order", href: "/inventory/workorder" },
-      { key: "G.R.N", href: "/inventory/good-receipt" },
+      {
+        key: "Supplier", href: "/inventory/supplier",
+        permissions: ["supplier.view", "supplier.edit", "supplier.delete", "supplier.create", "supplier.approve", "supplier.reject"]
+      },
+      {
+        key: "Work Order", href: "/inventory/workorder",
+        permissions: ["workorder.view", "workorder.edit", "workorder.delete", "workorder.create"]
+      },
+      {
+        key: "G.R.N", href: "/inventory/good-receipt",
+        permissions: ["goodreceipt.view", "goodreceipt.edit", "goodreceipt.delete", "goodreceipt.create"]
+      },
       {
         key: "Inventories",
         // href: "/inventory/products-in-factory",
         submenu: [
-          { key: "Raw Materials", href: "/inventory/raw-materials" },
-          { key: "Packing Materials", href: "/inventory/packing-materials" },
-          { key: "Finished Goods", href: "/inventory/finished-products" },
-          { key: "Other Products", href: "/inventory/other-products" },
-          { key: "Inventory Report", href: "/inventory/report" },
+          {
+            key: "Raw Materials", href: "/inventory/raw-materials",
+            permissions: ["rawmaterials.view", "rawmaterials.edit", "rawmaterials.delete", "rawmaterials.create"]
+          },
+          {
+            key: "Packing Materials", href: "/inventory/packing-materials",
+            permissions: ["packingmaterials.view", "packingmaterials.edit", "packingmaterials.delete", "packingmaterials.create"]
+          },
+          {
+            key: "Finished Goods", href: "/inventory/finished-products",
+            permissions: ["finishedproducts.view", "finishedproducts.edit", "finishedproducts.delete", "finishedproducts.create"]
+          },
+          {
+            key: "Other Products", href: "/inventory/other-products",
+            permissions: ["otherproducts.view", "otherproducts.edit", "otherproducts.delete", "otherproducts.create"]
+          },
+          {
+            key: "Inventory Report", href: "/inventory/report",
+            permissions: ["inventoryreport.view", "inventoryreport.edit", "inventoryreport.delete", "inventoryreport.create"]
+          },
         ],
       },
 
-      { key: "Product Transfer", href: "/inventory/product-transfer" },
-      { key: "BOM", href: "/inventory/bom" },
-      { key: "Production", href: "/inventory/production" },
-      { key: "WIP", href: "/inventory/wip" },
-      { key: "Material WIP", href: "/inventory/material-wip" },
+      {
+        key: "Product Transfer", href: "/inventory/product-transfer",
+        permissions: ["factorytransfer.view", "factorytransfer.edit", "factorytransfer.delete", "factorytransfer.create"]
+      },
+      {
+        key: "BOM", href: "/inventory/bom",
+        permissions: ["bom.view", "bom.edit", "bom.delete", "bom.create"]
+      },
+      {
+        key: "Production", href: "/inventory/production",
+        permissions: ["production.view", "production.edit", "production.delete", "production.create"]
+      },
+      {
+        key: "WIP", href: "/inventory/wip",
+        permissions: ["wip.view", "wip.edit", "wip.delete", "wip.create"]
+      },
+      {
+        key: "Material WIP", href: "/inventory/material-wip",
+        permissions: ["materialwip.view", "materialwip.edit", "materialwip.delete", "materialwip.create"]
+      },
     ],
   },
   {
@@ -104,46 +143,52 @@ const menuItems: MenuItem[] = [
       {
         key: "Dashboard",
         href: "/sales",
-        permissions: ["salesdashboard.view"],
+        permissions: ["salesdashboard.view", "salesdashboard.edit", "salesdashboard.delete", "salesdashboard.create"],
       },
       {
         key: "Sales",
-        permissions: ["sales.create"],
+        permissions: ["sales.create", "sales.view", "sales.edit", "sales.delete"],
         submenu: [
           {
             key: "Sales Entry",
             href: "/sales/create",
-            permissions: ["sales.create"],
+            permissions: ["sales.create", "sales.view", "sales.edit", "sales.delete"],
           },
           {
             key: "Sales List",
             href: "/sales/list",
-            permissions: ["sales.view", "sales.edit"],
+            permissions: ["sales.view", "sales.edit", "sales.delete", "sales.create"],
           },
           {
             key: "Sales Invoice",
             href: "/sales/invoice",
-            permissions: ["sales.view", "sales.edit"],
+            permissions: ["sales.view", "sales.edit", "sales.delete", "sales.create"],
           },
-          { key: "D.C", href: "/sales/delivery/status" },
+          {
+            key: "D.C",
+            href: "/sales/delivery/status",
+            permissions: ["delivery.view", "delivery.edit", "delivery.delete", "delivery.create"]
+          },
         ],
       },
 
       {
         key: "TADA",
-        permissions: ["tada.view"],
+        permissions: ["tada.view", "tada.edit", "tada.delete", "tada.create"],
         submenu: [
           {
             key: "Entries",
-            permissions: ["tada.view", "tada.edit"],
+            permissions: ["tada.view", "tada.edit", "tada.delete", "tada.create"],
             submenu: [
               {
                 key: "My Entries",
                 href: "/sales/tada/entries",
+                permissions: ["tada.view", "tada.edit", "tada.delete"],
               },
               {
                 key: "Create Entry",
                 href: "/sales/tada/entries/create",
+                permissions: ["tada.edit", "tada.create"],
               },
             ],
           },
@@ -155,19 +200,21 @@ const menuItems: MenuItem[] = [
           {
             key: "Team Sheets",
             href: "/sales/tada/team-sheets",
-            permissions: ["tada.view", "tada.edit"],
+            permissions: ["tada.view", "tada.edit", "tada.delete", "tada.create"],
           },
           {
             key: "Rates",
-            permissions: ["tada.view", "tada.edit"],
+            permissions: ["tada.view", "tada.edit", "tada.delete", "tada.create"],
             submenu: [
               {
                 key: "List",
                 href: "/sales/tada/rates",
+                permissions: ["tada.view", "tada.edit", "tada.delete", "tada.create"],
               },
               {
                 key: "Create",
                 href: "/sales/tada/rates/create",
+                permissions: ["tada.edit", "tada.create"],
               },
             ],
           },
@@ -177,11 +224,18 @@ const menuItems: MenuItem[] = [
       {
         key: "Prescription",
         href: "/sales/prescription",
-        permissions: ["prescription.view"],
+        permissions: ["prescription.view", "prescription.edit", "prescription.delete", "prescription.create"],
       },
 
-      { key: "T.C (Transfer)", href: "/sales/transfer/status" },
-      { key: "Sales Ledger", href: "/sales/ledger" },
+      {
+        key: "T.C (Transfer)",
+        href: "/sales/transfer/status",
+        permissions: ["warehousetransfer.view", "warehousetransfer.edit", "warehousetransfer.delete", "warehousetransfer.create"],
+      },
+      {
+        key: "Sales Ledger", href: "/sales/ledger", 
+        permissions: ["salesledger.view", "salesledger.edit", "salesledger.delete", "salesledger.create"]
+      },
       {
         key: "Dealer",
         // href: "/sales/dealer",
@@ -259,18 +313,38 @@ const menuItems: MenuItem[] = [
           },
         ],
       },
-      { key: "Products", href: "/sales/products" },
-      { key: "Products Promotion", href: "/sales/product-promotion" },
-      { key: "Special Offers", href: "/sales/special-offers" },
-      { key: "Damages", href: "/sales/damage" },
-      { key: "Return", href: "/sales/return" },
-      { key: "Incentive", href: "/sales/incentive" },
+      {
+        key: "Products", href: "/sales/products",
+        permissions: ["products.view", "products.edit", "products.delete", "products.create"]
+       },
+      {
+        key: "Products Promotion", href: "/sales/product-promotion",
+        permissions: ["productpromotion.view", "productpromotion.edit", "productpromotion.delete", "productpromotion.create"]
+       },
+      {
+        key: "Special Offers", href: "/sales/special-offers",
+        permissions: ["specialoffers.view", "specialoffers.edit", "specialoffers.delete", "specialoffers.create"]
+       },
+      {
+        key: "Damages", href: "/sales/damage",
+        permissions: ["damages.view", "damages.edit", "damages.delete", "damages.create"]
+      },
+      {
+        key: "Return", href: "/sales/return", 
+        permissions: ["return.view", "return.edit", "return.delete", "return.create"]
+       },
+      {
+        key: "Incentive", href: "/sales/incentive", 
+        permissions: ["incentive.view", "incentive.edit", "incentive.delete", "incentive.create"]
+       },
       {
         key: "reports",
+        permissions: ["salesreports.view", "salesreports.edit", "salesreports.delete", "salesreports.create"],
         submenu: [
           {
             key: "Sales & Collections",
             href: "/sales/reports/sales-collections",
+            permissions: ["sales&collections.view", "sales&collections.edit", "sales&collections.delete", "sales&collections.create"],
           },
         ],
       },
@@ -284,6 +358,7 @@ const menuItems: MenuItem[] = [
       {
         key: "Chart Of Accounts",
         href: "/accounts/chart-of-accounts",
+        permissions: ["chartofaccounts.view", "chartofaccounts.edit", "chartofaccounts.delete", "chartofaccounts.create"],
         // submenu: [
         //   // {
         //   //   key: "Receive Voucher",
@@ -301,35 +376,61 @@ const menuItems: MenuItem[] = [
       {
         key: "Collections",
         href: "/accounts/collections",
+        permissions: ["collections.view", "collections.edit", "collections.delete", "collections.create"]
       },
       {
         key: "Vouchers",
         href: "/accounts/vouchers",
+        permissions: ["vouchers.view", "vouchers.edit", "vouchers.delete", "vouchers.create"],
         submenu: [
-          { key: "Voucher Admin", href: "/accounts/vouchers/admin" },
+          {
+            key: "Voucher Admin", href: "/accounts/vouchers/admin",
+            permissions: ["voucheradmin.view", "voucheradmin.edit", "voucheradmin.delete", "voucheradmin.create"]
+           },
           {
             key: "Receive Voucher",
             href: "",
+            permissions: ["receivevoucher.view", "receivevoucher.edit", "receivevoucher.delete", "receivevoucher.create"],
             submenu: [
-              { key: "Bank Receive", href: "/accounts/vouchers/receive/bank" },
-              { key: "Cash Receive", href: "/accounts/vouchers/receive/cash" },
+              {
+                key: "Bank Receive", href: "/accounts/vouchers/receive/bank",
+                permissions: ["bankreceive.view", "bankreceive.edit", "bankreceive.delete", "bankreceive.create"]
+               },
+              {
+                key: "Cash Receive", href: "/accounts/vouchers/receive/cash",
+                permissions: ["cashreceive.view", "cashreceive.edit", "cashreceive.delete", "cashreceive.create"]
+               },
             ],
           },
           {
             key: "Payment Voucher",
             href: "",
+            permissions: ["paymentvoucher.view", "paymentvoucher.edit", "paymentvoucher.delete", "paymentvoucher.create"],
             submenu: [
-              { key: "Bank Payment", href: "/accounts/vouchers/payment/bank" },
-              { key: "Cash Payment", href: "/accounts/vouchers/payment/cash" },
+              {
+                key: "Bank Payment", href: "/accounts/vouchers/payment/bank",
+                permissions: ["bankpayment.view", "bankpayment.edit", "bankpayment.delete", "bankpayment.create"]
+               },
+              {
+                key: "Cash Payment", href: "/accounts/vouchers/payment/cash",
+                permissions: ["cashpayment.view", "cashpayment.edit", "cashpayment.delete", "cashpayment.create"]
+               },
             ],
           },
-          { key: "Journal Voucher", href: "/accounts/vouchers/journal" },
-          { key: "Contra Voucher", href: "/accounts/vouchers/contra" },
+          {
+            key: "Journal Voucher", href: "/accounts/vouchers/journal",
+            permissions: ["journalvoucher.view", "journalvoucher.edit", "journalvoucher.delete", "journalvoucher.create"]
+           },
+          {
+            key: "Contra Voucher", href: "/accounts/vouchers/contra",
+            permissions: ["contravoucher.view", "contravoucher.edit", "contravoucher.delete", "contravoucher.create"]
+           },
         ],
       },
       {
         key: "Reports",
         href: "/accounts/reports",
+        permissions: ["accountsreports.view", "accountsreports.edit", "accountsreports.delete", "accountsreports.create"],
         submenu: [
           // {
           //   key: "Receive Voucher",
@@ -342,31 +443,43 @@ const menuItems: MenuItem[] = [
           {
             key: "Financial Reports",
             href: "",
+            permissions: ["financialreports.view", "financialreports.edit", "financialreports.delete", "financialreports.create"],
             submenu: [
               {
                 key: "Financial Notes",
                 href: "/accounts/reports/financial/financial-notes",
+                permissions: ["financialnotes.view", "financialnotes.edit", "financialnotes.delete", "financialnotes.create"]
               },
               {
                 key: "Statement Of Financial Position",
                 href: "/accounts/reports/financial/financial-position",
+                permissions: ["financialposition.view", "financialposition.edit", "financialposition.delete", "financialposition.create"]
               },
               {
                 key: "Statement Of Profit or Loss & Other Comprehensive Income",
                 href: "/accounts/reports/financial/profit-loss",
+                permissions: ["profitloss.view", "profitloss.edit", "profitloss.delete", "profitloss.create"]
               },
               {
                 key: "Statement Of Changes in Equity",
                 href: "/accounts/reports/financial/changes-equity",
+                permissions: ["changesequity.view", "changesequity.edit", "changesequity.delete", "changesequity.create"]
               },
             ],
           },
           {
             key: "Individual Account / Ledger",
             href: "/accounts/reports/ledger",
+            permissions: ["ledger.view", "ledger.edit", "ledger.delete", "ledger.create"]
           },
-          { key: "Trial Balance", href: "/accounts/reports/trial-balance" },
-          { key: "Other Reports", href: "" },
+          {
+            key: "Trial Balance", href: "/accounts/reports/trial-balance",
+            permissions: ["trialbalance.view", "trialbalance.edit", "trialbalance.delete", "trialbalance.create"]
+           },
+          {
+            key: "Other Reports", href: "",
+            permissions: ["otherreports.view", "otherreports.edit", "otherreports.delete", "otherreports.create"],
+           },
         ],
       },
     ],
@@ -374,44 +487,65 @@ const menuItems: MenuItem[] = [
   {
     key: "hrPayroll",
     icon: <UserGroupIcon className="w-5 h-5" />,
+    permissions: ["hrpayroll.view", "hrpayroll.edit", "hrpayroll.delete", "hrpayroll.create"],
     submenu: [
-      { key: "employees", href: "/hr/employees" },
-      { key: "payroll", href: "/hr/payroll" },
-      { key: "attendance", href: "/hr/attendance" },
+      {
+        key: "employees", href: "/hr/employees",
+        permissions: ["employees.view", "employees.edit", "employees.delete", "employees.create"]
+       },
+      {
+        key: "payroll", href: "/hr/payroll",
+        permissions: ["payroll.view", "payroll.edit", "payroll.delete", "payroll.create"]
+       },
+      {
+        key: "attendance", href: "/hr/attendance",
+        permissions: ["attendance.view", "attendance.edit", "attendance.delete", "attendance.create"]
+       },
     ],
   },
   {
     key: "Administration",
     icon: <UserGroupIcon className="w-5 h-5" />,
+    permissions: ["admin.view", "admin.edit", "admin.delete", "admin.create"],
     submenu: [
       {
         key: "Users",
         href: "/admin/users",
-        permissions: ["users.view"],
+        permissions: ["users.view", "users.edit", "users.delete", "users.create"],
       },
       {
         key: "Assign Location",
         href: "/admin/users/location",
-        permissions: ["userslocation.view"],
+        permissions: ["userslocation.view", "userslocation.edit", "userslocation.delete", "userslocation.create"],
       },
       {
         key: "Assign Warehouse",
         href: "/admin/users/warehouse",
-        permissions: ["userswarehouse.view"],
+        permissions: ["userswarehouse.view", "userswarehouse.edit", "userswarehouse.delete", "userswarehouse.create"],
       },
-      { key: "Roles", href: "/admin/roles" },
-      { key: "Departments", href: "/admin/departments" },
-      { key: "Permissions", href: "/admin/permissions" },
+      {
+        key: "Roles", href: "/admin/roles",
+        permissions: ["roles.view", "roles.edit", "roles.delete", "roles.create"]
+      },
+      {
+        key: "Departments", href: "/admin/departments",
+        permissions: ["departments.view", "departments.edit", "departments.delete", "departments.create"]
+      },
+      {
+        key: "Permissions", href: "/admin/permissions",
+        permissions: ["permissions.view", "permissions.edit", "permissions.delete", "permissions.create"]
+      },
     ],
   },
   {
     key: "Media",
     icon: <FoldersIcon className="w-5 h-5" />,
+    permissions: ["media.view", "media.edit", "media.delete", "media.create"],
     submenu: [
       {
         key: "List",
         href: "/media",
-        permissions: ["media.view"],
+        permissions: ["media.view", "media.edit", "media.delete", "media.create"],
       },
     ],
   },
