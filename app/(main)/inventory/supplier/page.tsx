@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash2, Edit, Eye, Plus, X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Media = {
   _id: string;
@@ -509,7 +510,7 @@ export default function SupplierPage() {
               </div>
               <div>
                 <Label>Group type</Label>
-                <Input
+                {/* <Input
                   value={form.groupType || ""}
                   onChange={(e) =>
                     setForm((f) => ({
@@ -517,7 +518,27 @@ export default function SupplierPage() {
                       groupType: e.target.value,
                     }))
                   }
-                />
+                /> */}
+                <Select
+                  value={form.groupType || ""}
+                  onValueChange={(value) =>
+                    setForm((f) => ({
+                      ...(f || {}),
+                      groupType: value,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select group type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Packing Materials">Packing Materials</SelectItem>
+                    <SelectItem value="Raw Materials">Raw Materials</SelectItem>
+                    <SelectItem value="Stationary">Stationary</SelectItem>
+                    <SelectItem value="Equipment">Equipment</SelectItem>
+                    <SelectItem value="Furniture">Furniture</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Owner name</Label>
