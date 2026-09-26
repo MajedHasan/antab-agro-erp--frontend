@@ -46,7 +46,7 @@ export default function RolesPage() {
     try {
       const [rolesRes, permsRes] = await Promise.all([
         api.get("/roles?limit=100"),
-        api.get("/permissions?limit=100"),
+        api.get("/permissions?limit=1000"),
       ]);
       setRoles(rolesRes.data.data ?? rolesRes.data ?? []);
       setPerms(permsRes.data.data ?? permsRes.data ?? []);
