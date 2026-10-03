@@ -95,6 +95,8 @@ import {
   Wallet,
   Warehouse,
   X,
+  BugIcon,
+  Pill,
 } from "lucide-react";
 
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -270,6 +272,10 @@ function SidebarTooltip({
 /* =========================================================
    MENU DATA
    ========================================================= */
+
+/* =========================================================
+   MENU DATA
+========================================================= */
 
 const menuItems: MenuItem[] = [
   {
@@ -496,6 +502,7 @@ const menuItems: MenuItem[] = [
               "sales.delete",
             ],
           },
+
           {
             key: "Sales List",
             href: "/sales/list",
@@ -507,6 +514,7 @@ const menuItems: MenuItem[] = [
               "sales.create",
             ],
           },
+
           {
             key: "Sales Invoice",
             href: "/sales/invoice",
@@ -518,6 +526,7 @@ const menuItems: MenuItem[] = [
               "sales.create",
             ],
           },
+
           {
             key: "D.C",
             href: "/sales/delivery/status",
@@ -562,6 +571,7 @@ const menuItems: MenuItem[] = [
                   "tada.delete",
                 ],
               },
+
               {
                 key: "Create Entry",
                 href: "/sales/tada/entries/create",
@@ -617,6 +627,7 @@ const menuItems: MenuItem[] = [
                   "tada.create",
                 ],
               },
+
               {
                 key: "Create",
                 href: "/sales/tada/rates/create",
@@ -628,18 +639,6 @@ const menuItems: MenuItem[] = [
               },
             ],
           },
-        ],
-      },
-
-      {
-        key: "Prescription",
-        href: "/sales/prescription",
-        icon: <HeartPulse size={17} />,
-        permissions: [
-          "prescription.view",
-          "prescription.edit",
-          "prescription.delete",
-          "prescription.create",
         ],
       },
 
@@ -688,6 +687,7 @@ const menuItems: MenuItem[] = [
               "dealer.delete",
             ],
           },
+
           {
             key: "Ledger",
             href: "/sales/dealer/ledger",
@@ -697,6 +697,7 @@ const menuItems: MenuItem[] = [
               "dealerledger.edit",
             ],
           },
+
           {
             key: "Zone",
             href: "/sales/dealer/zones",
@@ -708,6 +709,7 @@ const menuItems: MenuItem[] = [
               "zone.delete",
             ],
           },
+
           {
             key: "Region",
             href: "/sales/dealer/regions",
@@ -719,6 +721,7 @@ const menuItems: MenuItem[] = [
               "region.delete",
             ],
           },
+
           {
             key: "Area",
             href: "/sales/dealer/areas",
@@ -730,6 +733,7 @@ const menuItems: MenuItem[] = [
               "area.delete",
             ],
           },
+
           {
             key: "Territory",
             href: "/sales/dealer/territories",
@@ -741,6 +745,7 @@ const menuItems: MenuItem[] = [
               "territory.delete",
             ],
           },
+
           {
             key: "Warehouse Or Factory",
             href: "/sales/dealer/warehouseOrFactory",
@@ -854,6 +859,197 @@ const menuItems: MenuItem[] = [
   },
 
   /* =======================================================
+     MARKETING & SALES ADMIN
+     
+     This is a MAIN / TOP-LEVEL sidebar menu.
+     
+     Prescription
+     Campaigns
+     Marketing Setup
+     
+     are all children of this module.
+  ======================================================= */
+
+  {
+    key: "Marketing & Sales Admin",
+    icon: <Megaphone size={19} strokeWidth={1.8} />,
+    permissions: [
+      "marketingsalesadmin.view",
+      "marketingsalesadmin.edit",
+      "marketingsalesadmin.delete",
+      "marketingsalesadmin.create",
+    ],
+    submenu: [
+      /* =====================================================
+         PRESCRIPTION
+      ===================================================== */
+
+      {
+        key: "Prescription",
+        icon: <HeartPulse size={17} />,
+        permissions: [
+          "prescription.view",
+          "prescription.edit",
+          "prescription.delete",
+          "prescription.create",
+        ],
+        submenu: [
+          {
+            key: "New",
+            href: "/marketing&sales/prescription/new",
+            icon: <PlusCircle size={16} />,
+            permissions: [
+              "prescription.create",
+              "prescription.view",
+            ],
+          },
+
+          {
+            key: "List",
+            href: "/marketing&sales/prescription",
+            icon: <List size={16} />,
+            permissions: [
+              "prescription.view",
+              "prescription.edit",
+              "prescription.delete",
+            ],
+          },
+        ],
+      },
+
+      /* =====================================================
+         CAMPAIGNS
+      ===================================================== */
+
+      {
+        key: "Campaigns",
+        icon: <Megaphone size={17} />,
+        permissions: [
+          "campaigns.view",
+          "campaigns.edit",
+          "campaigns.delete",
+          "campaigns.create",
+        ],
+        submenu: [
+          {
+            key: "New",
+            href: "/marketing&sales/campaigns/new",
+            icon: <PlusCircle size={16} />,
+            permissions: [
+              "campaigns.create",
+              "campaigns.view",
+            ],
+          },
+
+          {
+            key: "List",
+            href: "/marketing&sales/campaigns",
+            icon: <List size={16} />,
+            permissions: [
+              "campaigns.view",
+              "campaigns.edit",
+              "campaigns.delete",
+            ],
+          },
+        ],
+      },
+
+      /* =====================================================
+         MARKETING SETUP
+
+         Relationship:
+
+         Crop
+           ↓
+         Pest Type
+           ↓
+         Solution
+           ↓
+         Dose
+
+         Location is NOT duplicated here.
+
+         Existing:
+         Zone → Region → Area → Territory
+
+         remains under Dealer and can be used by
+         Prescription / Campaigns.
+      ===================================================== */
+
+      {
+        key: "Marketing Setup",
+        icon: <SlidersHorizontal size={17} />,
+        permissions: [
+          "marketingsetup.view",
+          "marketingsetup.edit",
+          "marketingsetup.delete",
+          "marketingsetup.create",
+        ],
+        submenu: [
+          {
+            key: "setup",
+            href: "/marketing&sales/setup",
+            icon: <Settings size={17} />,
+            permissions: [
+              "marketingsetup.view",
+              "marketingsetup.edit",
+              "marketingsetup.delete",
+              "marketingsetup.create",
+            ],
+          },
+          {
+            key: "Crops",
+            href: "/marketing&sales/setup/crops",
+            icon: <Layers3 size={17} />,
+            permissions: [
+              "crops.view",
+              "crops.edit",
+              "crops.delete",
+              "crops.create",
+            ],
+          },
+
+          {
+            key: "Pest Types",
+            href: "/marketing&sales/setup/pest-types",
+            icon: <BugIcon />,
+            permissions: [
+              "pesttypes.view",
+              "pesttypes.edit",
+              "pesttypes.delete",
+              "pesttypes.create",
+            ],
+          },
+
+          {
+            key: "Solutions",
+            href: "/marketing&sales/setup/solutions",
+            icon: <PackageCheck size={17} />,
+            permissions: [
+              "solutions.view",
+              "solutions.edit",
+              "solutions.delete",
+              "solutions.create",
+            ],
+          },
+
+          {
+            key: "Dose",
+            href: "/marketing&sales/setup/dose",
+            icon: <Pill size={17} />,
+            permissions: [
+              "dose.view",
+              "dose.edit",
+              "dose.delete",
+              "dose.create",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+
+  /* =======================================================
      ACCOUNTS
   ======================================================= */
 
@@ -929,6 +1125,7 @@ const menuItems: MenuItem[] = [
                   "bankreceive.create",
                 ],
               },
+
               {
                 key: "Cash Receive",
                 href: "/accounts/vouchers/receive/cash",
@@ -964,6 +1161,7 @@ const menuItems: MenuItem[] = [
                   "bankpayment.create",
                 ],
               },
+
               {
                 key: "Cash Payment",
                 href: "/accounts/vouchers/payment/cash",
@@ -1138,6 +1336,7 @@ const menuItems: MenuItem[] = [
           "employees.create",
         ],
       },
+
       {
         key: "payroll",
         href: "/hr/payroll",
@@ -1149,6 +1348,7 @@ const menuItems: MenuItem[] = [
           "payroll.create",
         ],
       },
+
       {
         key: "attendance",
         href: "/hr/attendance",
