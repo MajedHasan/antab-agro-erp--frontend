@@ -294,7 +294,7 @@ function ImportOrderCard({
                 </td>
 
                 <td className="px-4 py-3 text-right">
-                  {formatNumber(item.bonusQty)}
+                  {formatNumber(item?.finalBonusQty)}
                 </td>
 
                 <td className="px-4 py-3 text-right">
@@ -316,7 +316,7 @@ function ImportOrderCard({
                 </td>
 
                 <td className="px-4 py-3 text-right font-medium">
-                  {formatMoney(item.total)} BDT
+                  {formatMoney(item?.lineTotal)} BDT
                 </td>
               </tr>
             ))}

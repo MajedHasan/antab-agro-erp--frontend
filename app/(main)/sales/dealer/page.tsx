@@ -23,6 +23,7 @@ import { Plus, Edit, Trash2, Search, Eye } from "lucide-react";
 import { toast } from "sonner";
 import DealerAddEditModal from "./_components/DealerAddEditModal";
 import DealerViewModal from "./_components/DealerViewModal";
+import Link from "next/link";
 
 /* =========================
    Types / Media model
@@ -858,6 +859,7 @@ export default function DealersPage() {
   ========================= */
   return (
     <div className="p-4 space-y-6">
+
       {/* Header + Controls */}
       <div className="flex items-center justify-between">
         <div>
@@ -945,6 +947,14 @@ export default function DealersPage() {
             <Plus className="w-4 h-4 mr-2" />
             Dealer Create
           </Button>
+
+          <Button asChild className="text-white">
+            <Link href="/sales/dealer/import">
+              <Plus className="mr-2 h-4 w-4" />
+              Bulk Import
+            </Link>
+          </Button>
+
         </div>
       </div>
 

@@ -67,6 +67,7 @@ export type SalesOrderImportItem = {
 
   qty: number;
   bonusQty: number;
+  finalBonusQty?: number;
 
   rate?: number;
   salePrice?: number;
@@ -79,6 +80,7 @@ export type SalesOrderImportItem = {
   taxAmount: number;
 
   subtotal: number;
+  lineTotal?: number;
   total: number;
 };
 
