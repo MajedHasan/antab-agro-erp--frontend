@@ -33,9 +33,24 @@ import {
   ChevronsUpDown,
   Loader2,
   Plus,
+  Minus,
   Trash2,
   Copy,
   RefreshCw,
+  ShoppingCart,
+  Building2,
+  Calendar,
+  CreditCard,
+  StickyNote,
+  Package,
+  Percent,
+  Wallet,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
+  Boxes,
+  ArrowRight,
+  Receipt,
 } from "lucide-react";
 
 type LookupOption = {
@@ -47,6 +62,8 @@ type LookupOption = {
   salePrice?: number;
   stock?: number;
   sku?: string;
+  warehouseId?: string;
+  warehouseName?: string;
 };
 
 type CreditSummary = {
@@ -144,10 +161,10 @@ function calcLine(item: LineItem, taxPercent: number) {
   const lineSubtotal = Math.max(0, base - discountAmount);
   const taxAmount = lineSubtotal * (Number(taxPercent || 0) / 100);
   const lineTotal = lineSubtotal + taxAmount;
-
   return { base, discountAmount, lineSubtotal, taxAmount, lineTotal };
 }
 
+/* ------------------------------ Lookup ------------------------------ */
 function LookupSelect({
   value,
   selectedLabel,
@@ -173,14 +190,12 @@ function LookupSelect({
 
   useEffect(() => {
     if (!open) return;
-
     const key = query.trim().toLowerCase();
     const timer = setTimeout(async () => {
       if (cacheRef.current[key]) {
         setOptions(cacheRef.current[key]);
         return;
       }
-
       setLoading(true);
       try {
         const list = await fetchOptions(query);
@@ -192,7 +207,6 @@ function LookupSelect({
         setLoading(false);
       }
     }, 250);
-
     return () => clearTimeout(timer);
   }, [open, query, fetchOptions]);
 
@@ -203,13 +217,12 @@ function LookupSelect({
           type="button"
           variant="outline"
           disabled={disabled}
-          className="w-full justify-between overflow-hidden"
+          className="h-10 w-full justify-between overflow-hidden bg-white"
         >
           <span className="truncate">{selectedLabel || placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-
       <PopoverContent className="w-[360px] p-0" align="start">
         <Command>
           <CommandInput
@@ -255,6 +268,63 @@ function LookupSelect({
   );
 }
 
+/* ------------------------------ Small UI helpers ------------------------------ */
+function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  right,
+}: {
+  icon: React.ElementType;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
+      <div className="flex items-center gap-3">
+        {/* 🟢 emerald accent */}
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle && (
+            <div className="text-xs text-muted-foreground">{subtitle}</div>
+          )}
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function StatPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "slate" | "emerald" | "black" | "amber";
+}) {
+  const map = {
+    slate: "bg-slate-100 text-slate-700",
+    emerald: "bg-emerald-50 text-emerald-700",
+    black: "bg-slate-900 text-white",
+    amber: "bg-amber-50 text-amber-700",
+  } as const;
+  return (
+    <div className={`rounded-lg px-3 py-2 ${map[tone]}`}>
+      <div className="text-[10px] font-medium uppercase tracking-wide opacity-70">
+        {label}
+      </div>
+      <div className="text-base font-bold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+/* ------------------------------ Page ------------------------------ */
 export default function SalesOrderCreatePage() {
   const router = useRouter();
 
@@ -266,11 +336,9 @@ export default function SalesOrderCreatePage() {
     setValue,
     reset,
     formState: { isSubmitting },
-  } = useForm<FormValues>({
-    defaultValues,
-  });
+  } = useForm<FormValues>({ defaultValues });
 
-  const { fields, append, remove, update, replace } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control,
     name: "items",
   });
@@ -279,8 +347,7 @@ export default function SalesOrderCreatePage() {
   const warehouseId = useWatch({ control, name: "warehouseId" });
   const paymentMethod = useWatch({ control, name: "paymentMethod" });
   const taxPercent = Number(useWatch({ control, name: "taxPercent" }) || 0);
-  const watchedItems = (useWatch({ control, name: "items" }) ||
-    []) as LineItem[];
+  const watchedItems = (useWatch({ control, name: "items" }) || []) as LineItem[];
 
   const [saving, setSaving] = useState(false);
   const [creditLoading, setCreditLoading] = useState(false);
@@ -300,17 +367,33 @@ export default function SalesOrderCreatePage() {
     Record<string, { bonusQty: number; appliedPromotionId: string | null }>
   >({});
 
+  const setRow = useCallback(
+    (index: number, patch: Partial<LineItem>) => {
+      const row = getValues(`items.${index}`) as LineItem | undefined;
+      if (!row) return;
+      const next: LineItem = { ...row, ...patch };
+      setValue(`items.${index}` as any, next, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+    },
+    [getValues, setValue],
+  );
+
   const fetchDealers = useCallback(async (search: string) => {
     const res = await api.get("/dealers", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
-
     return (res.data?.data || []).map((d: any) => ({
       value: String(d._id || d.id),
       label: d.name || d.proprietor || String(d._id || d.id),
-      description: `${d.phoneNumber || d.phone || ""}${d.status ? ` · ${d.status}` : ""}`,
+      description: `${d.phoneNumber || d.phone || ""}${
+        d.status ? ` · ${d.status}` : ""
+      }`,
       status: d.status,
       dealerType: d.type,
+      warehouseId: d.warehouse?._id ? String(d.warehouse._id) : undefined,
+      warehouseName: d.warehouse?.name || undefined,
     })) as LookupOption[];
   }, []);
 
@@ -318,7 +401,6 @@ export default function SalesOrderCreatePage() {
     const res = await api.get("/warehouses", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
-
     return (res.data?.data || []).map((w: any) => ({
       value: String(w._id || w.id),
       label: w.name || String(w._id || w.id),
@@ -330,11 +412,14 @@ export default function SalesOrderCreatePage() {
     const res = await api.get("/products", {
       params: { q: search || undefined, page: 1, limit: 20 },
     });
-
     return (res.data?.data || []).map((p: any) => ({
       value: String(p._id || p.id),
       label: p.name || String(p._id || p.id),
-      description: `${p.sku || ""}${p.salePrice || p.price ? ` · ${Number(p.salePrice ?? p.sale_price ?? p.price ?? 0)} BDT` : ""}`,
+      description: `${p.sku || ""}${
+        p.salePrice || p.price
+          ? ` · ${Number(p.salePrice ?? p.sale_price ?? p.price ?? 0)} BDT`
+          : ""
+      }`,
       salePrice: Number(p.salePrice ?? p.sale_price ?? p.price ?? 0),
       stock: Number(p.stock ?? 0),
       sku: p.sku,
@@ -352,19 +437,14 @@ export default function SalesOrderCreatePage() {
           availableToSell: 0,
         };
       }
-
       const cacheKey = `${productId}|${wId}`;
       if (stockCache.current[cacheKey]) {
         return stockCache.current[cacheKey];
       }
-
       try {
         const res = await api.get("/product-stocks", {
           params: { productId, warehouseId: wId, page: 1, limit: 1 },
         });
-
-        console.log("Product Stock: ", res.data);
-
         const row = res.data?.data?.[0] || {};
         const stock: StockInfo = {
           quantity: Number(row.quantity || 0),
@@ -373,7 +453,6 @@ export default function SalesOrderCreatePage() {
           reservedForTransfer: Number(row.reservedForTransfer || 0),
           availableToSell: computeAvailable(row),
         };
-
         stockCache.current[cacheKey] = stock;
         return stock;
       } catch {
@@ -396,20 +475,12 @@ export default function SalesOrderCreatePage() {
       if (!productId || !qty || qty <= 0) {
         return { bonusQty: 0, appliedPromotionId: null };
       }
-
       const key = `${productId}|${qty}|${dId || ""}|${wId || ""}`;
       if (promoCache.current[key]) return promoCache.current[key];
-
       try {
         const res = await api.get("/promotions/calculate-bonus", {
-          params: {
-            productId,
-            qty,
-            customerId: dId,
-            warehouseId: wId,
-          },
+          params: { productId, qty, customerId: dId, warehouseId: wId },
         });
-
         const data = res.data?.data || {};
         const result = {
           bonusQty: Number(data.bonusQty || 0),
@@ -432,7 +503,6 @@ export default function SalesOrderCreatePage() {
     async (fieldId: string, opts?: { stock?: boolean; promo?: boolean }) => {
       const index = fields.findIndex((f) => f.id === fieldId);
       if (index < 0) return;
-
       const row = getValues(`items.${index}`) as LineItem | undefined;
       if (!row || !row.productId) return;
 
@@ -458,20 +528,9 @@ export default function SalesOrderCreatePage() {
         next.promoAppliedId = promo.appliedPromotionId;
       }
 
-      update(index, {
-        ...row,
-        ...next,
-      });
+      setRow(index, next);
     },
-    [
-      fields,
-      getValues,
-      update,
-      warehouseId,
-      customerId,
-      fetchStockInfo,
-      fetchPromo,
-    ],
+    [fields, getValues, setRow, warehouseId, customerId, fetchStockInfo, fetchPromo],
   );
 
   const refreshAllRows = useCallback(async () => {
@@ -482,18 +541,15 @@ export default function SalesOrderCreatePage() {
 
   useEffect(() => {
     let active = true;
-
     (async () => {
       if (!customerId) {
         setCreditSummary(null);
         return;
       }
-
       setCreditLoading(true);
       try {
         const res = await api.get(`/dealers/${customerId}/credit-summary`);
         if (!active) return;
-
         const data = res.data?.data;
         setCreditSummary(
           data
@@ -501,9 +557,7 @@ export default function SalesOrderCreatePage() {
                 dealerId: String(data.dealerId || customerId),
                 dealerType: data.dealerType || dealerMeta?.dealerType || "CASH",
                 creditLimit: Number(data.creditLimit || 0),
-                currentDue: Number(
-                  data.currentDue ?? data.used ?? data.due ?? 0,
-                ),
+                currentDue: Number(data.currentDue ?? data.used ?? data.due ?? 0),
                 used: Number(data.used ?? data.due ?? 0),
                 due: Number(data.due ?? data.used ?? 0),
                 available: Number(data.available || 0),
@@ -517,7 +571,6 @@ export default function SalesOrderCreatePage() {
         if (active) setCreditLoading(false);
       }
     })();
-
     return () => {
       active = false;
     };
@@ -527,13 +580,10 @@ export default function SalesOrderCreatePage() {
 
   useEffect(() => {
     if (!customerId || !warehouseId) return;
-
     const changed =
       prevLink.current.customerId !== customerId ||
       prevLink.current.warehouseId !== warehouseId;
-
     prevLink.current = { customerId, warehouseId };
-
     if (changed && fields.length > 0) {
       void refreshAllRows();
     }
@@ -550,22 +600,15 @@ export default function SalesOrderCreatePage() {
 
   const totals = useMemo(() => {
     const lineData = watchedItems.map((item) => calcLine(item, taxPercent));
-    const totalQty = watchedItems.reduce(
-      (sum, item) => sum + Number(item.qty || 0),
-      0,
-    );
+    const totalQty = watchedItems.reduce((s, it) => s + Number(it.qty || 0), 0);
     const totalBonusQty = watchedItems.reduce(
-      (sum, item) => sum + Number(item.bonusQty || 0),
+      (s, it) => s + Number(it.bonusQty || 0),
       0,
     );
-    const subtotal = lineData.reduce((sum, row) => sum + row.lineSubtotal, 0);
-    const totalDiscount = lineData.reduce(
-      (sum, row) => sum + row.discountAmount,
-      0,
-    );
-    const totalTax = lineData.reduce((sum, row) => sum + row.taxAmount, 0);
+    const subtotal = lineData.reduce((s, r) => s + r.lineSubtotal, 0);
+    const totalDiscount = lineData.reduce((s, r) => s + r.discountAmount, 0);
+    const totalTax = lineData.reduce((s, r) => s + r.taxAmount, 0);
     const grandTotal = subtotal + totalTax;
-
     return {
       lineData,
       totalQty,
@@ -584,54 +627,152 @@ export default function SalesOrderCreatePage() {
       creditSummary.available >= totals.grandTotal);
 
   const canSubmit =
-    !saving &&
-    !isSubmitting &&
-    !!customerId &&
-    !!warehouseId &&
-    canSubmitCredit;
+    !saving && !isSubmitting && !!customerId && !!warehouseId && canSubmitCredit;
+
+  const onPickDealer = async (opt: LookupOption) => {
+    setValue("customerId", opt.value, {
+      shouldDirty: true,
+      shouldTouch: true,
+    });
+    setDealerMeta(opt);
+    setCreditSummary(null);
+
+    if (opt.warehouseId) {
+      setValue("warehouseId", opt.warehouseId, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+      setWarehouseMeta({
+        value: opt.warehouseId,
+        label: opt.warehouseName || "",
+        description: "Auto-selected from dealer",
+      });
+    }
+
+    await refreshAllRows();
+  };
+
+  const onPickWarehouse = async (opt: LookupOption) => {
+    setValue("warehouseId", opt.value, {
+      shouldDirty: true,
+      shouldTouch: true,
+    });
+    setWarehouseMeta(opt);
+    await refreshAllRows();
+  };
+
+  const onPickProduct = async (index: number, opt: LookupOption) => {
+    const row = getValues(`items.${index}`) as LineItem | undefined;
+    if (!row) return;
+
+    const fieldId = fields[index]?.id;
+
+    const stock = warehouseId
+      ? await fetchStockInfo(opt.value, warehouseId)
+      : {
+          quantity: Number(opt.stock || 0),
+          incomingTransfer: 0,
+          reservedForSales: 0,
+          reservedForTransfer: 0,
+          availableToSell: Number(opt.stock || 0),
+        };
+
+    const promo = await fetchPromo(
+      opt.value,
+      Number(row.qty || 0),
+      customerId || undefined,
+      warehouseId || undefined,
+    );
+
+    setRow(index, {
+      productId: opt.value,
+      productName: opt.label,
+      unitPrice: Number(opt.salePrice || 0),
+      quantity: stock.quantity,
+      incomingTransfer: stock.incomingTransfer,
+      reservedForSales: stock.reservedForSales,
+      reservedForTransfer: stock.reservedForTransfer,
+      availableToSell: stock.availableToSell,
+      bonusQty: promo.bonusQty || 0,
+      promoAppliedId: promo.appliedPromotionId,
+    });
+
+    if (fieldId) {
+      stockCache.current[`${opt.value}|${warehouseId || ""}`] = stock;
+    }
+  };
+
+  const onQtyChange = (index: number, qty: number) => {
+    setRow(index, { qty: Math.max(0, qty) });
+
+    const fieldId = fields[index]?.id;
+    if (!fieldId) return;
+
+    const existingTimer = promoTimers.current[fieldId];
+    if (existingTimer) clearTimeout(existingTimer);
+
+    promoTimers.current[fieldId] = setTimeout(async () => {
+      await refreshRowById(fieldId, { stock: false, promo: true });
+    }, 300);
+  };
+
+  const addRow = () => append(makeLine());
+
+  const duplicateRow = (index: number) => {
+    const row = getValues(`items.${index}`) as LineItem | undefined;
+    if (!row) return;
+    append({ ...row, promoAppliedId: row.promoAppliedId || null });
+  };
+
+  const removeRow = (index: number) => {
+    const fieldId = fields[index]?.id;
+    if (fieldId && promoTimers.current[fieldId]) {
+      clearTimeout(promoTimers.current[fieldId]);
+      delete promoTimers.current[fieldId];
+    }
+    if (fields.length === 1) {
+      replace([makeLine()]);
+      return;
+    }
+    remove(index);
+  };
+
+  const resetPage = () => {
+    reset(defaultValues);
+    replace([makeLine()]);
+    setDealerMeta(null);
+    setWarehouseMeta(null);
+    setCreditSummary(null);
+    setCreatedOrder(null);
+    toast.message("Form reset.");
+  };
 
   const submitOrder = async (data: FormValues) => {
-    if (!data.customerId) {
-      toast.error("Please select a dealer.");
-      return;
-    }
-
-    if (!data.warehouseId) {
-      toast.error("Please select a warehouse.");
-      return;
-    }
-
-    if (!data.items.length) {
-      toast.error("Add at least one product.");
-      return;
-    }
+    if (!data.customerId) return void toast.error("Please select a dealer.");
+    if (!data.warehouseId)
+      return void toast.error("Please select a warehouse.");
+    if (!data.items.length) return void toast.error("Add at least one product.");
 
     if ((dealerMeta?.status || "").toLowerCase() === "blocked") {
-      toast.error("This dealer is blocked.");
-      return;
+      return void toast.error("This dealer is blocked.");
     }
 
     for (let i = 0; i < data.items.length; i++) {
       const row = data.items[i];
-
-      if (!row.productId) {
-        toast.error(`Row ${i + 1}: select a product.`);
-        return;
-      }
-
-      if (!row.qty || row.qty <= 0) {
-        toast.error(`Row ${i + 1}: quantity must be greater than zero.`);
-        return;
-      }
-
-      if (!row.unitPrice || row.unitPrice <= 0) {
-        toast.error(`Row ${i + 1}: product price is missing.`);
-        return;
-      }
+      if (!row.productId)
+        return void toast.error(`Row ${i + 1}: select a product.`);
+      if (!row.qty || row.qty <= 0)
+        return void toast.error(
+          `Row ${i + 1}: quantity must be greater than zero.`,
+        );
+      if (!row.unitPrice || row.unitPrice <= 0)
+        return void toast.error(`Row ${i + 1}: product price is missing.`);
 
       if (Number(row.availableToSell || 0) < Number(row.qty || 0)) {
         const ok = window.confirm(
-          `Row ${i + 1} (${row.productName}) available to sell is low (${row.availableToSell}). Continue anyway?`,
+          `Row ${i + 1} (${row.productName}) available to sell is low (${
+            row.availableToSell
+          }). Continue anyway?`,
         );
         if (!ok) return;
       }
@@ -639,16 +780,13 @@ export default function SalesOrderCreatePage() {
 
     if (data.paymentMethod === "CREDIT") {
       if ((creditSummary?.dealerType || dealerMeta?.dealerType) !== "CREDIT") {
-        toast.error("This dealer is not allowed for credit orders.");
-        return;
+        return void toast.error("This dealer is not allowed for credit orders.");
       }
-
       if (
         creditSummary &&
         Number(creditSummary.available || 0) < Number(totals.grandTotal || 0)
       ) {
-        toast.error("Credit limit exceeded.");
-        return;
+        return void toast.error("Credit limit exceeded.");
       }
     }
 
@@ -690,17 +828,14 @@ export default function SalesOrderCreatePage() {
     try {
       const res = await api.post("/sales-orders", payload);
       const created = res.data?.data || res.data;
-
       setCreatedOrder(created);
       toast.success("Sales order created successfully.");
-
       reset(defaultValues);
       replace([makeLine()]);
       setDealerMeta(null);
       setWarehouseMeta(null);
       setCreditSummary(null);
     } catch (err: any) {
-      console.error(err);
       const msg =
         err?.response?.data?.message ||
         err?.response?.data?.error ||
@@ -712,180 +847,105 @@ export default function SalesOrderCreatePage() {
     }
   };
 
-  const onPickDealer = async (opt: LookupOption) => {
-    setValue("customerId", opt.value, { shouldDirty: true, shouldTouch: true });
-    setDealerMeta(opt);
-    setCreditSummary(null);
-    await refreshAllRows();
-  };
-
-  const onPickWarehouse = async (opt: LookupOption) => {
-    setValue("warehouseId", opt.value, {
-      shouldDirty: true,
-      shouldTouch: true,
-    });
-    setWarehouseMeta(opt);
-    await refreshAllRows();
-  };
-
-  const onPickProduct = async (index: number, opt: LookupOption) => {
-    const row = getValues(`items.${index}`) as LineItem | undefined;
-    if (!row) return;
-
-    const fieldId = fields[index]?.id;
-
-    const stock = warehouseId
-      ? await fetchStockInfo(opt.value, warehouseId)
-      : {
-          quantity: Number(opt.stock || 0),
-          incomingTransfer: 0,
-          reservedForSales: 0,
-          reservedForTransfer: 0,
-          availableToSell: Number(opt.stock || 0),
-        };
-
-    const promo = await fetchPromo(
-      opt.value,
-      Number(row.qty || 0),
-      customerId || undefined,
-      warehouseId || undefined,
-    );
-
-    update(index, {
-      ...row,
-      productId: opt.value,
-      productName: opt.label,
-      unitPrice: Number(opt.salePrice || 0),
-      quantity: stock.quantity,
-      incomingTransfer: stock.incomingTransfer,
-      reservedForSales: stock.reservedForSales,
-      reservedForTransfer: stock.reservedForTransfer,
-      availableToSell: stock.availableToSell,
-      bonusQty: promo.bonusQty || 0,
-      promoAppliedId: promo.appliedPromotionId,
-    });
-
-    if (fieldId) {
-      stockCache.current[`${opt.value}|${warehouseId || ""}`] = stock;
-    }
-  };
-
-  const onQtyChange = (index: number, qty: number) => {
-    const row = getValues(`items.${index}`) as LineItem | undefined;
-    if (!row) return;
-
-    update(index, { ...row, qty: Math.max(0, qty) });
-
-    const fieldId = fields[index]?.id;
-    if (!fieldId) return;
-
-    const existingTimer = promoTimers.current[fieldId];
-    if (existingTimer) clearTimeout(existingTimer);
-
-    promoTimers.current[fieldId] = setTimeout(async () => {
-      await refreshRowById(fieldId, { stock: false, promo: true });
-    }, 300);
-  };
-
-  const addRow = () => append(makeLine());
-
-  const duplicateRow = (index: number) => {
-    const row = getValues(`items.${index}`) as LineItem | undefined;
-    if (!row) return;
-
-    append({
-      ...row,
-      promoAppliedId: row.promoAppliedId || null,
-    });
-  };
-
-  const removeRow = (index: number) => {
-    const fieldId = fields[index]?.id;
-    if (fieldId && promoTimers.current[fieldId]) {
-      clearTimeout(promoTimers.current[fieldId]);
-      delete promoTimers.current[fieldId];
-    }
-
-    if (fields.length === 1) {
-      replace([makeLine()]);
-      return;
-    }
-
-    remove(index);
-  };
-
-  const resetPage = () => {
-    reset(defaultValues);
-    replace([makeLine()]);
-    setDealerMeta(null);
-    setWarehouseMeta(null);
-    setCreditSummary(null);
-    setCreatedOrder(null);
-    toast.message("Form reset.");
-  };
-
   const selectedDealerLabel =
     dealerMeta?.label || customerId || "Select dealer";
   const selectedWarehouseLabel =
     warehouseMeta?.label || warehouseId || "Select warehouse";
 
+  const usage =
+    creditSummary && creditSummary.creditLimit > 0
+      ? Math.min(
+          100,
+          (creditSummary.currentDue / creditSummary.creditLimit) * 100,
+        )
+      : 0;
+
+  const willExceed =
+    paymentMethod === "CREDIT" &&
+    !!creditSummary &&
+    creditSummary.available < totals.grandTotal;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold">Create Sales Order</h1>
-              <p className="text-sm text-muted-foreground">
-                Clean order entry with live stock, promo, and credit validation.
-              </p>
+        {/* ---------- Hero header (black → green) ---------- */}
+        <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-800 p-6 text-white shadow-lg">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.25),transparent_55%)]" />
+          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/25 backdrop-blur-sm ring-1 ring-emerald-400/40">
+                <ShoppingCart className="h-6 w-6 text-emerald-300" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">
+                  Create Sales Order
+                </h1>
+                <p className="text-sm text-white/80">
+                  Live stock, automatic promos, credit-safe. Fast and clean.
+                </p>
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 text-sm">
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Dealer:{" "}
-                <span className="font-medium">{selectedDealerLabel}</span>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <div className="rounded-lg bg-white/10 px-3 py-2 backdrop-blur-sm ring-1 ring-white/15">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Dealer
+                </div>
+                <div className="font-semibold">{selectedDealerLabel}</div>
               </div>
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Warehouse:{" "}
-                <span className="font-medium">{selectedWarehouseLabel}</span>
+              <div className="rounded-lg bg-white/10 px-3 py-2 backdrop-blur-sm ring-1 ring-white/15">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Warehouse
+                </div>
+                <div className="font-semibold">{selectedWarehouseLabel}</div>
               </div>
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Total:{" "}
-                <span className="font-medium">
-                  {money(totals.grandTotal)} BDT
-                </span>
+              <div className="rounded-lg bg-emerald-500 px-3 py-2 shadow-md shadow-emerald-900/30">
+                <div className="text-[10px] uppercase tracking-wide text-emerald-100">
+                  Total
+                </div>
+                <div className="font-semibold tabular-nums">
+                  ৳ {money(totals.grandTotal)}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
+        {/* ---------- Success card ---------- */}
         {createdOrder ? (
-          <Card className="mb-6 border-emerald-200 bg-emerald-50/70">
+          <Card className="mb-6 border-emerald-200 bg-gradient-to-r from-emerald-50 to-white shadow-md">
             <CardContent className="flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-sm font-medium text-emerald-700">
-                  Order created successfully
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-200">
+                  <CheckCircle2 className="h-6 w-6" />
                 </div>
-                <div className="mt-1 text-xl font-semibold">
-                  {createdOrder.orderNo ||
-                    createdOrder?.data?.orderNo ||
-                    "Saved"}
-                </div>
-                <div className="text-sm text-emerald-700">
-                  Status: {createdOrder.status || "PENDING_AM"}
+                <div>
+                  <div className="text-sm font-medium text-emerald-700">
+                    Order created successfully
+                  </div>
+                  <div className="mt-0.5 text-xl font-bold tabular-nums">
+                    {createdOrder.orderNo ||
+                      createdOrder?.data?.orderNo ||
+                      "Saved"}
+                  </div>
+                  <div className="text-xs text-emerald-700">
+                    Status: {createdOrder.status || "PENDING_AM"}
+                  </div>
                 </div>
               </div>
 
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={resetPage}>
+                  <Sparkles className="mr-2 h-4 w-4" />
                   Create another
                 </Button>
                 <Button
                   type="button"
                   onClick={() => router.push("/sales/list")}
+                  className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   Go to list
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>
             </CardContent>
@@ -894,16 +954,22 @@ export default function SalesOrderCreatePage() {
 
         <form
           onSubmit={handleSubmit(submitOrder)}
-          className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"
+          className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
+          {/* ---------- Left column ---------- */}
           <div className="space-y-6">
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Order basics</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Dealer</div>
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Receipt}
+                title="Order basics"
+                subtitle="Select dealer, warehouse, date, and payment method"
+              />
+              <CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <Building2 className="h-3.5 w-3.5" />
+                    Dealer
+                  </label>
                   <LookupSelect
                     value={customerId}
                     selectedLabel={dealerMeta?.label}
@@ -912,14 +978,16 @@ export default function SalesOrderCreatePage() {
                     placeholder="Search dealer"
                     searchPlaceholder="Type dealer name / phone..."
                   />
-                  <div className="text-xs text-muted-foreground">
-                    {dealerMeta?.description ||
-                      "Open and search to load dealers."}
+                  <div className="text-[11px] text-muted-foreground">
+                    {dealerMeta?.description || "Open to load dealers."}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Warehouse</div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <Package className="h-3.5 w-3.5" />
+                    Warehouse
+                  </label>
                   <LookupSelect
                     value={warehouseId}
                     selectedLabel={warehouseMeta?.label}
@@ -928,54 +996,70 @@ export default function SalesOrderCreatePage() {
                     placeholder="Search warehouse"
                     searchPlaceholder="Type warehouse name..."
                   />
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-[11px] text-muted-foreground">
                     {warehouseMeta?.description ||
-                      "Open and search to load warehouses."}
+                      "Auto-selected from dealer when available."}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Order date</div>
-                  <Input type="date" {...register("orderDate")} />
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Order date
+                  </label>
+                  <Input type="date" {...register("orderDate")} className="h-10" />
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Payment method</div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <CreditCard className="h-3.5 w-3.5" />
+                    Payment method
+                  </label>
                   <select
                     {...register("paymentMethod")}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="CASH">Cash</option>
                     <option value="CREDIT">Credit</option>
                   </select>
-                  <div className="text-xs text-muted-foreground">
-                    Credit orders are validated against the dealer summary.
+                  <div className="text-[11px] text-muted-foreground">
+                    Credit orders validated against dealer summary.
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Order items</CardTitle>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={addRow}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add item
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void refreshAllRows()}
-                    disabled={!customerId || !warehouseId}
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Refresh
-                  </Button>
-                </div>
-              </CardHeader>
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Boxes}
+                title="Order items"
+                subtitle="Add products — stock and promos update automatically"
+                right={
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addRow}
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Add item
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void refreshAllRows()}
+                      disabled={!customerId || !warehouseId}
+                    >
+                      <RefreshCw className="mr-1.5 h-4 w-4" />
+                      Refresh
+                    </Button>
+                  </div>
+                }
+              />
 
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 p-5">
                 {fields.map((field, index) => {
                   const row = watchedItems[index] || makeLine();
                   const line = calcLine(row, taxPercent);
@@ -985,41 +1069,61 @@ export default function SalesOrderCreatePage() {
                   return (
                     <div
                       key={field.id}
-                      className={`rounded-xl border bg-white p-4 ${lowStock ? "border-red-200 bg-red-50/40" : ""}`}
+                      className={`rounded-xl border-2 bg-white p-4 transition-colors ${
+                        lowStock
+                          ? "border-rose-300 bg-rose-50/40"
+                          : "border-slate-200 hover:border-emerald-300"
+                      }`}
                     >
-                      <div className="mb-4 flex items-center justify-between gap-2">
-                        <div>
-                          <div className="text-sm font-semibold">
-                            Item #{index + 1}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {row.productName || "Select a product"}
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+                            {index + 1}
+                          </span>
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {row.productName || "New item"}
+                            </div>
+                            {row.promoAppliedId ? (
+                              <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                                <Sparkles className="h-3 w-3" />
+                                Promotion applied
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-muted-foreground">
+                                Select a product to begin
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <Button
                             type="button"
                             variant="ghost"
+                            size="sm"
                             onClick={() => duplicateRow(index)}
                           >
-                            <Copy className="mr-2 h-4 w-4" />
+                            <Copy className="mr-1 h-3.5 w-3.5" />
                             Duplicate
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
+                            size="sm"
                             onClick={() => removeRow(index)}
-                            className="text-red-600 hover:text-red-700"
+                            className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                           >
-                            <Trash2 className="mr-2 h-4 w-4" />
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
                             Remove
                           </Button>
                         </div>
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-12">
-                        <div className="space-y-2 md:col-span-4">
-                          <div className="text-sm font-medium">Product</div>
+                      <div className="grid gap-3 md:grid-cols-12">
+                        <div className="space-y-1.5 md:col-span-5">
+                          <label className="text-xs font-medium text-slate-600">
+                            Product
+                          </label>
                           <LookupSelect
                             value={row.productId}
                             selectedLabel={row.productName || undefined}
@@ -1028,226 +1132,267 @@ export default function SalesOrderCreatePage() {
                             placeholder="Search product"
                             searchPlaceholder="Type product name / SKU..."
                           />
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-[11px] text-muted-foreground">
                             {row.productName
-                              ? `Price: ${money(row.unitPrice)} BDT`
-                              : "Open and search to load products."}
+                              ? `Unit price: ৳ ${money(row.unitPrice)}`
+                              : "Open to search products."}
                           </div>
                         </div>
 
-                        <div className="space-y-2 md:col-span-2">
-                          <div className="text-sm font-medium">Available</div>
+                        <div className="space-y-1.5 md:col-span-3">
+                          <label className="text-xs font-medium text-slate-600">
+                            Quantity
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-9 shrink-0"
+                              onClick={() =>
+                                onQtyChange(
+                                  index,
+                                  Math.max(0, Number(row.qty || 0) - 1),
+                                )
+                              }
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={row.qty}
+                              onChange={(e) =>
+                                onQtyChange(
+                                  index,
+                                  Number(e.target.value || 0),
+                                )
+                              }
+                              className="h-10 flex-1 text-center text-sm font-semibold tabular-nums"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-9 shrink-0"
+                              onClick={() =>
+                                onQtyChange(index, Number(row.qty || 0) + 1)
+                              }
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                           <div
-                            className={`flex h-10 items-center rounded-md border px-3 text-sm font-semibold ${
+                            className={`flex items-center gap-1 text-[11px] font-medium ${
                               lowStock
-                                ? "border-red-300 bg-red-100 text-red-700"
-                                : "bg-slate-50"
+                                ? "text-rose-600"
+                                : "text-emerald-600"
                             }`}
                           >
-                            {Number(row.availableToSell || 0)}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Sellable = quantity + incoming - reserved sales -
-                            reserved transfer
+                            {lowStock ? (
+                              <>
+                                <AlertTriangle className="h-3 w-3" />
+                                Only {Number(row.availableToSell || 0)} sellable
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" />
+                                {Number(row.availableToSell || 0)} sellable
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Qty</div>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={row.qty}
-                            onChange={(e) =>
-                              onQtyChange(index, Number(e.target.value || 0))
-                            }
-                          />
-                        </div>
-
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Bonus</div>
-                          <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm">
+                        <div className="space-y-1.5 md:col-span-1">
+                          <label className="text-xs font-medium text-slate-600">
+                            Bonus
+                          </label>
+                          <div className="flex h-10 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-2 text-sm font-semibold tabular-nums text-emerald-700">
                             {Number(row.bonusQty || 0)}
                           </div>
                         </div>
 
-                        <div className="space-y-2 md:col-span-2">
-                          <div className="text-sm font-medium">Unit price</div>
-                          <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm">
-                            {money(row.unitPrice)} BDT
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Disc %</div>
+                        <div className="space-y-1.5 md:col-span-1">
+                          <label className="text-xs font-medium text-slate-600">
+                            Disc %
+                          </label>
                           <Input
                             type="number"
                             min={0}
                             step="0.01"
                             value={row.discountPercent}
                             onChange={(e) =>
-                              update(index, {
-                                ...row,
+                              setRow(index, {
                                 discountPercent: Number(e.target.value || 0),
                               })
                             }
+                            className="h-10 text-center tabular-nums"
                           />
                         </div>
 
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Subtotal</div>
-                          <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-medium">
-                            {money(line.lineSubtotal)} BDT
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Total</div>
-                          <div className="flex h-10 items-center rounded-md border bg-indigo-50 px-3 text-sm font-semibold text-indigo-700">
-                            {money(line.lineTotal)} BDT
+                        <div className="space-y-1.5 md:col-span-2">
+                          <label className="text-xs font-medium text-slate-600">
+                            Line total
+                          </label>
+                          <div className="flex h-10 items-center justify-end rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-bold tabular-nums text-emerald-700">
+                            ৳ {money(line.lineTotal)}
                           </div>
                         </div>
                       </div>
 
-                      <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
-                        <div>Qty in stock: {row.quantity}</div>
-                        <div>Incoming transfer: {row.incomingTransfer}</div>
-                        <div>Reserved sales: {row.reservedForSales}</div>
-                        <div>Reserved transfer: {row.reservedForTransfer}</div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="text-muted-foreground">
-                          {row.promoAppliedId ? (
-                            <span className="text-emerald-600">
-                              Promotion applied automatically
-                            </span>
-                          ) : (
-                            <span>No promotion applied yet</span>
-                          )}
-                        </div>
-                        {lowStock ? (
-                          <div className="font-medium text-red-600">
-                            Quantity exceeds available to sell
-                          </div>
-                        ) : null}
+                      <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <span>
+                          In stock:{" "}
+                          <b className="tabular-nums">{row.quantity}</b>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span>
+                          Incoming:{" "}
+                          <b className="tabular-nums">{row.incomingTransfer}</b>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span>
+                          Reserved sales:{" "}
+                          <b className="tabular-nums">{row.reservedForSales}</b>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span>
+                          Reserved transfer:{" "}
+                          <b className="tabular-nums">
+                            {row.reservedForTransfer}
+                          </b>
+                        </span>
+                        <span className="ml-auto rounded bg-white px-2 py-0.5 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+                          Subtotal ৳ {money(line.lineSubtotal)}
+                        </span>
                       </div>
                     </div>
                   );
                 })}
+
+                {fields.length === 0 && (
+                  <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center">
+                    <Boxes className="mx-auto h-8 w-8 text-slate-300" />
+                    <div className="mt-2 text-sm font-medium">No items yet</div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={addRow}
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Add first item
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={StickyNote}
+                title="Notes"
+                subtitle="Internal remarks, delivery notes, special instructions"
+              />
+              <CardContent className="p-5">
                 <textarea
                   {...register("notes")}
                   rows={4}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
-                  placeholder="Internal remarks, delivery notes, special instructions..."
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Anything the team should know about this order..."
                 />
               </CardContent>
             </Card>
           </div>
 
+          {/* ---------- Right column ---------- */}
           <div className="space-y-6 lg:sticky lg:top-6 h-fit">
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">Items</div>
-                    <div className="text-xl font-semibold">
-                      {watchedItems.length}
-                    </div>
-                  </div>
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">Qty</div>
-                    <div className="text-xl font-semibold">
-                      {totals.totalQty}
-                    </div>
-                  </div>
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">
-                      Bonus qty
-                    </div>
-                    <div className="text-xl font-semibold">
-                      {totals.totalBonusQty}
-                    </div>
-                  </div>
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">
-                      Discount
-                    </div>
-                    <div className="text-xl font-semibold">
-                      {money(totals.totalDiscount)}
-                    </div>
-                  </div>
+            <Card className="overflow-hidden border-slate-200 shadow-md">
+              <SectionHeader icon={Wallet} title="Summary" />
+              <CardContent className="space-y-4 p-5">
+                <div className="grid grid-cols-2 gap-2">
+                  <StatPill
+                    label="Items"
+                    value={String(watchedItems.length)}
+                    tone="black"
+                  />
+                  <StatPill
+                    label="Qty"
+                    value={String(totals.totalQty)}
+                    tone="emerald"
+                  />
+                  <StatPill
+                    label="Bonus"
+                    value={String(totals.totalBonusQty)}
+                    tone="emerald"
+                  />
+                  <StatPill
+                    label="Discount"
+                    value={`৳ ${money(totals.totalDiscount)}`}
+                    tone="amber"
+                  />
                 </div>
 
-                <div className="space-y-3 rounded-md border bg-slate-50 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Subtotal
-                    </span>
-                    <span className="font-semibold">
-                      {money(totals.subtotal)} BDT
+                <div className="space-y-2 rounded-lg border bg-slate-50 p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="font-semibold tabular-nums">
+                      ৳ {money(totals.subtotal)}
                     </span>
                   </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-muted-foreground">Tax %</span>
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <Percent className="h-3.5 w-3.5" />
+                      Tax %
+                    </span>
                     <Input
                       type="number"
                       min={0}
                       step="0.01"
                       {...register("taxPercent", { valueAsNumber: true })}
-                      className="w-24"
+                      className="h-8 w-20 text-center tabular-nums"
                     />
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Tax</span>
-                    <span className="font-semibold">
-                      {money(totals.totalTax)} BDT
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Tax</span>
+                    <span className="font-semibold tabular-nums">
+                      ৳ {money(totals.totalTax)}
                     </span>
                   </div>
-
-                  <div className="flex items-center justify-between border-t pt-3">
-                    <span className="text-base font-semibold">Grand total</span>
-                    <span className="text-lg font-bold text-indigo-700">
-                      {money(totals.grandTotal)} BDT
+                  <div className="mt-1 flex items-center justify-between border-t pt-3">
+                    <span className="text-sm font-semibold">Grand total</span>
+                    <span className="text-xl font-extrabold tabular-nums text-emerald-700">
+                      ৳ {money(totals.grandTotal)}
                     </span>
                   </div>
                 </div>
 
-                <div className="rounded-md border p-4">
+                <div className="rounded-lg border p-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Dealer credit</div>
-                    <div className="text-xs text-muted-foreground">
-                      {dealerMeta?.status || "Active"}
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="h-4 w-4 text-slate-500" />
+                      <div className="text-sm font-semibold">Dealer credit</div>
                     </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                      {dealerMeta?.status || "Active"}
+                    </span>
                   </div>
 
                   {!customerId ? (
-                    <div className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    <div className="mt-3 rounded-md border border-dashed p-3 text-xs text-muted-foreground">
                       Pick a dealer to load credit info.
                     </div>
                   ) : creditLoading ? (
-                    <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       Loading credit summary...
                     </div>
                   ) : creditSummary ? (
                     <div className="mt-3 space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Type</span>
-                        <span className="font-medium">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium">
                           {creditSummary.dealerType}
                         </span>
                       </div>
@@ -1255,63 +1400,56 @@ export default function SalesOrderCreatePage() {
                         <span className="text-muted-foreground">
                           Credit limit
                         </span>
-                        <span className="font-medium">
-                          {money(creditSummary.creditLimit)}
+                        <span className="font-medium tabular-nums">
+                          ৳ {money(creditSummary.creditLimit)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Due</span>
-                        <span className="font-medium">
-                          {money(creditSummary.currentDue)}
+                        <span className="font-medium tabular-nums">
+                          ৳ {money(creditSummary.currentDue)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Available</span>
                         <span
-                          className={`font-semibold ${
-                            paymentMethod === "CREDIT" &&
-                            creditSummary.available < totals.grandTotal
-                              ? "text-red-600"
-                              : "text-emerald-600"
+                          className={`font-bold tabular-nums ${
+                            willExceed ? "text-rose-600" : "text-emerald-600"
                           }`}
                         >
-                          {money(creditSummary.available)}
+                          ৳ {money(creditSummary.available)}
                         </span>
                       </div>
 
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200">
                         <div
-                          className="h-full rounded-full bg-emerald-500 transition-all"
-                          style={{
-                            width:
-                              creditSummary.creditLimit > 0
-                                ? `${Math.min(
-                                    100,
-                                    (creditSummary.currentDue /
-                                      creditSummary.creditLimit) *
-                                      100,
-                                  )}%`
-                                : "0%",
-                          }}
+                          className={`h-full rounded-full transition-all ${
+                            willExceed ? "bg-rose-500" : "bg-emerald-500"
+                          }`}
+                          style={{ width: `${usage}%` }}
                         />
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {usage.toFixed(1)}% of limit used
                       </div>
 
                       {paymentMethod === "CREDIT" &&
                       creditSummary.dealerType !== "CREDIT" ? (
-                        <div className="rounded-md bg-red-50 p-2 text-xs text-red-700">
+                        <div className="flex items-center gap-1.5 rounded-md bg-rose-50 p-2 text-xs font-medium text-rose-700">
+                          <AlertTriangle className="h-3.5 w-3.5" />
                           This dealer is cash only.
                         </div>
                       ) : null}
 
-                      {paymentMethod === "CREDIT" &&
-                      creditSummary.available < totals.grandTotal ? (
-                        <div className="rounded-md bg-red-50 p-2 text-xs text-red-700">
+                      {willExceed ? (
+                        <div className="flex items-center gap-1.5 rounded-md bg-rose-50 p-2 text-xs font-medium text-rose-700">
+                          <AlertTriangle className="h-3.5 w-3.5" />
                           Credit limit will be exceeded by this order.
                         </div>
                       ) : null}
                     </div>
                   ) : (
-                    <div className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-muted-foreground">
+                    <div className="mt-3 rounded-md bg-slate-50 p-3 text-xs text-muted-foreground">
                       Credit summary could not be loaded.
                     </div>
                   )}
@@ -1321,17 +1459,19 @@ export default function SalesOrderCreatePage() {
                   <Button
                     type="submit"
                     disabled={!canSubmit}
-                    className="flex-1"
+                    className="h-11 flex-1 bg-emerald-600 text-base font-semibold shadow-md shadow-emerald-200 hover:bg-emerald-700 disabled:opacity-50"
                   >
                     {saving ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
+                    ) : (
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    )}
                     {saving ? "Creating..." : "Create order"}
                   </Button>
-
                   <Button
                     type="button"
                     variant="outline"
+                    className="h-11"
                     onClick={() => void refreshAllRows()}
                     disabled={!customerId || !warehouseId}
                   >
@@ -1343,22 +1483,33 @@ export default function SalesOrderCreatePage() {
                   type="button"
                   variant="ghost"
                   onClick={resetPage}
-                  className="w-full"
+                  className="w-full text-slate-500"
                 >
                   Reset form
                 </Button>
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Workflow</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <div>1. Pick dealer and warehouse.</div>
-                <div>2. Add products with live stock and promo checks.</div>
-                <div>3. Review totals and credit info.</div>
-                <div>4. Submit for approvals.</div>
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Sparkles}
+                title="Workflow"
+                subtitle="4 quick steps"
+              />
+              <CardContent className="space-y-2 p-5 text-sm text-muted-foreground">
+                {[
+                  "Pick dealer and warehouse (warehouse auto-fills).",
+                  "Add products — stock and promos load live.",
+                  "Review totals and dealer credit.",
+                  "Submit for approvals.",
+                ].map((text, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
+                      {i + 1}
+                    </span>
+                    {text}
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>
