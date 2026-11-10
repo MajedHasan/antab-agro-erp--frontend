@@ -217,6 +217,76 @@ function DealerSearchSelect({
   );
 }
 
+/* --------------------------- Summary strip components --------------------------- */
+type SummaryColor =
+  | "indigo"
+  | "emerald"
+  | "blue"
+  | "purple"
+  | "orange"
+  | "amber";
+
+const summaryBorderMap: Record<SummaryColor, string> = {
+  indigo: "border-l-indigo-500",
+  emerald: "border-l-emerald-500",
+  blue: "border-l-blue-500",
+  purple: "border-l-purple-500",
+  orange: "border-l-orange-500",
+  amber: "border-l-amber-500",
+};
+
+function LedgerSummaryCard({
+  label,
+  value,
+  hint,
+  color,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  color: SummaryColor;
+  highlight?: boolean;
+}) {
+  return (
+    <Card
+      className={`flex-1 min-w-[120px] border-l-4 ${summaryBorderMap[color]} shadow-sm ${
+        highlight ? "ring-2 ring-amber-400 ring-offset-1" : ""
+      }`}
+    >
+      <CardContent className="p-3 md:p-4">
+        <div className="text-[10px] md:text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </div>
+        <div className="mt-1 text-base md:text-lg font-bold tabular-nums truncate">
+          ৳ {value}
+        </div>
+        {hint && (
+          <div className="mt-0.5 text-[10px] text-muted-foreground truncate">
+            {hint}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OperatorBadge({ op }: { op: "+" | "−" | "=" }) {
+  const styles: Record<"+" | "−" | "=", string> = {
+    "+": "bg-emerald-500 text-white shadow-emerald-200/60",
+    "−": "bg-rose-500 text-white shadow-rose-200/60",
+    "=": "bg-slate-800 text-white shadow-slate-300/60",
+  };
+  return (
+    <div
+      aria-label={`operator ${op}`}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-full text-sm font-bold shadow-md ${styles[op]}`}
+    >
+      {op}
+    </div>
+  );
+}
+
 /* --------------------------- Commission badge --------------------------- */
 function CommissionBadge({ entry }: { entry: LedgerEntry }) {
   if (entry.type !== "PAYMENT") return null;
@@ -444,7 +514,11 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
             <code>{d.commissionSource || "none"}</code>
             {" · "}calcMode=<code>{commMode}</code>
             {" · "}direction=<code>{commDir}</code>
-            {" · "}effect=<code>{commEff >= 0 ? "+" : ""}{money(commEff)}</code>
+            {" · "}effect=
+            <code>
+              {commEff >= 0 ? "+" : ""}
+              {money(commEff)}
+            </code>
             {d.commissionRaw != null && (
               <div className="mt-0.5 text-[10px] text-amber-700">
                 raw: <code>{JSON.stringify(d.commissionRaw)}</code> · flag=
@@ -522,9 +596,15 @@ function buildSummaryPrintHtml(data: LedgerData): string {
         <td style="padding:5px 6px;font-size:10px;">${formatDate(e.date)}</td>
         <td style="padding:5px 6px;font-size:10px;">${e.reference}</td>
         <td style="padding:5px 6px;font-size:10px;">${cfg.label}</td>
-        <td style="padding:5px 6px;text-align:right;font-size:10px;">${e.debit > 0 ? money(e.debit) : "—"}</td>
-        <td style="padding:5px 6px;text-align:right;font-size:10px;">${e.credit > 0 ? money(e.credit) : "—"}</td>
-        <td style="padding:5px 6px;text-align:right;font-size:10px;font-weight:700;">${money(e.balance)}</td>
+        <td style="padding:5px 6px;text-align:right;font-size:10px;">${
+          e.debit > 0 ? money(e.debit) : "—"
+        }</td>
+        <td style="padding:5px 6px;text-align:right;font-size:10px;">${
+          e.credit > 0 ? money(e.credit) : "—"
+        }</td>
+        <td style="padding:5px 6px;text-align:right;font-size:10px;font-weight:700;">${money(
+          e.balance,
+        )}</td>
       </tr>`;
     })
     .join("");
@@ -546,7 +626,6 @@ function buildSummaryPrintHtml(data: LedgerData): string {
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Sales</div><div style="font-weight:700;">৳ ${money(summary.totalSales)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Payments</div><div style="font-weight:700;">৳ ${money(summary.totalPayments)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Commission</div><div style="font-weight:700;">৳ ${money(summary.totalCommission)}</div></div>
-    <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Total Credited</div><div style="font-weight:700;">৳ ${money(summary.totalCredited)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Returns</div><div style="font-weight:700;">৳ ${money(summary.totalReturns)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Due</div><div style="font-weight:700;">৳ ${money(summary.closingBalance)}</div></div>
   </div>
@@ -846,89 +925,54 @@ export default function DealerLedgerPage() {
           </CardContent>
         </Card>
 
-        {/* Summary cards — 7 cards, all equal width */}
+        {/* Summary strip with operator badges */}
         {data && (
-          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-            <Card className="border-l-4 border-l-indigo-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Opening</div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.openingBalance)}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-l-4 border-l-emerald-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Total Sales</div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.totalSales)}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-l-4 border-l-blue-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">
-                  Total Payments
-                </div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.totalPayments)}
-                </div>
-                <div className="text-[10px] text-muted-foreground">
-                  cash only
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-l-4 border-l-purple-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">
-                  Total Commission
-                </div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.totalCommission)}
-                </div>
-                <div className="text-[10px] text-muted-foreground">
-                  {data.summary.totalCommissionEffect >= 0
-                    ? "credited"
-                    : "deducted"}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-l-4 border-l-cyan-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">
-                  Total Credited
-                </div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.totalCredited)}
-                </div>
-                <div className="text-[10px] text-muted-foreground">
-                  payments + commission
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-l-4 border-l-orange-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">
-                  Total Returns
-                </div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.totalReturns)}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-l-4 border-l-amber-500 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">
-                  Current Due
-                </div>
-                <div className="mt-1 text-lg font-bold">
-                  ৳ {money(data.summary.closingBalance)}
-                </div>
-                <div className="text-[10px] text-muted-foreground">
-                  Limit: ৳ {money(data.dealer.creditLimit)}
-                </div>
-              </CardContent>
-            </Card>
+          <div className="mb-6 flex flex-col gap-2 lg:flex-row lg:items-stretch lg:gap-2">
+            <LedgerSummaryCard
+              label="Opening"
+              value={money(data.summary.openingBalance)}
+              color="indigo"
+            />
+            <OperatorBadge op="+" />
+            <LedgerSummaryCard
+              label="Total Sales"
+              value={money(data.summary.totalSales)}
+              color="emerald"
+            />
+            <OperatorBadge op="−" />
+            <LedgerSummaryCard
+              label="Total Payments"
+              value={money(data.summary.totalPayments)}
+              hint="cash only"
+              color="blue"
+            />
+            <OperatorBadge
+              op={data.summary.totalCommissionEffect >= 0 ? "−" : "+"}
+            />
+            <LedgerSummaryCard
+              label="Total Commission"
+              value={money(data.summary.totalCommission)}
+              hint={
+                data.summary.totalCommissionEffect >= 0
+                  ? "credited"
+                  : "deducted"
+              }
+              color="purple"
+            />
+            <OperatorBadge op="−" />
+            <LedgerSummaryCard
+              label="Total Returns"
+              value={money(data.summary.totalReturns)}
+              color="orange"
+            />
+            <OperatorBadge op="=" />
+            <LedgerSummaryCard
+              label="Current Due"
+              value={money(data.summary.closingBalance)}
+              hint={`Limit: ৳ ${money(data.dealer.creditLimit)}`}
+              color="amber"
+              highlight
+            />
           </div>
         )}
 
