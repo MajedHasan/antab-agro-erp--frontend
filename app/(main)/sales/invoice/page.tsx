@@ -1,13 +1,12 @@
 // src/app/sales-invoices/page.tsx
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store/store";
 import api from "@/lib/api";
 import { toast } from "sonner";
 
-/* shadcn UI components (adjust paths if needed) */
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,8 +24,28 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+
+import {
+  Receipt,
+  RefreshCw,
+  Download,
+  Filter as FilterIcon,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Eye,
+  Ban,
+  Loader2,
+  CheckCircle2,
+  Wallet,
+  FileText,
+  Clock,
+  AlertTriangle,
+  Plus,
+  CalendarRange,
+  DollarSign,
+  Printer,
+} from "lucide-react";
 
 /* ---------------- Types ---------------- */
 type InvoicePayment = {
@@ -62,6 +81,14 @@ type SalesInvoice = {
   updatedAt?: string;
 };
 
+type DatePreset =
+  | "this_week"
+  | "last_week"
+  | "this_month"
+  | "last_3_months"
+  | "this_year"
+  | "";
+
 /* ---------------- Helpers ---------------- */
 const fmtCurrency = (n?: number) =>
   (n ?? 0).toLocaleString(undefined, {
@@ -71,7 +98,6 @@ const fmtCurrency = (n?: number) =>
 
 const shortId = (s?: string) => (s ? String(s).slice(0, 8) : "—");
 
-/* Client-only date formatter (avoid SSR mismatch) */
 function useClientDateFormatter() {
   const [isClient, setIsClient] = useState(false);
   useEffect(() => setIsClient(true), []);
@@ -79,7 +105,11 @@ function useClientDateFormatter() {
     if (!d) return "—";
     if (!isClient) return String(d).slice(0, 19).replace("T", " ");
     try {
-      return new Date(d).toLocaleString();
+      return new Date(d).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
     } catch {
       return String(d);
     }
@@ -87,11 +117,132 @@ function useClientDateFormatter() {
   return { format };
 }
 
-/* ---------------- Page Component ---------------- */
+function getPresetRange(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  switch (preset) {
+    case "this_week": {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - diff);
+      return { from: fmt(monday), to: fmt(now) };
+    }
+    case "last_week": {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - diff - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      return { from: fmt(lastMonday), to: fmt(lastSunday) };
+    }
+    case "this_month": {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: fmt(first), to: fmt(now) };
+    }
+    case "last_3_months": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 3);
+      return { from: fmt(d), to: fmt(now) };
+    }
+    case "this_year": {
+      const first = new Date(now.getFullYear(), 0, 1);
+      return { from: fmt(first), to: fmt(now) };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+/* ---------------- Status / Payment Badges ---------------- */
+function PaymentStatusBadge({ status }: { status?: string }) {
+  const s = (status || "").toUpperCase();
+  if (s === "PAID") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2f8a2f]">
+        <CheckCircle2 className="h-3 w-3" /> Paid
+      </span>
+    );
+  }
+  if (s === "PARTIAL") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+        <AlertTriangle className="h-3 w-3" /> Partial
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+      <Clock className="h-3 w-3" /> Unpaid
+    </span>
+  );
+}
+
+function InvoiceStatusBadge({ status }: { status?: string }) {
+  const s = (status || "").toUpperCase();
+  if (s === "ACTIVE") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2f8a2f]">
+        Active
+      </span>
+    );
+  }
+  if (s === "CANCELLED") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+        Cancelled
+      </span>
+    );
+  }
+  if (s === "REFUNDED") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+        Refunded
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+      {status || "—"}
+    </span>
+  );
+}
+
+/* ---------------- Small stat pill in hero ---------------- */
+function HeroStat({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: React.ReactNode;
+  tone?: "slate" | "green" | "amber" | "rose";
+}) {
+  const cls = {
+    slate: "text-slate-600",
+    green: "text-[#2f8a2f]",
+    amber: "text-amber-700",
+    rose: "text-rose-700",
+  }[tone];
+  return (
+    <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px]">
+      <span className="text-muted-foreground">{label}</span>
+      <b className={`tabular-nums ${cls}`}>{value}</b>
+    </div>
+  );
+}
+
+/* ---------------- Page ---------------- */
 export default function SalesInvoicesPage() {
   const { format } = useClientDateFormatter();
-
-  /* user (for receivedBy) */
   const currentUser = useSelector((s: RootState) => s.user.currentUser);
 
   /* list state */
@@ -101,14 +252,18 @@ export default function SalesInvoicesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("ALL");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const qTimer = useRef<number | null>(null);
 
+  /* 🆕 date range */
+  const [datePreset, setDatePreset] = useState<DatePreset>("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   /* preview & modals */
-  const [previewInvoice, setPreviewInvoice] = useState<SalesInvoice | null>(
-    null,
-  );
+  const [previewInvoice, setPreviewInvoice] = useState<SalesInvoice | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const [paymentModal, setPaymentModal] = useState<{
@@ -116,12 +271,10 @@ export default function SalesInvoicesPage() {
     invoiceId?: string;
   }>({ open: false });
 
-  /* payment form */
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentMethod, setPaymentMethod] = useState<string>("CASH");
   const [paymentReference, setPaymentReference] = useState<string>("");
 
-  /* canceling */
   const [actionLoadingFor, setActionLoadingFor] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -135,11 +288,13 @@ export default function SalesInvoicesPage() {
       if (paymentStatusFilter && paymentStatusFilter !== "ALL")
         params.paymentStatus = paymentStatusFilter;
       if (statusFilter && statusFilter !== "ALL") params.status = statusFilter;
+      // 🆕 date range
+      if (fromDate) params.fromDate = fromDate;
+      if (toDate) params.toDate = toDate;
 
       const res = await api.get("/sales-invoices", { params });
       const payload = res.data ?? res;
 
-      // normalize various shapes
       const rowsSrc =
         Array.isArray(payload.data) && Array.isArray(payload.data)
           ? payload.data
@@ -203,6 +358,68 @@ export default function SalesInvoicesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
+  /* ---------------- Date actions ---------------- */
+  const applyPreset = (preset: DatePreset) => {
+    if (!preset) {
+      setFromDate("");
+      setToDate("");
+      setDatePreset("");
+      setPage(1);
+      fetchInvoices(1, limit);
+      return;
+    }
+    const { from, to } = getPresetRange(preset);
+    setFromDate(from);
+    setToDate(to);
+    setDatePreset(preset);
+    setPage(1);
+    fetchInvoices(1, limit);
+  };
+
+  const onDateChange = (which: "from" | "to", value: string) => {
+    if (which === "from") setFromDate(value);
+    else setToDate(value);
+    setDatePreset("");
+    setPage(1);
+    fetchInvoices(1, limit);
+  };
+
+  const clearDates = () => {
+    setFromDate("");
+    setToDate("");
+    setDatePreset("");
+    setPage(1);
+    fetchInvoices(1, limit);
+  };
+
+  /* ---------------- Summary ---------------- */
+  const summary = useMemo(() => {
+    const paid = invoices.filter(
+      (i) => (i.paymentStatus || "").toUpperCase() === "PAID",
+    ).length;
+    const partial = invoices.filter(
+      (i) => (i.paymentStatus || "").toUpperCase() === "PARTIAL",
+    ).length;
+    const unpaid = invoices.filter(
+      (i) =>
+        !i.paymentStatus || (i.paymentStatus || "").toUpperCase() === "UNPAID",
+    ).length;
+    const grand = invoices.reduce((s, i) => s + Number(i.grandTotal || 0), 0);
+    const paidAmt = invoices.reduce((s, i) => s + Number(i.paidAmount || 0), 0);
+    const balance = invoices.reduce(
+      (s, i) => s + Number(i.balanceAmount || 0),
+      0,
+    );
+    return { paid, partial, unpaid, grand, paidAmt, balance };
+  }, [invoices]);
+
+  const activeFilterCount =
+    (paymentStatusFilter !== "ALL" ? 1 : 0) +
+    (statusFilter !== "ALL" ? 1 : 0) +
+    (fromDate || toDate ? 1 : 0);
+
+  const hasAnyFilter = activeFilterCount > 0 || Boolean(q);
+
   /* ---------------- Preview ---------------- */
   async function openPreview(invoice: SalesInvoice) {
     setPreviewInvoice(invoice);
@@ -210,10 +427,7 @@ export default function SalesInvoicesPage() {
     try {
       const res = await api.get(`/sales-invoices/${invoice._id}`);
       const payload = res.data?.data ?? res.data ?? res;
-      setPreviewInvoice({
-        ...invoice,
-        ...payload,
-      });
+      setPreviewInvoice({ ...invoice, ...payload });
     } catch (err) {
       console.error("openPreview err", err);
       toast.error("Failed to load invoice details");
@@ -222,17 +436,14 @@ export default function SalesInvoicesPage() {
     }
   }
 
-  function closePreview() {
-    setPreviewInvoice(null);
-  }
-
-  /* ---------------- Add Payment ---------------- */
+  /* ---------------- Payment ---------------- */
   function openPaymentDialog(invoiceId: string) {
     setPaymentAmount("");
     setPaymentMethod("CASH");
     setPaymentReference("");
     setPaymentModal({ open: true, invoiceId });
   }
+
   function closePaymentDialog() {
     setPaymentModal({ open: false });
   }
@@ -259,7 +470,6 @@ export default function SalesInvoicesPage() {
       toast.success("Payment recorded");
       closePaymentDialog();
 
-      // refresh list and preview
       await fetchInvoices(page, limit);
       if (previewInvoice?._id === invoiceId) {
         const res = await api.get(`/sales-invoices/${invoiceId}`);
@@ -273,7 +483,7 @@ export default function SalesInvoicesPage() {
     }
   }
 
-  /* ---------------- Cancel Invoice ---------------- */
+  /* ---------------- Cancel ---------------- */
   async function cancelInvoice(invoiceId: string) {
     if (
       !confirm("Cancel this invoice? This action is reversible only by admin.")
@@ -296,7 +506,7 @@ export default function SalesInvoicesPage() {
     }
   }
 
-  /* ---------------- Export CSV (current page) ---------------- */
+  /* ---------------- Export ---------------- */
   function exportCSV() {
     const rows = invoices.map((inv) => ({
       invoice: inv.invoiceNo ?? shortId(inv._id),
@@ -328,264 +538,470 @@ export default function SalesInvoicesPage() {
     URL.revokeObjectURL(url);
   }
 
+  /* ---------------- Clear all ---------------- */
+  const clearAll = () => {
+    setQ("");
+    setPaymentStatusFilter("ALL");
+    setStatusFilter("ALL");
+    setFromDate("");
+    setToDate("");
+    setDatePreset("");
+    setPage(1);
+    fetchInvoices(1, limit);
+  };
+
   /* ---------------- Render ---------------- */
   return (
-    <div className="min-h-screen p-6 bg-slate-50">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Sales Invoices</h1>
-            <p className="text-sm text-slate-500">
-              Payments • Status • Invoice lifecycle
-            </p>
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ================= HERO ================= */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <Receipt className="h-4 w-4 text-[#3aa838]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-semibold leading-tight">
+                Sales Invoices
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                <HeroStat label="Visible" value={invoices.length} tone="slate" />
+                <HeroStat label="Paid" value={summary.paid} tone="green" />
+                <HeroStat label="Partial" value={summary.partial} tone="amber" />
+                <HeroStat label="Unpaid" value={summary.unpaid} tone="rose" />
+                <span className="text-slate-300">·</span>
+                <HeroStat
+                  label="Page total"
+                  value={`৳ ${fmtCurrency(summary.grand)}`}
+                  tone="slate"
+                />
+                <span className="text-slate-300">·</span>
+                <HeroStat
+                  label="Balance"
+                  value={`৳ ${fmtCurrency(summary.balance)}`}
+                  tone="rose"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button onClick={() => fetchInvoices(1, limit)}>Refresh</Button>
-            <Button variant="ghost" onClick={() => exportCSV()}>
-              Export CSV
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fetchInvoices(page, limit)}
+              title="Refresh"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => exportCSV()}
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
             </Button>
           </div>
         </div>
 
-        {/* filters */}
-        <div className="bg-white p-4 rounded shadow">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-            <div className="md:col-span-4">
-              <Label>Search (invoice / order / customer)</Label>
-              <Input
-                placeholder="Search invoices..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
+        {/* ================= FILTER BAR ================= */}
+        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <Input
+              placeholder="Search invoice / order / customer..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="h-9 w-full max-w-[260px] text-sm"
+            />
 
-            <div className="md:col-span-3">
-              <Label>Payment Status</Label>
-              <Select
-                value={paymentStatusFilter}
-                onValueChange={(v) => {
-                  setPaymentStatusFilter(v);
-                  setPage(1);
-                  fetchInvoices(1, limit);
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Any</SelectItem>
-                  <SelectItem value="UNPAID">UNPAID</SelectItem>
-                  <SelectItem value="PARTIAL">PARTIAL</SelectItem>
-                  <SelectItem value="PAID">PAID</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Select
+              value={paymentStatusFilter}
+              onValueChange={(v) => {
+                setPaymentStatusFilter(v);
+                setPage(1);
+                fetchInvoices(1, limit);
+              }}
+            >
+              <SelectTrigger className="h-9 w-[140px] text-xs">
+                <SelectValue placeholder="Payment" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All payments</SelectItem>
+                <SelectItem value="UNPAID">Unpaid</SelectItem>
+                <SelectItem value="PARTIAL">Partial</SelectItem>
+                <SelectItem value="PAID">Paid</SelectItem>
+              </SelectContent>
+            </Select>
 
-            <div className="md:col-span-3">
-              <Label>Invoice Status</Label>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v);
-                  setPage(1);
-                  fetchInvoices(1, limit);
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Any</SelectItem>
-                  <SelectItem value="ACTIVE">ACTIVE</SelectItem>
-                  <SelectItem value="CANCELLED">CANCELLED</SelectItem>
-                  <SelectItem value="REFUNDED">REFUNDED</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v);
+                setPage(1);
+                fetchInvoices(1, limit);
+              }}
+            >
+              <SelectTrigger className="h-9 w-[130px] text-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All status</SelectItem>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                <SelectItem value="REFUNDED">Refunded</SelectItem>
+              </SelectContent>
+            </Select>
 
-            <div className="md:col-span-2 flex items-end gap-2">
+            <select
+              value={datePreset}
+              onChange={(e) => applyPreset(e.target.value as DatePreset)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+            >
+              <option value="">
+                {fromDate || toDate ? "Custom range" : "All dates"}
+              </option>
+              <option value="this_week">This Week</option>
+              <option value="last_week">Last Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_3_months">Last 3 Months</option>
+              <option value="this_year">This Year</option>
+            </select>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={`h-9 ${
+                activeFilterCount > 0
+                  ? "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]"
+                  : ""
+              }`}
+            >
+              <FilterIcon className="mr-1.5 h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
+                  {activeFilterCount}
+                </span>
+              )}
+              {filtersOpen ? (
+                <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+              )}
+            </Button>
+
+            {hasAnyFilter && (
               <Button
-                onClick={() => {
-                  setQ("");
-                  setPaymentStatusFilter("ALL");
-                  setStatusFilter("ALL");
-                  fetchInvoices(1, limit);
-                }}
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearAll}
+                className="h-9 text-slate-500"
               >
+                <X className="mr-1 h-3.5 w-3.5" />
                 Clear
               </Button>
-              <Button
-                onClick={() => {
-                  setPage(1);
-                  fetchInvoices(1, limit);
-                }}
-              >
-                Apply
-              </Button>
+            )}
+
+            <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {total} records
             </div>
           </div>
+
+          {filtersOpen && (
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-3">
+              <div className="space-y-1">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                  <CalendarRange className="h-3 w-3" /> From date
+                </label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => onDateChange("from", e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                  <CalendarRange className="h-3 w-3" /> To date
+                </label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => onDateChange("to", e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={clearDates}
+                  className="h-9 w-full text-xs"
+                >
+                  <X className="mr-1 h-3 w-3" />
+                  Clear dates
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* table */}
-        <div className="bg-white rounded shadow overflow-auto">
-          <table className="min-w-full">
-            <thead className="bg-slate-50 sticky top-0">
-              <tr>
-                <th className="px-4 py-3 text-left">Invoice</th>
-                <th className="px-4 py-3 text-left">Order</th>
-                <th className="px-4 py-3 text-left">Customer</th>
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-4 py-3 text-left">Payment</th>
-                <th className="px-4 py-3 text-right">Total</th>
-                <th className="px-4 py-3 text-right">Paid</th>
-                <th className="px-4 py-3 text-right">Balance</th>
-                <th className="px-4 py-3 text-center w-48">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading &&
-                Array.from({ length: limit }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td className="p-4">
-                      <div className="h-4 w-28 bg-slate-200 rounded" />
-                    </td>
-                    <td className="p-4">
-                      <div className="h-4 w-20 bg-slate-200 rounded" />
-                    </td>
-                    <td className="p-4">
-                      <div className="h-4 w-36 bg-slate-200 rounded" />
-                    </td>
-                    <td className="p-4">
-                      <div className="h-4 w-28 bg-slate-200 rounded" />
-                    </td>
-                    <td className="p-4">
-                      <div className="h-4 w-24 bg-slate-200 rounded" />
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="h-4 w-20 bg-slate-200 rounded ml-auto" />
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="h-4 w-16 bg-slate-200 rounded ml-auto" />
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="h-4 w-16 bg-slate-200 rounded ml-auto" />
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="h-6 w-24 bg-slate-200 rounded mx-auto" />
-                    </td>
-                  </tr>
-                ))}
-
-              {!loading && invoices.length === 0 && (
+        {/* ================= TABLE ================= */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left">
                 <tr>
-                  <td colSpan={9} className="p-10 text-center text-slate-500">
-                    No invoices found
-                  </td>
+                  {[
+                    "Invoice",
+                    "Order",
+                    "Customer",
+                    "Date",
+                    "Status",
+                    "Payment",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="border-b border-slate-200 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wide text-slate-600"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                    Total
+                  </th>
+                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                    Paid
+                  </th>
+                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                    Balance
+                  </th>
+                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                    Actions
+                  </th>
                 </tr>
-              )}
+              </thead>
+              <tbody>
+                {loading &&
+                  Array.from({ length: Math.min(limit, 6) }).map((_, i) => (
+                    <tr key={i} className="animate-pulse border-b border-slate-100">
+                      {Array.from({ length: 10 }).map((__, j) => (
+                        <td key={j} className="px-3 py-3">
+                          <div className="h-4 w-full max-w-[100px] rounded bg-slate-100" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
 
-              {!loading &&
-                invoices.map((inv) => (
-                  <tr key={inv._id} className="border-t hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">
-                        {inv.invoiceNo ?? shortId(inv._id)}
-                      </div>
-                      <div className="text-xs text-slate-500">{inv.status}</div>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {inv.orderId
-                        ? (inv.orderId.orderNo ?? String(inv.orderId))
-                        : "—"}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {inv.customerId?.name ?? inv.customerId ?? "—"}
-                    </td>
-
-                    <td className="px-4 py-3">{format(inv.invoiceDate)}</td>
-
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant={
-                          inv.paymentStatus === "PAID"
-                            ? "secondary"
-                            : inv.paymentStatus === "PARTIAL"
-                              ? "outline"
-                              : "destructive"
-                        }
-                      >
-                        {inv.paymentStatus ?? "—"}
-                      </Badge>
-                    </td>
-
-                    <td className="px-4 py-3 text-right font-semibold">
-                      {fmtCurrency(inv.grandTotal)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {fmtCurrency(inv.paidAmount)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {fmtCurrency(inv.balanceAmount)}
-                    </td>
-
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex gap-2 justify-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openPreview(inv)}
-                        >
-                          View
-                        </Button>
-
-                        {/* Add payment when not fully paid and invoice active */}
-                        {inv.paymentStatus !== "PAID" &&
-                          inv.status === "ACTIVE" && (
-                            <Button
-                              size="sm"
-                              onClick={() => openPaymentDialog(inv._id)}
-                              disabled={actionLoadingFor === inv._id}
-                            >
-                              {actionLoadingFor === inv._id
-                                ? "..."
-                                : "Add Payment"}
-                            </Button>
-                          )}
-
-                        {/* Cancel invoice */}
-                        {inv.status === "ACTIVE" && (
+                {!loading && invoices.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-16 text-center">
+                      <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
+                        <div className="rounded-full bg-slate-100 p-3">
+                          <Receipt className="h-6 w-6" />
+                        </div>
+                        <div className="text-sm font-medium text-slate-700">
+                          No invoices found
+                        </div>
+                        <div className="text-xs">
+                          {hasAnyFilter
+                            ? "Try widening the filters or date range."
+                            : "Invoices are created automatically when a sales order is shipped."}
+                        </div>
+                        {hasAnyFilter && (
                           <Button
                             size="sm"
-                            variant="destructive"
-                            onClick={() => cancelInvoice(inv._id)}
-                            disabled={actionLoadingFor === inv._id}
+                            variant="outline"
+                            onClick={clearAll}
                           >
-                            {actionLoadingFor === inv._id ? "..." : "Cancel"}
+                            <X className="mr-1.5 h-3.5 w-3.5" />
+                            Clear filters
                           </Button>
                         )}
                       </div>
                     </td>
                   </tr>
-                ))}
-            </tbody>
-          </table>
+                )}
 
-          {/* footer */}
-          <div className="flex items-center justify-between p-3 bg-slate-50">
-            <div className="text-sm text-slate-600">
-              Showing <strong>{Math.min((page - 1) * limit + 1, total)}</strong>{" "}
-              to <strong>{Math.min(page * limit, total)}</strong> of{" "}
-              <strong>{total}</strong>
+                {!loading &&
+                  invoices.map((inv) => {
+                    const isBusy = actionLoadingFor === inv._id;
+                    const canPay =
+                      (inv.paymentStatus || "").toUpperCase() !== "PAID" &&
+                      (inv.status || "").toUpperCase() === "ACTIVE";
+                    const canCancel =
+                      (inv.status || "").toUpperCase() === "ACTIVE";
+
+                    return (
+                      <tr
+                        key={inv._id}
+                        className="border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70"
+                      >
+                        <td className="px-3 py-2">
+                          <div className="font-mono text-xs font-semibold text-slate-900">
+                            {inv.invoiceNo ?? shortId(inv._id)}
+                          </div>
+                          <div className="mt-0.5">
+                            <InvoiceStatusBadge status={inv.status} />
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2 text-xs text-slate-700">
+                          {inv.orderId
+                            ? inv.orderId.orderNo ?? String(inv.orderId)
+                            : "—"}
+                        </td>
+
+                        <td className="px-3 py-2 text-sm">
+                          <div className="font-medium text-slate-900">
+                            {inv.customerId?.name ??
+                              inv.customerId ??
+                              "—"}
+                          </div>
+                          {inv.customerId?.phoneNumber && (
+                            <div className="text-[11px] text-muted-foreground">
+                              {inv.customerId.phoneNumber}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-3 py-2 text-xs text-slate-600 tabular-nums">
+                          {format(inv.invoiceDate)}
+                        </td>
+
+                        <td className="px-3 py-2">
+                          <InvoiceStatusBadge status={inv.status} />
+                        </td>
+
+                        <td className="px-3 py-2">
+                          <PaymentStatusBadge status={inv.paymentStatus} />
+                        </td>
+
+                        <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">
+                          ৳ {fmtCurrency(inv.grandTotal)}
+                        </td>
+
+                        <td className="px-3 py-2 text-right text-xs tabular-nums text-[#2f8a2f]">
+                          ৳ {fmtCurrency(inv.paidAmount)}
+                        </td>
+
+                        <td className="px-3 py-2 text-right text-xs tabular-nums">
+                          <span
+                            className={
+                              Number(inv.balanceAmount || 0) > 0
+                                ? "font-semibold text-rose-600"
+                                : "text-slate-500"
+                            }
+                          >
+                            ৳ {fmtCurrency(inv.balanceAmount)}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => openPreview(inv)}
+                              title="View"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+
+                            {canPay && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openPaymentDialog(inv._id)}
+                                disabled={isBusy}
+                                className="h-7 border-[#3aa838]/40 px-2 text-[11px] text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f]"
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Plus className="mr-1 h-3 w-3" />
+                                )}
+                                Pay
+                              </Button>
+                            )}
+
+                            {canCancel && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                onClick={() => cancelInvoice(inv._id)}
+                                disabled={isBusy}
+                                title="Cancel"
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Ban className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
+            <div className="text-xs text-muted-foreground">
+              {total > 0 ? (
+                <>
+                  Showing{" "}
+                  <strong className="text-slate-900">
+                    {(page - 1) * limit + 1}
+                  </strong>
+                  –
+                  <strong className="text-slate-900">
+                    {Math.min(page * limit, total)}
+                  </strong>{" "}
+                  of <strong className="text-slate-900">{total}</strong>
+                </>
+              ) : (
+                <>No records</>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                  fetchInvoices(1, Number(e.target.value));
+                }}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              >
+                <option value={10}>10 / page</option>
+                <option value={15}>15 / page</option>
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+              </select>
+
               <Button
+                type="button"
+                variant="outline"
                 size="sm"
+                className="h-8"
                 onClick={() => {
                   if (page > 1) {
                     setPage(page - 1);
@@ -597,27 +1013,16 @@ export default function SalesInvoicesPage() {
                 Prev
               </Button>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={totalPages}
-                  value={page}
-                  onChange={(e) => {
-                    const v = Math.max(
-                      1,
-                      Math.min(totalPages, Number(e.target.value) || 1),
-                    );
-                    setPage(v);
-                    fetchInvoices(v, limit);
-                  }}
-                  className="w-16 text-center border rounded px-2 py-1"
-                />
-                <div>/ {totalPages}</div>
+              <div className="min-w-20 text-center text-xs text-muted-foreground">
+                Page <strong className="text-slate-900">{page}</strong> /{" "}
+                {totalPages}
               </div>
 
               <Button
+                type="button"
+                variant="outline"
                 size="sm"
+                className="h-8"
                 onClick={() => {
                   if (page < totalPages) {
                     setPage(page + 1);
@@ -628,26 +1033,11 @@ export default function SalesInvoicesPage() {
               >
                 Next
               </Button>
-
-              <select
-                value={limit}
-                onChange={(e) => {
-                  setLimit(Number(e.target.value));
-                  setPage(1);
-                  fetchInvoices(1, Number(e.target.value));
-                }}
-                className="border rounded px-2 py-1"
-              >
-                <option value={10}>10</option>
-                <option value={15}>15</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
             </div>
           </div>
         </div>
 
-        {/* Preview dialog */}
+        {/* ================= PREVIEW DIALOG ================= */}
         <Dialog
           open={!!previewInvoice}
           onOpenChange={(open) => {
@@ -662,62 +1052,93 @@ export default function SalesInvoicesPage() {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 h-full overflow-y-auto">
-              {/* left: items */}
+            <div className="mt-4 grid h-full grid-cols-1 gap-4 overflow-y-auto md:grid-cols-3">
+              {/* Left: items + payments */}
               <div className="md:col-span-2">
-                <div className="text-xs text-slate-500">Customer</div>
-                <div className="font-medium mb-3">
-                  {previewInvoice?.customerId?.name ??
-                    previewInvoice?.customerId ??
-                    "—"}
-                </div>
-
-                <div className="text-xs text-slate-500">Items</div>
-                <div className="mt-2 border rounded">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="p-2 text-left">Product</th>
-                        <th className="p-2 text-right">Qty</th>
-                        <th className="p-2 text-right">Price</th>
-                        <th className="p-2 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(previewInvoice?.items ?? []).map(
-                        (it: any, idx: number) => (
-                          <tr key={idx} className="border-t">
-                            <td className="p-2">
-                              {it.productId?.name ?? it.name ?? "—"}
-                            </td>
-                            <td className="p-2 text-right">
-                              {it.qty ?? it.quantity ?? 0}
-                            </td>
-                            <td className="p-2 text-right">
-                              {fmtCurrency(it.unitPrice ?? it.price ?? 0)}
-                            </td>
-                            <td className="p-2 text-right">
-                              {fmtCurrency(
-                                (it.qty ?? 0) * (it.unitPrice ?? it.price ?? 0),
-                              )}
-                            </td>
-                          </tr>
-                        ),
-                      )}
-                    </tbody>
-                  </table>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <FileText className="h-3.5 w-3.5" />
+                    Customer
+                  </div>
+                  <div className="mt-1 text-base font-semibold">
+                    {previewInvoice?.customerId?.name ??
+                      previewInvoice?.customerId ??
+                      "—"}
+                  </div>
+                  {previewInvoice?.customerId?.phoneNumber && (
+                    <div className="text-xs text-muted-foreground">
+                      {previewInvoice.customerId.phoneNumber}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4">
-                  <div className="font-medium">Payments</div>
-                  <div className="mt-2 border rounded p-2 max-h-48 overflow-auto">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Items
+                  </div>
+                  <div className="overflow-hidden rounded-lg border border-slate-200">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                            Product
+                          </th>
+                          <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                            Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                            Price
+                          </th>
+                          <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(previewInvoice?.items ?? []).map(
+                          (it: any, idx: number) => (
+                            <tr
+                              key={idx}
+                              className="border-t border-slate-100"
+                            >
+                              <td className="px-3 py-2">
+                                {it.productId?.name ?? it.name ?? "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {it.qty ?? it.quantity ?? 0}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {fmtCurrency(it.unitPrice ?? it.price ?? 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                                {fmtCurrency(
+                                  (it.qty ?? 0) *
+                                    (it.unitPrice ?? it.price ?? 0),
+                                )}
+                              </td>
+                            </tr>
+                          ),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Payments
+                  </div>
+                  <div className="max-h-48 overflow-auto rounded-lg border border-slate-200 p-2">
                     {previewLoading && (
-                      <div className="text-sm text-slate-500">Loading…</div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading...
+                      </div>
                     )}
                     {!previewLoading &&
                       (!previewInvoice?.payments ||
                         previewInvoice.payments.length === 0) && (
-                        <div className="text-sm text-slate-500">
+                        <div className="py-4 text-center text-sm text-muted-foreground">
                           No payments recorded
                         </div>
                       )}
@@ -726,17 +1147,28 @@ export default function SalesInvoicesPage() {
                         (p: InvoicePayment, i: number) => (
                           <div
                             key={i}
-                            className="flex justify-between py-2 border-b last:border-b-0"
+                            className="flex items-center justify-between border-b border-slate-100 py-2 last:border-b-0"
                           >
-                            <div>
-                              <div className="font-medium">{p.method}</div>
-                              <div className="text-xs text-slate-400">
-                                {p.referenceNo ?? ""}
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#3aa838]/10">
+                                <DollarSign className="h-3.5 w-3.5 text-[#3aa838]" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium">
+                                  {p.method}
+                                </div>
+                                {p.referenceNo && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {p.referenceNo}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="text-right">
-                              <div>{fmtCurrency(p.amount)}</div>
-                              <div className="text-xs text-slate-400">
+                              <div className="text-sm font-semibold tabular-nums text-[#2f8a2f]">
+                                ৳ {fmtCurrency(p.amount)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
                                 {format(p.paymentDate)}
                               </div>
                             </div>
@@ -747,55 +1179,78 @@ export default function SalesInvoicesPage() {
                 </div>
               </div>
 
-              {/* right: totals and actions */}
+              {/* Right: totals + actions */}
               <div className="space-y-3">
-                <div className="border rounded p-3 bg-slate-50">
-                  <div className="text-xs text-slate-500">Totals</div>
-                  <div className="text-lg font-semibold mt-2">
-                    {fmtCurrency(previewInvoice?.grandTotal)}
+                <div className="rounded-lg border border-[#3aa838]/20 bg-[#3aa838]/5 p-4">
+                  <div className="text-xs font-medium uppercase tracking-wide text-[#2f8a2f]">
+                    Total
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">
-                    Sub: {fmtCurrency(previewInvoice?.subTotal)} • Tax:{" "}
+                  <div className="mt-1 text-2xl font-extrabold tabular-nums text-[#2f8a2f]">
+                    ৳ {fmtCurrency(previewInvoice?.grandTotal)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-[#2f8a2f]/80">
+                    Sub: {fmtCurrency(previewInvoice?.subTotal)} · Tax:{" "}
                     {fmtCurrency(previewInvoice?.totalTax)}
                   </div>
                 </div>
 
-                <div className="border rounded p-3">
-                  <div className="text-sm font-medium mb-2">Status</div>
-                  <div className="mb-2">
-                    <div className="text-xs text-slate-400">Invoice</div>
-                    <div className="font-medium">{previewInvoice?.status}</div>
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
                   </div>
-
-                  <div>
-                    <div className="text-xs text-slate-400">Payment</div>
-                    <div className="font-medium">
-                      {previewInvoice?.paymentStatus}
+                  <div className="space-y-2">
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Invoice
+                      </div>
+                      <InvoiceStatusBadge status={previewInvoice?.status} />
                     </div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      Paid: {fmtCurrency(previewInvoice?.paidAmount)} • Balance:{" "}
-                      {fmtCurrency(previewInvoice?.balanceAmount)}
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Payment
+                      </div>
+                      <PaymentStatusBadge status={previewInvoice?.paymentStatus} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2 text-xs">
+                      <div>
+                        <div className="text-muted-foreground">Paid</div>
+                        <div className="font-semibold tabular-nums text-[#2f8a2f]">
+                          ৳ {fmtCurrency(previewInvoice?.paidAmount)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Balance</div>
+                        <div className="font-semibold tabular-nums text-rose-600">
+                          ৳ {fmtCurrency(previewInvoice?.balanceAmount)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="border rounded p-3">
+                <div className="rounded-lg border border-slate-200 p-4">
                   <div className="flex flex-col gap-2">
                     {previewInvoice &&
                       previewInvoice.paymentStatus !== "PAID" &&
                       previewInvoice.status === "ACTIVE" && (
                         <Button
-                          onClick={() => openPaymentDialog(previewInvoice._id)}
+                          className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                          onClick={() =>
+                            openPaymentDialog(previewInvoice._id)
+                          }
                         >
+                          <Plus className="mr-1.5 h-4 w-4" />
                           Add Payment
                         </Button>
                       )}
 
                     {previewInvoice && previewInvoice.status === "ACTIVE" && (
                       <Button
-                        variant="destructive"
+                        variant="outline"
+                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                         onClick={() => cancelInvoice(previewInvoice._id)}
                       >
+                        <Ban className="mr-1.5 h-4 w-4" />
                         Cancel Invoice
                       </Button>
                     )}
@@ -819,7 +1274,7 @@ export default function SalesInvoicesPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Payment Modal */}
+        {/* ================= PAYMENT DIALOG ================= */}
         <Dialog
           open={paymentModal.open}
           onOpenChange={(open) => {
@@ -839,7 +1294,6 @@ export default function SalesInvoicesPage() {
                   value={paymentAmount === "" ? "" : String(paymentAmount)}
                   onChange={(e) => {
                     const v = e.target.value;
-                    // allow empty or numeric
                     if (v === "") setPaymentAmount("");
                     else setPaymentAmount(Number(v));
                   }}
@@ -883,6 +1337,7 @@ export default function SalesInvoicesPage() {
                 <Button
                   onClick={() => submitPayment()}
                   disabled={actionLoadingFor !== null}
+                  className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                 >
                   {actionLoadingFor ? "Processing..." : "Submit Payment"}
                 </Button>

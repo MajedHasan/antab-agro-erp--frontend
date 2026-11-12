@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   CircleAlert,
   Clock3,
-  FileDown,
+  FileText,
   Loader2,
   PackageCheck,
   PlayCircle,
@@ -20,6 +20,7 @@ import {
   Send,
   ShieldAlert,
   Truck,
+  Undo2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,9 +30,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
 
-// ----------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------
+/* ------------------------------------------------------------------
+   Types
+   ------------------------------------------------------------------ */
 type ReturnRole =
   | "M.O"
   | "A.M"
@@ -133,9 +134,9 @@ type DraftMap = Record<
   >
 >;
 
-// ----------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------
+/* ------------------------------------------------------------------
+   Helpers (preserved)
+   ------------------------------------------------------------------ */
 const money = (n: number) =>
   Number(n || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -197,27 +198,25 @@ function statusLabel(status: SalesReturnStatus) {
   }
 }
 
+/* 🎨 Palette-locked status colors */
 function badgeClass(status: SalesReturnStatus) {
   switch (status) {
     case "COMPLETED":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    case "RESOLVED":
+    case "WAREHOUSE_RECEIVED":
+      return "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30";
     case "READY_FOR_PRINT":
     case "PRINTED":
-      return "bg-indigo-100 text-indigo-700 border-indigo-200";
     case "SENT_TO_WAREHOUSE":
-    case "WAREHOUSE_RECEIVED":
-      return "bg-cyan-100 text-cyan-700 border-cyan-200";
+      return "bg-[#3aa838]/5 text-[#2f8a2f] border-[#3aa838]/20";
     case "PENDING_AM":
     case "PENDING_RM":
     case "PENDING_NSM":
-      return "bg-amber-100 text-amber-700 border-amber-200";
     case "HOLD":
-      return "bg-orange-100 text-orange-700 border-orange-200";
-    case "RESOLVED":
-      return "bg-sky-100 text-sky-700 border-sky-200";
+      return "bg-amber-50 text-amber-700 border-amber-200";
     case "REJECTED":
     case "CANCELLED":
-      return "bg-red-100 text-red-700 border-red-200";
+      return "bg-rose-50 text-rose-700 border-rose-200";
     default:
       return "bg-slate-100 text-slate-700 border-slate-200";
   }
@@ -417,9 +416,7 @@ function normalizeReturnDoc(data: any): ReturnDoc {
 
 function buildInitialDrafts(doc: ReturnDoc | null): DraftMap {
   if (!doc) return {};
-
   const drafts: DraftMap = {};
-
   for (const block of doc.invoiceReturns || []) {
     drafts[block.invoiceId] = {};
     for (const item of block.items || []) {
@@ -433,17 +430,22 @@ function buildInitialDrafts(doc: ReturnDoc | null): DraftMap {
       };
     }
   }
-
   return drafts;
 }
 
-// ----------------------------------------------------------------------
-// Print helpers
-// ----------------------------------------------------------------------
+/* ------------------------------------------------------------------
+   Print builders (preserved verbatim)
+   ------------------------------------------------------------------ */
 function buildReturnPrintHtml(doc: ReturnDoc, qrImageDataUrl: string): string {
   const dealer = doc.customerId || {};
   const dateFmt = (d: any) =>
-    d ? new Date(d).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "—";
+    d
+      ? new Date(d).toLocaleDateString("en-IN", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "—";
 
   const itemsHtml = doc.invoiceReturns
     .map((block) => {
@@ -473,13 +475,21 @@ function buildReturnPrintHtml(doc: ReturnDoc, qrImageDataUrl: string): string {
                 <td style="padding:6px 8px; text-align:center;">${item.requestedQty}</td>
                 <td style="padding:6px 8px; text-align:center;">${
                   item.finalApprovedQty ||
-                  Number(item.nsmQty || item.rmQty || item.amQty || item.requestedQty || 0)
+                  Number(
+                    item.nsmQty ||
+                      item.rmQty ||
+                      item.amQty ||
+                      item.requestedQty ||
+                      0,
+                  )
                 }</td>
-                <td style="padding:6px 8px; text-align:center;">${item.warehouseReceivedQty || "-"}</td>
+                <td style="padding:6px 8px; text-align:center;">${
+                  item.warehouseReceivedQty || "-"
+                }</td>
                 <td style="padding:6px 8px; text-align:right; font-weight:700;">৳${money(
-                  item.finalReturnAmount || item.returnAmountEstimate || 0
+                  item.finalReturnAmount || item.returnAmountEstimate || 0,
                 )}</td>
-              </tr>`
+              </tr>`,
               )
               .join("")}
           </tbody>
@@ -556,9 +566,9 @@ function buildReturnPrintHeaderRight(doc: ReturnDoc): string {
     </div>`;
 }
 
-// ----------------------------------------------------------------------
-// UI Sub-components
-// ----------------------------------------------------------------------
+/* ------------------------------------------------------------------
+   Sub-components
+   ------------------------------------------------------------------ */
 function Stepper({ status }: { status: SalesReturnStatus }) {
   const step = workflowStepIndex(status);
   const steps = [
@@ -574,15 +584,15 @@ function Stepper({ status }: { status: SalesReturnStatus }) {
   ];
 
   return (
-    <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-9">
+    <div className="grid gap-1.5 md:grid-cols-3 xl:grid-cols-9">
       {steps.map((s) => {
         const active = step > 0 && s.key <= step;
         return (
           <div
             key={s.key}
-            className={`rounded-xl border px-3 py-2 text-center text-xs font-medium ${
+            className={`rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium transition-colors ${
               active
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                ? "border-[#3aa838]/30 bg-[#3aa838]/10 text-[#2f8a2f]"
                 : "border-slate-200 bg-slate-50 text-slate-500"
             }`}
           >
@@ -594,31 +604,9 @@ function Stepper({ status }: { status: SalesReturnStatus }) {
   );
 }
 
-function MetricCard({
-  title,
-  value,
-  sub,
-}: {
-  title: string;
-  value: string | number;
-  sub?: string;
-}) {
-  return (
-    <div className="rounded-2xl border bg-slate-50 p-4">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-        {title}
-      </div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
-      {sub ? (
-        <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
-      ) : null}
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------------
-// Main Page Component
-// ----------------------------------------------------------------------
+/* ------------------------------------------------------------------
+   Main Page
+   ------------------------------------------------------------------ */
 export default function SalesReturnActionPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -643,7 +631,6 @@ export default function SalesReturnActionPage() {
       setDoc(data);
       setInvoiceReturns(data.invoiceReturns);
       setDrafts(buildInitialDrafts(data));
-      // Generate QR image for print
       if (data.qrCode) {
         QRCode.toDataURL(data.qrCode, {
           width: 220,
@@ -688,7 +675,8 @@ export default function SalesReturnActionPage() {
 
   const totalInvoices = doc?.invoiceReturns?.length || 0;
   const totalProducts =
-    doc?.invoiceReturns?.reduce((sum, b) => sum + (b.items?.length || 0), 0) || 0;
+    doc?.invoiceReturns?.reduce((sum, b) => sum + (b.items?.length || 0), 0) ||
+    0;
 
   const requestedQty = doc?.invoiceReturns?.reduce(
     (sum, b) =>
@@ -731,26 +719,25 @@ export default function SalesReturnActionPage() {
     if (doc.status === "PENDING_RM")
       return "R.M should review the A.M-approved quantities and either approve or reject.";
     if (doc.status === "PENDING_NSM")
-      return "N.S.M should give the final approval quantities. This stage can go above the M.O request, but never above sold availability.";
+      return "N.S.M gives final approval qty. Can go above M.O request but never above sold availability.";
     if (doc.status === "READY_FOR_PRINT")
       return "M.O should print the approved document and mark it printed.";
     if (doc.status === "PRINTED")
       return "M.O should send the printed return to the warehouse/depo incharge.";
     if (doc.status === "SENT_TO_WAREHOUSE")
-      return "Warehouse should physically verify items and enter received quantities. If they do not match the printed quantity, the backend will move the return to HOLD.";
+      return "Warehouse should physically verify items and enter received quantities. Mismatch moves the return to HOLD.";
     if (doc.status === "HOLD")
       return "Head Account should resolve the hold with corrected received quantities.";
     if (doc.status === "RESOLVED")
       return "Head Account or M.O should complete the return.";
-    if (doc.status === "WAREHOUSE_RECEIVED")
-      return "Return is ready to be completed.";
+    if (doc.status === "WAREHOUSE_RECEIVED") return "Return is ready to be completed.";
     if (doc.status === "COMPLETED") return "Return is fully completed.";
     if (doc.status === "REJECTED") return "Return has been rejected.";
     if (doc.status === "CANCELLED") return "Return has been cancelled.";
     return "";
   }, [doc]);
 
-  const actionLabel = useMemo(() => {
+  const titleAction = useMemo(() => {
     if (!doc) return "No Action";
     if (doc.status === "PENDING_AM") return "Approve as A.M";
     if (doc.status === "PENDING_RM") return "Approve as R.M";
@@ -780,7 +767,6 @@ export default function SalesReturnActionPage() {
     value: string,
   ) => {
     const cleaned = value.replace(/[^\d]/g, "");
-
     setDrafts((curr) => ({
       ...curr,
       [invoiceId]: {
@@ -796,15 +782,6 @@ export default function SalesReturnActionPage() {
         },
       },
     }));
-  };
-
-  const getDraftValue = (
-    invoiceId: string,
-    productId: string,
-    field: QtyField,
-    fallback: string,
-  ) => {
-    return drafts[invoiceId]?.[productId]?.[field] ?? fallback ?? "";
   };
 
   const buildPayload = () => {
@@ -827,14 +804,12 @@ export default function SalesReturnActionPage() {
             ),
           };
         }
-
         const field =
           doc.status === "PENDING_AM"
             ? "amQty"
             : doc.status === "PENDING_RM"
               ? "rmQty"
               : "nsmQty";
-
         return {
           productId: item.productId,
           qty: Number(
@@ -852,7 +827,6 @@ export default function SalesReturnActionPage() {
 
   const validateStage = () => {
     if (!doc) return false;
-
     if (canApprove(doc.status)) return true;
     if (canPrint(doc.status, role)) return true;
     if (canMarkPrinted(doc.status, role)) return true;
@@ -861,7 +835,6 @@ export default function SalesReturnActionPage() {
     if (canResolveHold(doc.status, role)) return true;
     if (canComplete(doc.status, role)) return true;
     if (canCancel(doc.status, role)) return true;
-
     toast.error("No valid action is available at the current stage.");
     return false;
   };
@@ -873,7 +846,6 @@ export default function SalesReturnActionPage() {
       toast.error("This return is not waiting for approval.");
       return;
     }
-
     const stageField =
       doc.status === "PENDING_AM"
         ? "amQty"
@@ -884,19 +856,15 @@ export default function SalesReturnActionPage() {
     for (const block of doc.invoiceReturns) {
       for (const item of block.items) {
         const value =
-          Number(
-            drafts[block.invoiceId]?.[item.productId]?.[stageField] || 0,
-          ) || 0;
-
+          Number(drafts[block.invoiceId]?.[item.productId]?.[stageField] || 0) ||
+          0;
         if (value <= 0) {
           toast.error(
             `${item.productName}: ${stageLabel} must be greater than zero.`,
           );
           return;
         }
-
         const max = getStageMax(item, doc.status, stageField as QtyField);
-
         if (value > max) {
           toast.error(
             `${item.productName}: ${stageLabel} cannot exceed ${max}.`,
@@ -934,7 +902,6 @@ export default function SalesReturnActionPage() {
       toast.error("This return cannot be rejected at the current stage.");
       return;
     }
-
     if (!window.confirm("Reject this sales return?")) return;
 
     setBusy(true);
@@ -963,7 +930,6 @@ export default function SalesReturnActionPage() {
       toast.error("Cancel is only available for M.O before dispatch.");
       return;
     }
-
     if (!window.confirm("Cancel this sales return?")) return;
 
     setBusy(true);
@@ -991,7 +957,6 @@ export default function SalesReturnActionPage() {
       toast.error("Mark printed is only available for M.O at READY_FOR_PRINT.");
       return;
     }
-
     setBusy(true);
     try {
       await api.post(`/sales-returns/${doc._id}/printed`);
@@ -1015,7 +980,6 @@ export default function SalesReturnActionPage() {
       toast.error("Send to warehouse is only available after printing.");
       return;
     }
-
     setBusy(true);
     try {
       await api.post(`/sales-returns/${doc._id}/send-to-warehouse`, {
@@ -1041,20 +1005,17 @@ export default function SalesReturnActionPage() {
       toast.error("Warehouse receive is only available at SENT_TO_WAREHOUSE.");
       return;
     }
-
     for (const block of doc.invoiceReturns) {
       for (const item of block.items) {
         const value = Number(
           drafts[block.invoiceId]?.[item.productId]?.warehouseReceivedQty || 0,
         );
-
         if (value <= 0) {
           toast.error(
             `${item.productName}: received qty must be greater than zero.`,
           );
           return;
         }
-
         const max = soldPieces(item);
         if (value > max) {
           toast.error(
@@ -1094,7 +1055,6 @@ export default function SalesReturnActionPage() {
       );
       return;
     }
-
     setBusy(true);
     try {
       await api.post(`/sales-returns/${doc._id}/resolve-hold`, {
@@ -1123,7 +1083,6 @@ export default function SalesReturnActionPage() {
       );
       return;
     }
-
     setBusy(true);
     try {
       await api.post(`/sales-returns/${doc._id}/resolve-hold`, {
@@ -1155,7 +1114,6 @@ export default function SalesReturnActionPage() {
       );
       return;
     }
-
     setBusy(true);
     try {
       await api.post(`/sales-returns/${doc._id}/complete`, {
@@ -1183,14 +1141,13 @@ export default function SalesReturnActionPage() {
     toast.message("Inputs reset.");
   };
 
+  /* ------------------- Loading / not found ------------------- */
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto flex max-w-7xl items-center justify-center p-10">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading sales return...
-          </div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading sales return...
         </div>
       </div>
     );
@@ -1198,108 +1155,159 @@ export default function SalesReturnActionPage() {
 
   if (!doc) {
     return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto max-w-7xl p-4 md:p-6">
-          <Card>
-            <CardContent className="p-8 text-center">
-              <div className="text-lg font-semibold">
-                Sales return not found
-              </div>
-              <Button
-                className="mt-4"
-                variant="outline"
-                onClick={() => router.push("/sales/return")}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to list
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Card className="w-full max-w-lg">
+          <CardContent className="p-8 text-center">
+            <div className="text-lg font-semibold">Sales return not found</div>
+            <Button
+              className="mt-4"
+              variant="outline"
+              onClick={() => router.push("/sales/return")}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to list
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  const titleAction =
-    doc.status === "PENDING_AM"
-      ? "Approve as A.M"
-      : doc.status === "PENDING_RM"
-        ? "Approve as R.M"
-        : doc.status === "PENDING_NSM"
-          ? "Approve as N.S.M"
-          : doc.status === "READY_FOR_PRINT"
-            ? "Print"
-            : doc.status === "PRINTED"
-              ? "Send to Warehouse"
-              : doc.status === "SENT_TO_WAREHOUSE"
-                ? "Warehouse Receive"
-                : doc.status === "HOLD"
-                  ? "Resolve Hold"
-                  : doc.status === "RESOLVED" ||
-                      doc.status === "WAREHOUSE_RECEIVED"
-                    ? "Complete Return"
-                    : "No Action";
-
+  /* ------------------- Render ------------------- */
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        <div className="mb-6 rounded-3xl border bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-3">
-              <Button
-                variant="ghost"
-                className="px-0"
-                onClick={() => router.push("/sales/return")}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to list
-              </Button>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-3xl font-semibold tracking-tight">
-                  {doc.returnNo}
-                </h1>
-                <Badge
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ============ HERO ============ */}
+        <div className="relative mb-3 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1a4d1a] p-5 text-white shadow-lg">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(58,168,56,0.25),transparent_55%)]" />
+          <div className="relative">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <Button
+                  type="button"
                   variant="secondary"
-                  className={`${badgeClass(doc.status)} border`}
+                  size="sm"
+                  onClick={() => router.push("/sales/return")}
+                  className="border border-white/20 bg-white/10 text-white hover:bg-white/20"
                 >
-                  {statusLabel(doc.status)}
-                </Badge>
+                  <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                  Back to list
+                </Button>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#3aa838]/25 ring-1 ring-[#3aa838]/40">
+                    <Undo2 className="h-5 w-5 text-[#7cd67a]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs uppercase tracking-wider text-white/60">
+                      Sales Return
+                    </div>
+                    <h1 className="text-2xl font-bold tracking-tight tabular-nums">
+                      {doc.returnNo}
+                    </h1>
+                  </div>
+                  <Badge className={`${badgeClass(doc.status)} border`}>
+                    {statusLabel(doc.status)}
+                  </Badge>
+                </div>
+
+                <div className="mt-2 text-sm text-white/70">
+                  <span className="font-medium text-white">
+                    {doc.customerId?.name || "-"}
+                  </span>
+                  {doc.customerId?.phoneNumber && (
+                    <> · {doc.customerId.phoneNumber}</>
+                  )}
+                  {" · "}Created {formatDate(doc.createdAt)}
+                </div>
               </div>
 
-              <p className="max-w-3xl text-sm text-muted-foreground">
-                Dealer:{" "}
-                <span className="font-medium text-slate-900">
-                  {doc.customerId?.name || "-"}
-                </span>{" "}
-                · Created: {formatDateTime(doc.createdAt)} · Updated:{" "}
-                {formatDateTime(doc.updatedAt)}
-              </p>
-
-              <Stepper status={doc.status} />
-
-              <div className="rounded-2xl border bg-slate-50 p-4 text-sm text-slate-700">
-                {workflowHint}
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void refresh()}
+                  className="border border-white/20 bg-white/10 text-white hover:bg-white/20"
+                >
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                  Refresh
+                </Button>
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[460px] xl:grid-cols-4">
-              <MetricCard title="Invoices" value={totalInvoices} />
-              <MetricCard title="Products" value={totalProducts} />
-              <MetricCard
-                title="Requested"
-                value={money(Number(doc.totalRequestedAmount || 0))}
-              />
-              <MetricCard
-                title="Approved"
-                value={money(Number(doc.totalApprovedAmount || 0))}
-              />
+            {/* Inline stat pills */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15 backdrop-blur-sm">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Invoices
+                </div>
+                <div className="text-sm font-semibold tabular-nums">
+                  {totalInvoices}
+                </div>
+              </div>
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15 backdrop-blur-sm">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Products
+                </div>
+                <div className="text-sm font-semibold tabular-nums">
+                  {totalProducts}
+                </div>
+              </div>
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15 backdrop-blur-sm">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Qty
+                </div>
+                <div className="text-sm font-semibold tabular-nums">
+                  {requestedQty} → {approvedQty} → {receivedQty}
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#3aa838] px-3 py-2 shadow-md shadow-black/40">
+                <div className="text-[10px] uppercase tracking-wide text-[#c6e8c5]">
+                  Requested
+                </div>
+                <div className="text-sm font-bold tabular-nums">
+                  ৳ {money(Number(doc.totalRequestedAmount || 0))}
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#3aa838] px-3 py-2 shadow-md shadow-black/40">
+                <div className="text-[10px] uppercase tracking-wide text-[#c6e8c5]">
+                  Approved
+                </div>
+                <div className="text-sm font-bold tabular-nums">
+                  ৳ {money(Number(doc.totalApprovedAmount || 0))}
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#3aa838] px-3 py-2 shadow-md shadow-black/40">
+                <div className="text-[10px] uppercase tracking-wide text-[#c6e8c5]">
+                  Received
+                </div>
+                <div className="text-sm font-bold tabular-nums">
+                  ৳ {money(Number(doc.totalReceivedAmount || 0))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="space-y-6">
+        {/* ============ STEPPER + WORKFLOW HINT ============ */}
+        <div className="mb-4 space-y-2">
+          <Stepper status={doc.status} />
+          <div
+            className={`rounded-lg border px-3 py-2 text-xs ${
+              doc.status === "HOLD"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            {workflowHint}
+          </div>
+        </div>
+
+        {/* ============ MAIN GRID ============ */}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          {/* ----- LEFT: Invoice cards ----- */}
+          <div className="space-y-4">
             {doc.invoiceReturns.map((block, blockIndex) => {
               const blockRequested = block.items.reduce(
                 (sum, item) => sum + Number(item.requestedQty || 0),
@@ -1326,325 +1334,323 @@ export default function SalesReturnActionPage() {
               return (
                 <Card
                   key={`${block.invoiceId}-${blockIndex}`}
-                  className="border-slate-200 shadow-sm"
+                  className="overflow-hidden border-slate-200 shadow-sm"
                 >
-                  <CardHeader>
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <CardTitle className="text-xl">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+                        <FileText className="h-4 w-4 text-[#3aa838]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-sm font-semibold text-slate-900">
                           {block.invoiceNoSnapshot || "Invoice"}
-                        </CardTitle>
-                        <div className="mt-1 text-sm text-muted-foreground">
-                          Payment: {block.paymentStatusSnapshot || "-"} ·
-                          Balance snapshot:{" "}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {block.paymentStatusSnapshot || "-"} · Balance ৳{" "}
                           {money(Number(block.balanceAmountSnapshot || 0))} ·
-                          Warehouse:{" "}
+                          Warehouse{" "}
                           {String(
                             block.warehouseId?.name || block.warehouseId || "-",
                           )}
                         </div>
                       </div>
+                    </div>
 
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-xl border bg-slate-50 px-3 py-2">
-                          <div className="text-xs text-muted-foreground">
-                            Requested
-                          </div>
-                          <div className="font-semibold">{blockRequested}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-center">
+                        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                          Req
                         </div>
-                        <div className="rounded-xl border bg-slate-50 px-3 py-2">
-                          <div className="text-xs text-muted-foreground">
-                            Approved
-                          </div>
-                          <div className="font-semibold">{blockApproved}</div>
+                        <div className="text-xs font-semibold tabular-nums">
+                          {blockRequested}
                         </div>
-                        <div className="rounded-xl border bg-slate-50 px-3 py-2">
-                          <div className="text-xs text-muted-foreground">
-                            Received
-                          </div>
-                          <div className="font-semibold">{blockReceived}</div>
+                      </div>
+                      <div className="rounded-md border border-[#3aa838]/30 bg-[#3aa838]/5 px-2 py-1 text-center">
+                        <div className="text-[9px] uppercase tracking-wide text-[#2f8a2f]">
+                          Appr
+                        </div>
+                        <div className="text-xs font-semibold tabular-nums text-[#2f8a2f]">
+                          {blockApproved}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-[#3aa838]/30 bg-[#3aa838]/5 px-2 py-1 text-center">
+                        <div className="text-[9px] uppercase tracking-wide text-[#2f8a2f]">
+                          Recv
+                        </div>
+                        <div className="text-xs font-semibold tabular-nums text-[#2f8a2f]">
+                          {blockReceived}
                         </div>
                       </div>
                     </div>
-                  </CardHeader>
+                  </div>
 
-                  <CardContent>
-                    <div className="overflow-hidden rounded-2xl border">
-                      <div className="grid grid-cols-12 gap-2 border-b bg-slate-50 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        <div className="col-span-4">Product</div>
-                        <div className="col-span-1">Sold</div>
-                        <div className="col-span-1">Req</div>
-                        <div className="col-span-2">{stageLabel}</div>
-                        <div className="col-span-2">Final</div>
-                        <div className="col-span-2">Amount</div>
-                      </div>
+                  <div className="overflow-hidden">
+                    {/* Header row */}
+                    <div className="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                      <div className="col-span-4">Product</div>
+                      <div className="col-span-1 text-center">Sold</div>
+                      <div className="col-span-1 text-center">Req</div>
+                      <div className="col-span-2 text-center">{stageLabel}</div>
+                      <div className="col-span-2 text-center">Final</div>
+                      <div className="col-span-2 text-right">Amount</div>
+                    </div>
 
-                      <div className="divide-y bg-white">
-                        {block.items.map((item) => {
-                          const field = editableField;
-                          const stageValue =
-                            field && drafts[block.invoiceId]?.[item.productId]
-                              ? drafts[block.invoiceId][item.productId][field]
-                              : getItemDisplayStageValue(item, role);
+                    <div className="divide-y divide-slate-100 bg-white">
+                      {block.items.map((item) => {
+                        const field = editableField;
+                        const stageValue =
+                          field && drafts[block.invoiceId]?.[item.productId]
+                            ? drafts[block.invoiceId][item.productId][field]
+                            : getItemDisplayStageValue(item, role);
 
-                          const stageMax = field
-                            ? getStageMax(item, doc.status, field)
-                            : 0;
+                        const stageMax = field
+                          ? getStageMax(item, doc.status, field)
+                          : 0;
 
-                          return (
-                            <div key={item.productId} className="px-4 py-4">
-                              <div className="grid grid-cols-12 gap-2">
-                                <div className="col-span-12 md:col-span-4">
-                                  <div className="font-medium">
-                                    {item.productName || "Product"}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    SKU: {item.sku || "-"}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    Reason: {item.reason || "-"}
-                                  </div>
+                        return (
+                          <div
+                            key={item.productId}
+                            className="px-3 py-2 transition-colors hover:bg-slate-50/40"
+                          >
+                            <div className="grid grid-cols-12 items-center gap-2">
+                              <div className="col-span-12 md:col-span-4">
+                                <div className="text-sm font-medium text-slate-900">
+                                  {item.productName || "Product"}
                                 </div>
-
-                                <div className="col-span-6 md:col-span-1">
-                                  <div className="text-sm font-semibold">
-                                    {soldPieces(item)}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    Sold
-                                  </div>
-                                </div>
-
-                                <div className="col-span-6 md:col-span-1">
-                                  <div className="text-sm font-semibold">
-                                    {Number(item.requestedQty || 0)}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    M.O
-                                  </div>
-                                </div>
-
-                                <div className="col-span-12 md:col-span-2">
-                                  {field ? (
-                                    <div className="space-y-2">
-                                      <Input
-                                        inputMode="numeric"
-                                        value={stageValue || ""}
-                                        onChange={(e) =>
-                                          setDraftValue(
-                                            block.invoiceId,
-                                            item.productId,
-                                            field,
-                                            e.target.value,
-                                          )
-                                        }
-                                        placeholder="0"
-                                      />
-                                      <div className="text-xs text-muted-foreground">
-                                        Max allowed: {stageMax}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="text-sm font-semibold">
-                                      {getItemDisplayStageValue(item, role)
-                                        ? Number(
-                                            getItemDisplayStageValue(
-                                              item,
-                                              role,
-                                            ),
-                                          )
-                                        : "-"}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="col-span-6 md:col-span-2">
-                                  <div className="text-sm font-semibold">
-                                    {Number(
-                                      item.finalApprovedQty ||
-                                        item.nsmQty ||
-                                        item.rmQty ||
-                                        item.amQty ||
-                                        item.requestedQty ||
-                                        0,
-                                    )}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    Final approved qty
-                                  </div>
-                                </div>
-
-                                <div className="col-span-6 md:col-span-2">
-                                  <div className="text-sm font-semibold">
-                                    {money(
-                                      Number(
-                                        item.finalReturnAmount ||
-                                          item.returnAmountEstimate ||
-                                          0,
-                                      ),
-                                    )}
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    Warehouse received:{" "}
-                                    {Number(item.warehouseReceivedQty || 0) ||
-                                      "-"}
-                                  </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {item.sku ? `SKU: ${item.sku}` : ""}
+                                  {item.reason
+                                    ? `${item.sku ? " · " : ""}Reason: ${item.reason}`
+                                    : ""}
                                 </div>
                               </div>
 
-                              <details className="mt-3 rounded-xl border bg-slate-50 p-3">
-                                <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                                  Quantity audit trail
-                                </summary>
-                                <div className="mt-3 space-y-2">
-                                  {(item.qtyAuditLogs || []).length ? (
-                                    item.qtyAuditLogs.map((log, idx) => (
-                                      <div
-                                        key={idx}
-                                        className="rounded-lg border bg-white p-2 text-xs text-muted-foreground"
-                                      >
-                                        <div className="flex items-center justify-between gap-2">
-                                          <div className="font-medium text-slate-800">
-                                            {log.stage || "-"} · Qty{" "}
-                                            {log.qty ?? "-"}
-                                          </div>
-                                          <div>
-                                            {formatDateTime(log.actionDate)}
-                                          </div>
-                                        </div>
-                                        <div className="mt-1">
-                                          {log.remarks || "No remarks"}
-                                        </div>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className="text-xs text-muted-foreground">
-                                      No audit logs yet.
+                              <div className="col-span-4 text-center md:col-span-1">
+                                <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                  {soldPieces(item)}
+                                </div>
+                                <div className="text-[9px] uppercase text-muted-foreground md:hidden">
+                                  Sold
+                                </div>
+                              </div>
+
+                              <div className="col-span-4 text-center md:col-span-1">
+                                <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                  {Number(item.requestedQty || 0)}
+                                </div>
+                                <div className="text-[9px] uppercase text-muted-foreground md:hidden">
+                                  Req
+                                </div>
+                              </div>
+
+                              <div className="col-span-12 md:col-span-2">
+                                {field ? (
+                                  <div className="space-y-1">
+                                    <Input
+                                      inputMode="numeric"
+                                      value={stageValue || ""}
+                                      onChange={(e) =>
+                                        setDraftValue(
+                                          block.invoiceId,
+                                          item.productId,
+                                          field,
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder="0"
+                                      className="h-9 text-center text-sm font-semibold tabular-nums focus-visible:ring-[#3aa838]"
+                                    />
+                                    <div className="text-center text-[10px] text-muted-foreground">
+                                      Max {stageMax}
                                     </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-center text-sm font-semibold tabular-nums text-slate-900">
+                                    {getItemDisplayStageValue(item, role)
+                                      ? Number(
+                                          getItemDisplayStageValue(item, role),
+                                        )
+                                      : "—"}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="col-span-6 text-center md:col-span-2">
+                                <div className="text-sm font-semibold tabular-nums text-[#2f8a2f]">
+                                  {Number(
+                                    item.finalApprovedQty ||
+                                      item.nsmQty ||
+                                      item.rmQty ||
+                                      item.amQty ||
+                                      item.requestedQty ||
+                                      0,
                                   )}
                                 </div>
-                              </details>
+                                <div className="text-[9px] uppercase text-muted-foreground md:hidden">
+                                  Final
+                                </div>
+                              </div>
+
+                              <div className="col-span-6 text-right md:col-span-2">
+                                <div className="text-sm font-semibold tabular-nums text-slate-900">
+                                  ৳{" "}
+                                  {money(
+                                    Number(
+                                      item.finalReturnAmount ||
+                                        item.returnAmountEstimate ||
+                                        0,
+                                    ),
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  Recv{" "}
+                                  {Number(item.warehouseReceivedQty || 0) ||
+                                    "—"}
+                                </div>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
+
+                            <details className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                              <summary className="cursor-pointer text-[11px] font-medium text-slate-700">
+                                Audit trail ({(item.qtyAuditLogs || []).length})
+                              </summary>
+                              <div className="mt-2 space-y-1.5">
+                                {(item.qtyAuditLogs || []).length ? (
+                                  item.qtyAuditLogs!.map((log, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="rounded-md border border-slate-200 bg-white p-2 text-[11px]"
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="font-medium text-slate-800">
+                                          {log.stage || "-"} · Qty{" "}
+                                          {log.qty ?? "-"}
+                                        </div>
+                                        <div className="text-muted-foreground">
+                                          {formatDateTime(log.actionDate)}
+                                        </div>
+                                      </div>
+                                      <div className="mt-0.5 text-muted-foreground">
+                                        {log.remarks || "No remarks"}
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="text-[11px] text-muted-foreground">
+                                    No audit logs yet.
+                                  </div>
+                                )}
+                              </div>
+                            </details>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </CardContent>
+                  </div>
                 </Card>
               );
             })}
           </div>
 
-          <div className="space-y-6 xl:sticky xl:top-6 h-fit">
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Action panel</CardTitle>
+          {/* ----- RIGHT: sticky sidebar ----- */}
+          <div className="h-fit space-y-4 xl:sticky xl:top-4">
+            {/* Action panel */}
+            <Card className="overflow-hidden border-slate-200 shadow-md">
+              <CardHeader className="border-b border-slate-200 py-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3aa838]/10">
+                    <ShieldAlert className="h-3.5 w-3.5 text-[#3aa838]" />
+                  </div>
+                  Action panel
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-2xl border bg-slate-50 p-4">
-                  <div className="text-sm font-medium">Workflow actor</div>
-                  <div className="mt-1 text-xl font-semibold">
+              <CardContent className="space-y-3 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Workflow actor
+                  </div>
+                  <div className="mt-0.5 text-base font-semibold text-slate-900">
                     {role || "-"}
                   </div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    {doc.status === "PENDING_AM"
-                      ? "A.M reviews the created return and edits A.M qty."
-                      : doc.status === "PENDING_RM"
-                        ? "R.M reviews the A.M-approved quantities and can approve independently of A.M qty, but not above the M.O request."
-                        : doc.status === "PENDING_NSM"
-                          ? "N.S.M gives the final approval qty and can go above the M.O request up to sold availability."
-                          : doc.status === "READY_FOR_PRINT"
-                            ? "M.O prints and marks printed."
-                            : doc.status === "PRINTED"
-                              ? "M.O sends the printed return to the warehouse."
-                              : doc.status === "SENT_TO_WAREHOUSE"
-                                ? "Warehouse receives and checks the physical product."
-                                : doc.status === "HOLD"
-                                  ? "Head Account resolves the mismatch hold."
-                                  : doc.status === "RESOLVED" ||
-                                      doc.status === "WAREHOUSE_RECEIVED"
-                                    ? "Head Account or M.O completes the return."
-                                    : "No action is available at this stage."}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border bg-slate-50 p-4">
-                  <div className="text-sm font-medium">Current stage</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
+                  <div className="mt-1 text-[11px] text-muted-foreground">
                     {workflowHint}
                   </div>
-                  <div className="mt-3 flex items-center gap-2 text-sm">
-                    <Clock3 className="h-4 w-4 text-slate-500" />
+                  <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                    <Clock3 className="h-3 w-3 text-slate-500" />
                     Status:{" "}
-                    <span className="font-medium">
+                    <Badge className={`${badgeClass(doc.status)} border text-[10px]`}>
                       {statusLabel(doc.status)}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Remarks</div>
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-slate-600">
+                    Remarks
+                  </div>
                   <Textarea
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Add remarks for approval, rejection, print, dispatch, warehouse receive, or completion..."
+                    placeholder="Remarks for this action..."
+                    className="min-h-[70px] text-xs focus-visible:ring-[#3aa838]"
                   />
                 </div>
 
                 {doc.status === "HOLD" ? (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">Hold reason</div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-slate-600">
+                      Hold reason
+                    </div>
                     <Input
                       value={holdReason}
                       onChange={(e) => setHoldReason(e.target.value)}
                       placeholder="Reason for hold..."
+                      className="h-9 text-xs focus-visible:ring-[#3aa838]"
                     />
                   </div>
                 ) : null}
 
                 <div className="space-y-2">
-                  {doc.status === "PENDING_AM" ||
-                  doc.status === "PENDING_RM" ||
-                  doc.status === "PENDING_NSM" ? (
+                  {(doc.status === "PENDING_AM" ||
+                    doc.status === "PENDING_RM" ||
+                    doc.status === "PENDING_NSM") && (
                     <>
                       <Button
-                        className="w-full"
+                        className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                         onClick={approve}
                         disabled={busy}
                       >
                         {busy ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                         ) : (
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          <CheckCircle2 className="mr-1.5 h-4 w-4" />
                         )}
                         {titleAction}
                       </Button>
-
                       <Button
-                        className="w-full"
-                        variant="destructive"
+                        className="w-full text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        variant="outline"
                         onClick={reject}
                         disabled={busy}
                       >
-                        <CircleAlert className="mr-2 h-4 w-4" />
+                        <CircleAlert className="mr-1.5 h-4 w-4" />
                         Reject at {role}
                       </Button>
-
-                      {canCancel(doc.status, role) ? (
+                      {canCancel(doc.status, role) && (
                         <Button
                           className="w-full"
                           variant="outline"
                           onClick={cancel}
                           disabled={busy}
                         >
-                          <Ban className="mr-2 h-4 w-4" />
+                          <Ban className="mr-1.5 h-4 w-4" />
                           Cancel return
                         </Button>
-                      ) : null}
+                      )}
                     </>
-                  ) : null}
+                  )}
 
-                  {doc.status === "READY_FOR_PRINT" && role === "M.O" ? (
+                  {doc.status === "READY_FOR_PRINT" && role === "M.O" && (
                     <>
                       <GlobalPrintButton
                         contentHtml={buildReturnPrintHtml(doc, qrImage)}
@@ -1660,83 +1666,81 @@ export default function SalesReturnActionPage() {
                         }}
                         showHeader={false}
                         showFooter={false}
-                        className="w-full"
                       />
                       <Button
-                        className="w-full mt-2"
-                        variant="outline"
+                        className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                         onClick={markPrinted}
                         disabled={busy}
                       >
-                        <Printer className="mr-2 h-4 w-4" />
+                        <Printer className="mr-1.5 h-4 w-4" />
                         Mark printed
                       </Button>
                     </>
-                  ) : null}
+                  )}
 
-                  {doc.status === "PRINTED" && role === "M.O" ? (
+                  {doc.status === "PRINTED" && role === "M.O" && (
                     <Button
-                      className="w-full"
+                      className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                       onClick={sendToWarehouse}
                       disabled={busy}
                     >
-                      <Send className="mr-2 h-4 w-4" />
+                      <Send className="mr-1.5 h-4 w-4" />
                       Send to warehouse
                     </Button>
-                  ) : null}
+                  )}
 
                   {doc.status === "SENT_TO_WAREHOUSE" &&
-                  role === "WAREHOUSE" ? (
-                    <Button
-                      className="w-full"
-                      onClick={warehouseReceive}
-                      disabled={busy}
-                    >
-                      <Truck className="mr-2 h-4 w-4" />
-                      Receive & validate
-                    </Button>
-                  ) : null}
+                    role === "WAREHOUSE" && (
+                      <Button
+                        className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                        onClick={warehouseReceive}
+                        disabled={busy}
+                      >
+                        <Truck className="mr-1.5 h-4 w-4" />
+                        Receive & validate
+                      </Button>
+                    )}
 
-                  {doc.status === "HOLD" && role === "HEAD_ACCOUNT" ? (
+                  {doc.status === "HOLD" && role === "HEAD_ACCOUNT" && (
                     <>
                       <Button
-                        className="w-full"
+                        className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                         onClick={resolveAndComplete}
                         disabled={busy}
                       >
-                        <PlayCircle className="mr-2 h-4 w-4" />
+                        <PlayCircle className="mr-1.5 h-4 w-4" />
                         Resolve & complete
                       </Button>
                       <Button
-                        className="w-full"
+                        className="w-full border-[#3aa838]/40 text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f]"
                         variant="outline"
                         onClick={resolveHold}
                         disabled={busy}
                       >
-                        <ShieldAlert className="mr-2 h-4 w-4" />
+                        <ShieldAlert className="mr-1.5 h-4 w-4" />
                         Resolve hold only
                       </Button>
                     </>
-                  ) : null}
+                  )}
 
                   {(doc.status === "RESOLVED" ||
                     doc.status === "WAREHOUSE_RECEIVED") &&
-                  (role === "M.O" || role === "HEAD_ACCOUNT") ? (
-                    <Button
-                      className="w-full"
-                      onClick={complete}
-                      disabled={busy}
-                    >
-                      <PackageCheck className="mr-2 h-4 w-4" />
-                      Complete return
-                    </Button>
-                  ) : null}
+                    (role === "M.O" || role === "HEAD_ACCOUNT") && (
+                      <Button
+                        className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                        onClick={complete}
+                        disabled={busy}
+                      >
+                        <PackageCheck className="mr-1.5 h-4 w-4" />
+                        Complete return
+                      </Button>
+                    )}
                 </div>
 
                 <Button
                   type="button"
                   variant="ghost"
-                  className="w-full"
+                  className="w-full text-xs text-slate-500"
                   onClick={resetLocalInputs}
                 >
                   Reset typed quantities
@@ -1744,103 +1748,127 @@ export default function SalesReturnActionPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Return summary</CardTitle>
+            {/* Summary */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <CardHeader className="border-b border-slate-200 py-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3aa838]/10">
+                    <FileText className="h-3.5 w-3.5 text-[#3aa838]" />
+                  </div>
+                  Return summary
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2 p-4 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Dealer</span>
-                  <span className="font-medium">
+                  <span className="text-muted-foreground">Dealer</span>
+                  <span className="font-medium truncate max-w-[180px]">
                     {doc.customerId?.name || "-"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Phone</span>
+                  <span className="text-muted-foreground">Phone</span>
                   <span className="font-medium">
                     {doc.customerId?.phoneNumber || "-"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Requested amount
-                  </span>
-                  <span className="font-medium">
-                    {money(Number(doc.totalRequestedAmount || 0))}
+                  <span className="text-muted-foreground">Requested</span>
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    ৳ {money(Number(doc.totalRequestedAmount || 0))}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Approved amount
-                  </span>
-                  <span className="font-medium">
-                    {money(Number(doc.totalApprovedAmount || 0))}
+                  <span className="text-muted-foreground">Approved</span>
+                  <span className="font-semibold tabular-nums text-[#2f8a2f]">
+                    ৳ {money(Number(doc.totalApprovedAmount || 0))}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Received amount
-                  </span>
-                  <span className="font-medium">
-                    {money(Number(doc.totalReceivedAmount || 0))}
+                  <span className="text-muted-foreground">Received</span>
+                  <span className="font-semibold tabular-nums text-[#2f8a2f]">
+                    ৳ {money(Number(doc.totalReceivedAmount || 0))}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Print count
+                  <span className="text-muted-foreground">Print count</span>
+                  <span className="font-medium tabular-nums">
+                    {doc.printCount || 0}
                   </span>
-                  <span className="font-medium">{doc.printCount || 0}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Created</span>
+                  <span className="text-muted-foreground">Created</span>
                   <span className="font-medium">
                     {formatDate(doc.createdAt)}
                   </span>
                 </div>
-                {doc.holdReason ? (
-                  <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
+                {doc.holdReason && (
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
                     <div className="font-medium">Hold reason</div>
-                    <div className="mt-1">{doc.holdReason}</div>
-                    {doc.holdRemarks ? (
-                      <div className="mt-1 text-xs">{doc.holdRemarks}</div>
-                    ) : null}
+                    <div className="mt-0.5">{doc.holdReason}</div>
+                    {doc.holdRemarks && (
+                      <div className="mt-0.5 text-[11px]">
+                        {doc.holdRemarks}
+                      </div>
+                    )}
                   </div>
-                ) : null}
+                )}
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Recent logs</CardTitle>
+            {/* Logs */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <CardHeader className="border-b border-slate-200 py-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3aa838]/10">
+                    <Clock3 className="h-3.5 w-3.5 text-[#3aa838]" />
+                  </div>
+                  Recent logs
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2 p-4">
                 {(doc.approvalLogs || [])
                   .slice()
                   .reverse()
                   .slice(0, 8)
-                  .map((log, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-xl border bg-slate-50 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium">
-                          {log.role || "-"} · {log.status || "-"}
+                  .map((log, idx) => {
+                    const approved = log?.status === "APPROVED";
+                    return (
+                      <div
+                        key={idx}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-slate-900">
+                              {log.role || "-"}
+                            </span>
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                approved
+                                  ? "bg-[#3aa838]/10 text-[#2f8a2f]"
+                                  : log?.status === "REJECTED"
+                                    ? "bg-rose-50 text-rose-700"
+                                    : "bg-amber-50 text-amber-700"
+                              }`}
+                            >
+                              {log.status || "-"}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {formatDateTime(log.actionDate)}
+                          </div>
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatDateTime(log.actionDate)}
+                        <div className="mt-1 text-muted-foreground">
+                          {log.remarks || "No remarks"}
                         </div>
                       </div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        {log.remarks || "No remarks"}
-                      </div>
-                    </div>
-                  ))}
-                {!(doc.approvalLogs || []).length ? (
-                  <div className="text-sm text-muted-foreground">
+                    );
+                  })}
+                {!(doc.approvalLogs || []).length && (
+                  <div className="text-xs text-muted-foreground">
                     No logs yet.
                   </div>
-                ) : null}
+                )}
               </CardContent>
             </Card>
           </div>

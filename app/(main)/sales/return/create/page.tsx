@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Popover,
   PopoverContent,
@@ -28,13 +29,24 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import {
+  AlertTriangle,
   Check,
+  CheckCircle2,
   ChevronsUpDown,
+  FileText,
   Loader2,
   Plus,
   RefreshCw,
   Search,
   Trash2,
+  Undo2,
+  Wallet,
+  Package,
+  Calendar,
+  Building2,
+  ArrowRight,
+  Sparkles,
+  Save,
 } from "lucide-react";
 
 /* --------------------------- Types --------------------------- */
@@ -76,6 +88,19 @@ type InvoiceOption = {
   balanceAmount: number;
   customerId: string;
   items: InvoiceItemOption[];
+};
+
+type InvoiceReturnableInfo = {
+  invoiceId: string;
+  grandTotal: number;
+  paidAmount: number;
+  balanceAmount: number;
+  alreadyReturnedAmount: number;
+  remainingReturnableAmount: number;
+  itemMap: Map<
+    string,
+    { alreadyReturnedQty: number; remainingQty: number }
+  >;
 };
 
 type ReturnRow = {
@@ -157,40 +182,43 @@ function makeBlankRow(): ReturnRow {
   };
 }
 
-/** Fetches returnable quantities from the backend for an invoice */
+/** Fetches per-product returnable qtys AND invoice-level amount info. */
 async function fetchReturnableQuantities(
   invoiceId: string,
-): Promise<
-  Map<string, { alreadyReturnedQty: number; remainingQty: number }>
-> {
+): Promise<InvoiceReturnableInfo | null> {
   try {
     const res = await api.get("/sales-returns/returnable-quantities", {
       params: { invoiceId },
     });
-    const data: Array<{
-      productId: string;
-      soldQty: number;
-      alreadyReturnedQty: number;
-      remainingQty: number;
-    }> = res.data?.data || [];
-    const map = new Map<
+    const data = res.data?.data;
+    if (!data) return null;
+
+    const itemMap = new Map<
       string,
       { alreadyReturnedQty: number; remainingQty: number }
     >();
-    for (const item of data) {
-      map.set(item.productId, {
-        alreadyReturnedQty: item.alreadyReturnedQty,
-        remainingQty: item.remainingQty,
+    for (const item of data.items || []) {
+      itemMap.set(item.productId, {
+        alreadyReturnedQty: Number(item.alreadyReturnedQty || 0),
+        remainingQty: Number(item.remainingQty || 0),
       });
     }
-    return map;
+
+    return {
+      invoiceId: String(data.invoiceId || invoiceId),
+      grandTotal: Number(data.grandTotal || 0),
+      paidAmount: Number(data.paidAmount || 0),
+      balanceAmount: Number(data.balanceAmount || 0),
+      alreadyReturnedAmount: Number(data.alreadyReturnedAmount || 0),
+      remainingReturnableAmount: Number(data.remainingReturnableAmount || 0),
+      itemMap,
+    };
   } catch {
     toast.error("Failed to load returnable quantities.");
-    return new Map();
+    return null;
   }
 }
 
-/** Normalises a raw invoice item (expects populated productId) */
 function normalizeInvoiceItem(item: any): InvoiceItemOption {
   const product = item.productId || {};
   const productName = product.name || item.productName || "Unknown Product";
@@ -203,7 +231,7 @@ function normalizeInvoiceItem(item: any): InvoiceItemOption {
     productName,
     sku: product.sku || item.sku || "",
     invoiceQty,
-    alreadyReturnedQty: 0, // will be overridden by real data
+    alreadyReturnedQty: 0,
     maxReturnQty: invoiceQty,
     unitPrice,
     invoiceLineTotal: lineTotal,
@@ -212,7 +240,6 @@ function normalizeInvoiceItem(item: any): InvoiceItemOption {
   };
 }
 
-/** Normalises a raw invoice (expects populated orderId and items.productId) */
 function normalizeInvoice(invoice: any): InvoiceOption {
   return {
     value: String(invoice._id || invoice.id),
@@ -244,7 +271,37 @@ function normalizeInvoice(invoice: any): InvoiceOption {
   };
 }
 
-/* --------------------------- SearchSelect (unchanged) --------------------------- */
+/* --------------------------- SectionHeader --------------------------- */
+function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  right,
+}: {
+  icon: React.ElementType;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+      <div className="flex items-center gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3aa838]/10">
+          <Icon className="h-4 w-4 text-[#3aa838]" />
+        </div>
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle && (
+            <div className="text-xs text-muted-foreground">{subtitle}</div>
+          )}
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/* --------------------------- SearchSelect --------------------------- */
 function SearchSelect({
   value,
   selectedLabel,
@@ -297,7 +354,7 @@ function SearchSelect({
           type="button"
           variant="outline"
           disabled={disabled}
-          className="w-full justify-between overflow-hidden"
+          className="h-10 w-full justify-between overflow-hidden bg-white"
         >
           <span className="truncate">{selectedLabel || placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -411,7 +468,7 @@ function InvoicePicker({
           type="button"
           variant="outline"
           disabled={!dealerId}
-          className="w-full justify-between"
+          className="h-10 w-full justify-between bg-white"
         >
           <span className="truncate">
             {selectedIds.length
@@ -452,26 +509,28 @@ function InvoicePicker({
                     className={blocked ? "opacity-50" : ""}
                   >
                     <div className="mr-2 flex h-5 w-5 items-center justify-center">
-                      {selected ? <Check className="h-4 w-4" /> : null}
+                      {selected ? (
+                        <Check className="h-4 w-4 text-[#3aa838]" />
+                      ) : null}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium">
                           {invoice.label}
                         </span>
-                        {selected ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        {selected && (
+                          <span className="rounded-full bg-[#3aa838]/10 px-2 py-0.5 text-[10px] font-semibold text-[#2f8a2f]">
                             Added
                           </span>
-                        ) : null}
-                        {fullyPaid ? (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        )}
+                        {fullyPaid && (
+                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
                             Fully paid
                           </span>
-                        ) : null}
+                        )}
                         {invoice.orderStatus !== "DELIVERED" && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                            Order not delivered
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                            Not delivered
                           </span>
                         )}
                       </div>
@@ -523,7 +582,7 @@ function ProductPicker({
           type="button"
           variant="outline"
           disabled={disabled}
-          className="w-full justify-between overflow-hidden"
+          className="h-10 w-full justify-between overflow-hidden bg-white"
         >
           <span className="truncate">
             {selected?.productName || "Select product"}
@@ -564,7 +623,7 @@ function ProductPicker({
                   >
                     <Check
                       className={`mr-2 h-4 w-4 ${
-                        selectedProduct ? "opacity-100" : "opacity-0"
+                        selectedProduct ? "opacity-100 text-[#3aa838]" : "opacity-0"
                       }`}
                     />
                     <div className="min-w-0 flex-1">
@@ -572,11 +631,11 @@ function ProductPicker({
                         <span className="truncate font-medium">
                           {opt.productName}
                         </span>
-                        {blocked ? (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        {blocked && (
+                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
                             Not available
                           </span>
-                        ) : null}
+                        )}
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
                         Invoice qty: {opt.invoiceQty} · Returned:{" "}
@@ -594,7 +653,7 @@ function ProductPicker({
   );
 }
 
-/* ===================== Main Page Component ===================== */
+/* ===================== Main Page ===================== */
 export default function SalesReturnCreatePage() {
   const router = useRouter();
 
@@ -607,12 +666,9 @@ export default function SalesReturnCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [createdReturn, setCreatedReturn] = useState<any>(null);
 
-  // Cached returnable quantities per invoice
+  // 🆕 Invoice-level + product-level returnable info
   const [returnableMap, setReturnableMap] = useState<
-    Map<
-      string,
-      Map<string, { alreadyReturnedQty: number; remainingQty: number }>
-    >
+    Map<string, InvoiceReturnableInfo>
   >(new Map());
 
   const selectedInvoiceIds = useMemo(
@@ -633,13 +689,14 @@ export default function SalesReturnCreatePage() {
     return (res.data?.data || []).map((d: any) => ({
       value: String(d._id || d.id),
       label: d.name || d.proprietor || String(d._id || d.id),
-      description: `${d.phoneNumber || d.phone || ""}${d.status ? ` · ${d.status}` : ""}`,
+      description: `${d.phoneNumber || d.phone || ""}${
+        d.status ? ` · ${d.status}` : ""
+      }`,
       status: d.status,
       dealerType: d.type,
     })) as DealerOption[];
   }, []);
 
-  // Load invoices for a dealer, populate product names, and fetch returnable quantities
   const loadInvoicesForDealer = useCallback(async (dealerId: string) => {
     if (!dealerId) return [];
 
@@ -659,17 +716,13 @@ export default function SalesReturnCreatePage() {
 
     setInvoiceOptions(list);
 
-    // Fetch real returnable quantities for each invoice
-    const map = new Map<
-      string,
-      Map<string, { alreadyReturnedQty: number; remainingQty: number }>
-    >();
+    const map = new Map<string, InvoiceReturnableInfo>();
     for (const inv of list) {
       try {
-        const qtyMap = await fetchReturnableQuantities(inv.value);
-        map.set(inv.value, qtyMap);
+        const info = await fetchReturnableQuantities(inv.value);
+        if (info) map.set(inv.value, info);
       } catch {
-        // ignore errors; keep empty
+        // ignore errors
       }
     }
     setReturnableMap(map);
@@ -694,7 +747,6 @@ export default function SalesReturnCreatePage() {
       .finally(() => setLoadingInvoices(false));
   }, [dealer?.value, loadInvoicesForDealer]);
 
-  // Toggle invoice selection – also ensure returnable quantities are loaded
   const toggleInvoice = useCallback(
     (invoice: InvoiceOption) => {
       setSections((current) => {
@@ -706,14 +758,15 @@ export default function SalesReturnCreatePage() {
           toast.error("Fully paid invoices cannot be returned.");
           return current;
         }
-        // If returnable quantities for this invoice not yet loaded, fetch now
         if (!returnableMap.has(invoice.value)) {
-          fetchReturnableQuantities(invoice.value).then((qtyMap) => {
-            setReturnableMap((prev) => {
-              const next = new Map(prev);
-              next.set(invoice.value, qtyMap);
-              return next;
-            });
+          fetchReturnableQuantities(invoice.value).then((info) => {
+            if (info) {
+              setReturnableMap((prev) => {
+                const next = new Map(prev);
+                next.set(invoice.value, info);
+                return next;
+              });
+            }
           });
         }
         return [
@@ -817,11 +870,12 @@ export default function SalesReturnCreatePage() {
           toast.error("This product is already used in this invoice.");
           return section;
         }
-        // Get real returnable quantities from returnableMap
-        const qtyMap = returnableMap.get(invoiceId);
-        const info = qtyMap?.get(option.productId);
-        const realAlreadyReturned = info?.alreadyReturnedQty ?? option.alreadyReturnedQty;
-        const realRemaining = info?.remainingQty ?? option.maxReturnQty;
+
+        const returnInfo = returnableMap.get(invoiceId);
+        const itemInfo = returnInfo?.itemMap.get(option.productId);
+        const realAlreadyReturned =
+          itemInfo?.alreadyReturnedQty ?? option.alreadyReturnedQty;
+        const realRemaining = itemInfo?.remainingQty ?? option.maxReturnQty;
 
         return {
           ...section,
@@ -850,14 +904,13 @@ export default function SalesReturnCreatePage() {
     [returnableMap, updateSection],
   );
 
-  // Get remaining returnable qty for the whole invoice
   const getInvoiceRemainingQty = useCallback(
     (section: ReturnInvoiceSection) => {
-      const qtyMap = returnableMap.get(section.invoiceId);
-      if (!qtyMap) return 0;
+      const info = returnableMap.get(section.invoiceId);
+      if (!info) return 0;
       let remaining = 0;
-      for (const [, info] of qtyMap) {
-        remaining += info.remainingQty;
+      for (const [, item] of info.itemMap) {
+        remaining += item.remainingQty;
       }
       const usedBySection = section.rows.reduce(
         (sum, row) => sum + toNumber(row.returnQty, 0),
@@ -868,23 +921,34 @@ export default function SalesReturnCreatePage() {
     [returnableMap],
   );
 
-  // Effective max for a single row, considering other rows in the same section
   const getEffectiveMaxForRow = useCallback(
     (section: ReturnInvoiceSection, row: ReturnRow) => {
       if (!row.productId) return 0;
-      const qtyMap = returnableMap.get(section.invoiceId);
-      if (!qtyMap) return 0;
-      const info = qtyMap.get(row.productId);
+      const info = returnableMap.get(section.invoiceId);
       if (!info) return 0;
+      const item = info.itemMap.get(row.productId);
+      if (!item) return 0;
       const otherRowsQty = section.rows
         .filter((r) => r.id !== row.id && r.productId === row.productId)
         .reduce((sum, r) => sum + toNumber(r.returnQty, 0), 0);
-      return Math.max(0, info.remainingQty - otherRowsQty);
+      return Math.max(0, item.remainingQty - otherRowsQty);
     },
     [returnableMap],
   );
 
-  // 🆕 Build product options with real quantities from returnableMap
+  // 🆕 Invoice-level amount helpers
+  const getInvoiceAlreadyReturnedAmount = useCallback(
+    (invoiceId: string) =>
+      returnableMap.get(invoiceId)?.alreadyReturnedAmount || 0,
+    [returnableMap],
+  );
+
+  const getInvoiceRemainingReturnableAmount = useCallback(
+    (invoiceId: string) =>
+      returnableMap.get(invoiceId)?.remainingReturnableAmount || 0,
+    [returnableMap],
+  );
+
   const availableProductOptions = useCallback(
     (section: ReturnInvoiceSection, currentRowId: string) => {
       const invoice = selectedInvoiceMap.get(section.invoiceId);
@@ -896,26 +960,25 @@ export default function SalesReturnCreatePage() {
           .map((row) => row.productId),
       );
 
-      const qtyMap = returnableMap.get(section.invoiceId);
+      const info = returnableMap.get(section.invoiceId);
 
       return invoice.items.map((item) => {
-        const realInfo = qtyMap?.get(item.productId);
-        const alreadyReturned = realInfo?.alreadyReturnedQty ?? item.alreadyReturnedQty;
+        const realInfo = info?.itemMap.get(item.productId);
+        const alreadyReturned =
+          realInfo?.alreadyReturnedQty ?? item.alreadyReturnedQty;
         const remaining = realInfo?.remainingQty ?? item.maxReturnQty;
 
         return {
           ...item,
           alreadyReturnedQty: alreadyReturned,
           maxReturnQty: remaining,
-          blocked:
-            usedProductIds.has(item.productId) || remaining <= 0,
+          blocked: usedProductIds.has(item.productId) || remaining <= 0,
         };
       });
     },
     [selectedInvoiceMap, returnableMap],
   );
 
-  // Compute card summaries
   const invoiceCards = useMemo(() => {
     return sections.map((section) => {
       const invoice = selectedInvoiceMap.get(section.invoiceId);
@@ -930,9 +993,30 @@ export default function SalesReturnCreatePage() {
         (sum, row) => sum + toNumber(row.returnQty, 0),
         0,
       );
-      return { section, invoice, returnAmount, returnQty };
+      const alreadyReturned = getInvoiceAlreadyReturnedAmount(
+        section.invoiceId,
+      );
+      const remainingReturnable = getInvoiceRemainingReturnableAmount(
+        section.invoiceId,
+      );
+      const overLimit = returnAmount > remainingReturnable + 0.0001;
+
+      return {
+        section,
+        invoice,
+        returnAmount,
+        returnQty,
+        alreadyReturned,
+        remainingReturnable,
+        overLimit,
+      };
     });
-  }, [sections, selectedInvoiceMap]);
+  }, [
+    sections,
+    selectedInvoiceMap,
+    getInvoiceAlreadyReturnedAmount,
+    getInvoiceRemainingReturnableAmount,
+  ]);
 
   const grandReturnAmount = useMemo(
     () =>
@@ -947,6 +1031,18 @@ export default function SalesReturnCreatePage() {
     () =>
       invoiceCards.reduce((sum, item) => sum + Number(item.returnQty || 0), 0),
     [invoiceCards],
+  );
+
+  const totalSelectedProducts = useMemo(
+    () =>
+      sections.reduce(
+        (sum, s) =>
+          sum +
+          s.rows.filter((r) => r.productId && toNumber(r.returnQty, 0) > 0)
+            .length,
+        0,
+      ),
+    [sections],
   );
 
   const validateBeforeSubmit = () => {
@@ -969,9 +1065,10 @@ export default function SalesReturnCreatePage() {
         toast.error(`Invoice ${section.invoiceNo} could not be loaded.`);
         return false;
       }
-      if (Number(invoice.balanceAmount || 0) <= 0) {
+      const remainingReturnable = card.remainingReturnable;
+      if (remainingReturnable <= 0) {
         toast.error(
-          `Invoice ${invoice.invoiceNo} is fully paid and cannot be returned.`,
+          `Invoice ${invoice.invoiceNo} has no remaining returnable amount.`,
         );
         return false;
       }
@@ -984,14 +1081,15 @@ export default function SalesReturnCreatePage() {
         );
         return false;
       }
-      const invoiceBalance = Number(invoice.balanceAmount || 0);
       const invoiceReturnAmount = validRows.reduce(
         (sum, row) => sum + calcRowAmount(row),
         0,
       );
-      if (invoiceReturnAmount > invoiceBalance + 0.0001) {
+      if (invoiceReturnAmount > remainingReturnable + 0.0001) {
         toast.error(
-          `Invoice ${invoice.invoiceNo}: return amount cannot exceed remaining balance.`,
+          `Invoice ${invoice.invoiceNo}: return amount ৳${money(
+            invoiceReturnAmount,
+          )} exceeds remaining returnable ৳${money(remainingReturnable)}.`,
         );
         return false;
       }
@@ -1092,81 +1190,133 @@ export default function SalesReturnCreatePage() {
 
   const selectedDealerLabel = dealer?.label || "Select dealer";
 
+  const canSubmit =
+    !submitting &&
+    !!dealer?.value &&
+    sections.length > 0 &&
+    grandReturnQty > 0 &&
+    !invoiceCards.some((c) => c.overLimit);
+
+  /* ------------------- Render ------------------- */
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold">Create Sales Return</h1>
-              <p className="text-sm text-muted-foreground">
-                Select a dealer, choose invoices once, then pick only the
-                invoice products you want to return.
-              </p>
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ============ HERO ============ */}
+        <div className="relative mb-3 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1a4d1a] p-5 text-white shadow-lg">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(58,168,56,0.25),transparent_55%)]" />
+          <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#3aa838]/25 ring-1 ring-[#3aa838]/40">
+                <Undo2 className="h-5 w-5 text-[#7cd67a]" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold tracking-tight">
+                  Create Sales Return
+                </h1>
+                <p className="text-xs text-white/70">
+                  Select a dealer, pick invoices, return only remaining amounts.
+                </p>
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 text-sm">
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Dealer:{" "}
-                <span className="font-medium">{selectedDealerLabel}</span>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Dealer
+                </div>
+                <div className="max-w-[180px] truncate font-semibold">
+                  {selectedDealerLabel}
+                </div>
               </div>
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Invoices: <span className="font-medium">{sections.length}</span>
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Invoices
+                </div>
+                <div className="font-semibold tabular-nums">
+                  {sections.length}
+                </div>
               </div>
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Qty: <span className="font-medium">{grandReturnQty}</span>
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15">
+                <div className="text-[10px] uppercase tracking-wide text-white/60">
+                  Qty
+                </div>
+                <div className="font-semibold tabular-nums">
+                  {grandReturnQty}
+                </div>
               </div>
-              <div className="rounded-md border bg-slate-50 px-3 py-2">
-                Amount:{" "}
-                <span className="font-medium">
-                  {money(grandReturnAmount)} BDT
-                </span>
+              <div className="rounded-lg bg-[#3aa838] px-3 py-2 shadow-md shadow-black/40">
+                <div className="text-[10px] uppercase tracking-wide text-[#c6e8c5]">
+                  Amount
+                </div>
+                <div className="font-semibold tabular-nums">
+                  ৳ {money(grandReturnAmount)}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
+        {/* ============ SUCCESS CARD ============ */}
         {createdReturn ? (
-          <Card className="mb-6 border-emerald-200 bg-emerald-50/70">
-            <CardContent className="flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-sm font-medium text-emerald-700">
-                  Sales return created successfully
+          <Card className="mb-3 border-[#3aa838]/30 bg-gradient-to-r from-[#3aa838]/10 to-white shadow-md">
+            <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#3aa838] text-white shadow-lg shadow-[#3aa838]/30">
+                  <CheckCircle2 className="h-5 w-5" />
                 </div>
-                <div className="mt-1 text-xl font-semibold">
-                  {createdReturn.returnNo ||
-                    createdReturn?.data?.returnNo ||
-                    "Saved"}
-                </div>
-                <div className="text-sm text-emerald-700">
-                  Status: {createdReturn.status || "PENDING"}
+                <div>
+                  <div className="text-xs font-medium text-[#2f8a2f]">
+                    Sales return created successfully
+                  </div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {createdReturn.returnNo ||
+                      createdReturn?.data?.returnNo ||
+                      "Saved"}
+                  </div>
+                  <div className="text-[11px] text-[#2f8a2f]">
+                    Status: {createdReturn.status || "PENDING"}
+                  </div>
                 </div>
               </div>
-
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={resetPage}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetPage}
+                  className="h-9"
+                >
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                   Create another
                 </Button>
                 <Button
                   type="button"
                   onClick={() => router.push("/sales/return")}
+                  className="h-9 bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                 >
                   Go to list
+                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                 </Button>
               </div>
             </CardContent>
           </Card>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="space-y-6">
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Return basics</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Dealer</div>
+        {/* ============ MAIN GRID ============ */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* -------- LEFT COLUMN -------- */}
+          <div className="space-y-4">
+            {/* Return basics */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Building2}
+                title="Return basics"
+                subtitle="Dealer, return date, and invoices to return"
+              />
+              <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-600">
+                    Dealer
+                  </label>
                   <SearchSelect
                     value={dealer?.value}
                     selectedLabel={dealer?.label}
@@ -1176,25 +1326,29 @@ export default function SalesReturnCreatePage() {
                     searchPlaceholder="Type dealer name / phone..."
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Return date</div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
+                    <Calendar className="h-3 w-3" />
+                    Return date
+                  </label>
                   <Input
                     type="date"
                     value={returnDate}
                     onChange={(e) => setReturnDate(e.target.value)}
+                    className="h-10"
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Invoices</div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-600">
+                    Invoices
+                  </label>
                   <InvoicePicker
                     dealerId={dealer?.value}
                     selectedIds={selectedInvoiceIds}
                     onToggle={toggleInvoice}
                   />
-                  <div className="text-xs text-muted-foreground">
-                    Fully paid invoices and undelivered orders are blocked.
+                  <div className="text-[11px] text-muted-foreground">
+                    Fully paid and undelivered invoices are blocked.
                   </div>
                 </div>
               </CardContent>
@@ -1202,339 +1356,431 @@ export default function SalesReturnCreatePage() {
 
             {loadingInvoices ? (
               <Card className="border-slate-200 shadow-sm">
-                <CardContent className="flex items-center gap-2 p-5 text-sm text-muted-foreground">
+                <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading invoices...
                 </CardContent>
               </Card>
             ) : null}
 
-            {selectedInvoiceIds.length === 0 ? (
-              <Card className="border-dashed border-slate-300 bg-white/70 shadow-sm">
+            {selectedInvoiceIds.length === 0 && !loadingInvoices ? (
+              <Card className="overflow-hidden border-dashed border-slate-300 bg-white shadow-sm">
                 <CardContent className="flex flex-col items-center justify-center gap-3 p-10 text-center">
                   <div className="rounded-full bg-slate-100 p-3">
                     <Search className="h-5 w-5 text-slate-500" />
                   </div>
                   <div>
-                    <div className="text-base font-semibold">
+                    <div className="text-sm font-semibold text-slate-900">
                       No invoices selected
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Pick one or more invoices to begin the return.
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      Pick one or more delivered invoices to begin the return.
                     </div>
                   </div>
                 </CardContent>
               </Card>
             ) : null}
 
+            {/* Invoice cards */}
             {invoiceCards.map(
-              ({ section, invoice, returnAmount, returnQty }) => {
+              ({
+                section,
+                invoice,
+                returnAmount,
+                alreadyReturned,
+                remainingReturnable,
+                overLimit,
+              }) => {
                 if (!invoice) return null;
 
                 const fullyPaid = Number(section.balanceAmount || 0) <= 0;
                 const invoiceRemainingQty = getInvoiceRemainingQty(section);
+                const excessAmount = Math.max(
+                  0,
+                  returnAmount - remainingReturnable,
+                );
 
                 return (
                   <Card
                     key={section.invoiceId}
-                    className="border-slate-200 shadow-sm"
+                    className="overflow-hidden border-slate-200 shadow-sm"
                   >
-                    <CardHeader className="space-y-3">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div>
-                          <CardTitle className="flex flex-wrap items-center gap-2">
-                            {section.invoiceNo}
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                              {section.paymentStatus}
-                            </span>
-                            {fullyPaid ? (
-                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                                Fully paid
-                              </span>
-                            ) : (
-                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                                Returnable
-                              </span>
-                            )}
-                          </CardTitle>
-                          <div className="mt-1 text-sm text-muted-foreground">
-                            Order: {section.orderId} · Warehouse:{" "}
-                            {section.warehouseName || section.warehouseId}
-                          </div>
-                        </div>
-
+                    <SectionHeader
+                      icon={FileText}
+                      title={section.invoiceNo}
+                      subtitle={`Order ${section?.orderNo || section.orderId || "—"} · ${section.warehouseName || section.warehouseId || "—"}`}
+                      right={
                         <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => addRow(section.invoiceId)}
-                            disabled={fullyPaid || invoiceRemainingQty <= 0}
+                          <Badge
+                            className={`${
+                              section.paymentStatus === "PAID"
+                                ? "border-[#3aa838]/30 bg-[#3aa838]/10 text-[#2f8a2f]"
+                                : section.paymentStatus === "PARTIAL"
+                                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                                  : "border-rose-200 bg-rose-50 text-rose-700"
+                            } text-[10px] font-semibold`}
                           >
-                            <Plus className="mr-2 h-4 w-4" />
-                            Add item
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => removeInvoice(section.invoiceId)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Remove invoice
-                          </Button>
+                            {section.paymentStatus}
+                          </Badge>
+                          {fullyPaid ? (
+                            <Badge className="border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700">
+                              Fully paid
+                            </Badge>
+                          ) : (
+                            <Badge className="border-[#3aa838]/30 bg-[#3aa838]/10 text-[10px] font-semibold text-[#2f8a2f]">
+                              Returnable
+                            </Badge>
+                          )}
                         </div>
-                      </div>
+                      }
+                    />
 
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <div className="rounded-lg border bg-slate-50 p-3">
-                          <div className="text-xs text-muted-foreground">
+                    <CardContent className="space-y-3 p-4">
+                      {/* Metric strip row 1 */}
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                             Invoice total
                           </div>
-                          <div className="text-lg font-semibold">
-                            {money(section.grandTotal)} BDT
+                          <div className="text-sm font-semibold tabular-nums text-slate-900">
+                            ৳ {money(section.grandTotal)}
                           </div>
                         </div>
-                        <div className="rounded-lg border bg-slate-50 p-3">
-                          <div className="text-xs text-muted-foreground">
-                            Paid amount
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Paid
                           </div>
-                          <div className="text-lg font-semibold">
-                            {money(section.paidAmount)} BDT
+                          <div className="text-sm font-semibold tabular-nums text-[#2f8a2f]">
+                            ৳ {money(section.paidAmount)}
                           </div>
                         </div>
-                        <div className="rounded-lg border bg-slate-50 p-3">
-                          <div className="text-xs text-muted-foreground">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                             Balance
                           </div>
-                          <div
-                            className={`text-lg font-semibold ${
-                              Number(section.balanceAmount || 0) <= 0
-                                ? "text-red-600"
-                                : "text-emerald-600"
-                            }`}
-                          >
-                            {money(section.balanceAmount)} BDT
-                          </div>
-                        </div>
-                        <div className="rounded-lg border bg-slate-50 p-3">
-                          <div className="text-xs text-muted-foreground">
-                            Current return amount
-                          </div>
-                          <div className="text-lg font-semibold">
-                            {money(returnAmount)} BDT
+                          <div className="text-sm font-semibold tabular-nums text-amber-700">
+                            ৳ {money(section.balanceAmount)}
                           </div>
                         </div>
                       </div>
 
-                      {fullyPaid ? (
-                        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                          This invoice is fully paid, so it cannot be returned.
+                      {/* 🆕 Already returned / remaining / current */}
+                      <div
+                        className={`grid gap-2 rounded-lg border-2 px-3 py-2 sm:grid-cols-3 ${
+                          overLimit
+                            ? "border-rose-300 bg-rose-50"
+                            : "border-[#3aa838]/30 bg-[#3aa838]/5"
+                        }`}
+                      >
+                        <div>
+                          <div
+                            className={`text-[10px] uppercase tracking-wide ${
+                              overLimit ? "text-rose-700" : "text-[#2f8a2f]"
+                            }`}
+                          >
+                            Already returned
+                          </div>
+                          <div
+                            className={`text-sm font-semibold tabular-nums ${
+                              overLimit ? "text-rose-700" : "text-[#2f8a2f]"
+                            }`}
+                          >
+                            ৳ {money(alreadyReturned)}
+                          </div>
                         </div>
-                      ) : null}
+                        <div>
+                          <div
+                            className={`text-[10px] uppercase tracking-wide ${
+                              overLimit ? "text-rose-700" : "text-[#2f8a2f]"
+                            }`}
+                          >
+                            Remaining returnable
+                          </div>
+                          <div
+                            className={`text-sm font-bold tabular-nums ${
+                              overLimit ? "text-rose-700" : "text-[#2f8a2f]"
+                            }`}
+                          >
+                            ৳ {money(remainingReturnable)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-slate-600">
+                            This return
+                          </div>
+                          <div
+                            className={`text-sm font-semibold tabular-nums ${
+                              overLimit ? "text-rose-700" : "text-slate-900"
+                            }`}
+                          >
+                            ৳ {money(returnAmount)}
+                          </div>
+                        </div>
+                      </div>
 
-                      <div className="rounded-lg border bg-slate-50 p-3 text-sm text-muted-foreground">
-                        Remaining returnable quantity for this invoice:{" "}
-                        <span className="font-semibold text-slate-900">
+                      {overLimit && (
+                        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <div>
+                            This return exceeds the remaining returnable amount
+                            by <b>৳ {money(excessAmount)}</b>. Reduce the
+                            quantities below.
+                          </div>
+                        </div>
+                      )}
+
+                      {fullyPaid && (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">
+                          This invoice is fully paid and cannot be returned.
+                        </div>
+                      )}
+
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                        Remaining returnable qty for this invoice:{" "}
+                        <b className="text-slate-900 tabular-nums">
                           {invoiceRemainingQty}
-                        </span>
+                        </b>
                       </div>
-                    </CardHeader>
 
-                    <CardContent className="space-y-4">
-                      {section.rows.map((row) => {
-                        const options = availableProductOptions(
-                          section,
-                          row.id,
-                        );
-                        const selectedOption = options.find(
-                          (o) => o.productId === row.productId,
-                        );
-                        const effectiveMax = getEffectiveMaxForRow(
-                          section,
-                          row,
-                        );
-                        const rowAmount = calcRowAmount(row);
-                        const overMax =
-                          row.productId &&
-                          toNumber(row.returnQty, 0) > effectiveMax;
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => addRow(section.invoiceId)}
+                          disabled={fullyPaid || invoiceRemainingQty <= 0}
+                          className="h-8"
+                        >
+                          <Plus className="mr-1.5 h-3.5 w-3.5" />
+                          Add item
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeInvoice(section.invoiceId)}
+                          className="h-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        >
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Remove invoice
+                        </Button>
+                      </div>
 
-                        return (
-                          <div
-                            key={row.id}
-                            className={`rounded-xl border bg-white p-4 ${
-                              overMax ? "border-red-300 bg-red-50/30" : ""
-                            }`}
-                          >
-                            <div className="mb-3 flex items-center justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold">
-                                  {row.productName || "Select product"}
+                      {/* Row cards */}
+                      <div className="space-y-3">
+                        {section.rows.map((row) => {
+                          const options = availableProductOptions(
+                            section,
+                            row.id,
+                          );
+                          const selectedOption = options.find(
+                            (o) => o.productId === row.productId,
+                          );
+                          const effectiveMax = getEffectiveMaxForRow(
+                            section,
+                            row,
+                          );
+                          const rowAmount = calcRowAmount(row);
+                          const overMax =
+                            row.productId &&
+                            toNumber(row.returnQty, 0) > effectiveMax;
+
+                          return (
+                            <div
+                              key={row.id}
+                              className={`rounded-xl border-2 bg-white p-3 transition-colors ${
+                                overMax
+                                  ? "border-rose-300 bg-rose-50/30"
+                                  : "border-slate-200 hover:border-[#3aa838]/40"
+                              }`}
+                            >
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">
+                                    {row.productName ? "•" : "+"}
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-semibold text-slate-900">
+                                      {row.productName || "New item"}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      Choose from this invoice only. No
+                                      duplicates.
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="text-xs text-muted-foreground">
-                                  Choose only from this invoice. Same product
-                                  cannot be added twice.
-                                </div>
-                              </div>
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={() =>
-                                  removeRow(section.invoiceId, row.id)
-                                }
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Remove
-                              </Button>
-                            </div>
-
-                            <div className="grid gap-4 md:grid-cols-12">
-                              <div className="space-y-2 md:col-span-5">
-                                <div className="text-sm font-medium">
-                                  Product
-                                </div>
-                                <ProductPicker
-                                  value={row.productId}
-                                  options={options}
-                                  onPick={(opt) =>
-                                    pickProduct(section.invoiceId, row.id, opt)
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    removeRow(section.invoiceId, row.id)
                                   }
-                                  disabled={fullyPaid}
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                  {selectedOption ? (
-                                    <>
-                                      Invoice qty: {selectedOption.invoiceQty} ·
-                                      Returned:{" "}
-                                      {selectedOption.alreadyReturnedQty} ·
-                                      Remaining: {effectiveMax}
-                                    </>
-                                  ) : (
-                                    "Choose a product from this invoice."
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 md:col-span-2">
-                                <div className="text-sm font-medium">
-                                  Invoice qty
-                                </div>
-                                <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-semibold">
-                                  {row.invoiceQty}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  Includes bonus qty.
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 md:col-span-2">
-                                <div className="text-sm font-medium">
-                                  Return qty
-                                </div>
-                                <Input
-                                  inputMode="numeric"
-                                  placeholder="0"
-                                  value={row.returnQty}
-                                  disabled={!row.productId || fullyPaid}
-                                  onChange={(e) => {
-                                    const raw = clampDigitsOnly(e.target.value);
-                                    updateRow(section.invoiceId, row.id, {
-                                      returnQty: raw,
-                                    });
-                                  }}
-                                  onBlur={(e) => {
-                                    const current = toNumber(e.target.value, 0);
-                                    const max = getEffectiveMaxForRow(
-                                      section,
-                                      row,
-                                    );
-                                    const clamped = Math.min(
-                                      Math.max(current, 0),
-                                      max,
-                                    );
-                                    updateRow(section.invoiceId, row.id, {
-                                      returnQty:
-                                        e.target.value === ""
-                                          ? ""
-                                          : String(clamped),
-                                    });
-                                  }}
-                                />
-                                <div
-                                  className={`text-xs ${
-                                    overMax
-                                      ? "text-red-600"
-                                      : "text-muted-foreground"
-                                  }`}
+                                  className="h-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                                 >
-                                  Max allowed: {effectiveMax}
+                                  <Trash2 className="mr-1 h-3 w-3" />
+                                  Remove
+                                </Button>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-12">
+                                <div className="space-y-1.5 md:col-span-5">
+                                  <label className="text-xs font-medium text-slate-600">
+                                    Product
+                                  </label>
+                                  <ProductPicker
+                                    value={row.productId}
+                                    options={options}
+                                    onPick={(opt) =>
+                                      pickProduct(
+                                        section.invoiceId,
+                                        row.id,
+                                        opt,
+                                      )
+                                    }
+                                    disabled={fullyPaid}
+                                  />
+                                  <div className="text-[10px] text-muted-foreground">
+                                    {selectedOption ? (
+                                      <>
+                                        Invoice: {selectedOption.invoiceQty} ·
+                                        Returned:{" "}
+                                        {selectedOption.alreadyReturnedQty} ·
+                                        Remaining: {effectiveMax}
+                                      </>
+                                    ) : (
+                                      "Choose a product from this invoice."
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 md:col-span-2">
+                                  <label className="text-xs font-medium text-slate-600">
+                                    Invoice qty
+                                  </label>
+                                  <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-semibold tabular-nums">
+                                    {row.invoiceQty}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 md:col-span-2">
+                                  <label className="text-xs font-medium text-slate-600">
+                                    Return qty
+                                  </label>
+                                  <Input
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    value={row.returnQty}
+                                    disabled={!row.productId || fullyPaid}
+                                    onChange={(e) => {
+                                      const raw = clampDigitsOnly(
+                                        e.target.value,
+                                      );
+                                      updateRow(section.invoiceId, row.id, {
+                                        returnQty: raw,
+                                      });
+                                    }}
+                                    onBlur={(e) => {
+                                      const current = toNumber(
+                                        e.target.value,
+                                        0,
+                                      );
+                                      const max = getEffectiveMaxForRow(
+                                        section,
+                                        row,
+                                      );
+                                      const clamped = Math.min(
+                                        Math.max(current, 0),
+                                        max,
+                                      );
+                                      updateRow(section.invoiceId, row.id, {
+                                        returnQty:
+                                          e.target.value === ""
+                                            ? ""
+                                            : String(clamped),
+                                      });
+                                    }}
+                                    className={`h-10 text-center font-semibold tabular-nums focus-visible:ring-[#3aa838] ${
+                                      overMax ? "border-rose-300" : ""
+                                    }`}
+                                  />
+                                  <div
+                                    className={`text-[10px] ${
+                                      overMax
+                                        ? "text-rose-600 font-medium"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    Max {effectiveMax}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 md:col-span-2">
+                                  <label className="text-xs font-medium text-slate-600">
+                                    Unit price
+                                  </label>
+                                  <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-semibold tabular-nums">
+                                    ৳ {money(row.unitPrice)}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 md:col-span-1">
+                                  <label className="text-xs font-medium text-slate-600">
+                                    Line
+                                  </label>
+                                  <div className="flex h-10 items-center justify-end rounded-md border border-[#3aa838]/30 bg-[#3aa838]/10 px-3 text-sm font-bold tabular-nums text-[#2f8a2f]">
+                                    ৳ {money(rowAmount)}
+                                  </div>
                                 </div>
                               </div>
 
-                              <div className="space-y-2 md:col-span-2">
-                                <div className="text-sm font-medium">
-                                  Unit price
-                                </div>
-                                <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-semibold">
-                                  {money(row.unitPrice)} BDT
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  Effective unit = line total / invoice units.
-                                </div>
+                              <div className="mt-2">
+                                <label className="text-xs font-medium text-slate-600">
+                                  Reason (optional)
+                                </label>
+                                <textarea
+                                  value={row.reason}
+                                  disabled={fullyPaid}
+                                  onChange={(e) =>
+                                    updateRow(section.invoiceId, row.id, {
+                                      reason: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Damage, expired, wrong item..."
+                                  className="mt-1 min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838]"
+                                />
                               </div>
 
-                              <div className="space-y-2 md:col-span-1">
-                                <div className="text-sm font-medium">Line</div>
-                                <div className="flex h-10 items-center rounded-md border bg-indigo-50 px-3 text-sm font-semibold text-indigo-700">
-                                  {money(rowAmount)} BDT
-                                </div>
+                              <div className="mt-2 flex flex-wrap gap-3 rounded-lg border bg-slate-50 px-2 py-1.5 text-[10px] text-muted-foreground">
+                                <span>
+                                  Already returned: {row.alreadyReturnedQty}
+                                </span>
+                                <span>Remaining: {effectiveMax}</span>
+                                <span>
+                                  Line total: ৳ {money(row.invoiceLineTotal)}
+                                </span>
                               </div>
                             </div>
+                          );
+                        })}
+                      </div>
 
-                            <div className="mt-4">
-                              <div className="text-sm font-medium">Reason</div>
-                              <textarea
-                                value={row.reason}
-                                disabled={fullyPaid}
-                                onChange={(e) =>
-                                  updateRow(section.invoiceId, row.id, {
-                                    reason: e.target.value,
-                                  })
-                                }
-                                placeholder="Optional reason for this returned item..."
-                                className="mt-2 min-h-[88px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
-                              />
-                            </div>
-
-                            <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
-                              <div>
-                                Already returned: {row.alreadyReturnedQty}
-                              </div>
-                              <div>Remaining: {effectiveMax}</div>
-                              <div>
-                                Invoice line total:{" "}
-                                {money(row.invoiceLineTotal)}
-                              </div>
-                              <div>Warehouse: {row.warehouseId}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
-                        <div className="text-sm text-muted-foreground">
-                          Add another item only when the invoice still has
+                      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                        <div>
+                          Add another item only if this invoice still has
                           unused products.
                         </div>
                         <Button
                           type="button"
                           variant="outline"
+                          size="sm"
                           onClick={() => addRow(section.invoiceId)}
                           disabled={fullyPaid || invoiceRemainingQty <= 0}
+                          className="h-8"
                         >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add another product
+                          <Plus className="mr-1.5 h-3.5 w-3.5" />
+                          Add product
                         </Button>
                       </div>
                     </CardContent>
@@ -1544,119 +1790,105 @@ export default function SalesReturnCreatePage() {
             )}
           </div>
 
-          <div className="space-y-6 lg:sticky lg:top-6 h-fit">
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">
+          {/* -------- RIGHT COLUMN -------- */}
+          <div className="h-fit space-y-4 lg:sticky lg:top-4">
+            {/* Summary */}
+            <Card className="overflow-hidden border-slate-200 shadow-md">
+              <SectionHeader icon={Wallet} title="Summary" />
+              <CardContent className="space-y-3 p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-slate-100 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       Invoices
                     </div>
-                    <div className="text-xl font-semibold">
+                    <div className="text-lg font-bold tabular-nums">
                       {sections.length}
                     </div>
                   </div>
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">
+                  <div className="rounded-lg bg-[#3aa838]/10 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-[#2f8a2f]">
                       Products
                     </div>
-                    <div className="text-xl font-semibold">
-                      {sections.reduce(
-                        (sum, s) =>
-                          sum +
-                          s.rows.filter(
-                            (r) => r.productId && toNumber(r.returnQty, 0) > 0,
-                          ).length,
-                        0,
-                      )}
+                    <div className="text-lg font-bold tabular-nums text-[#2f8a2f]">
+                      {totalSelectedProducts}
                     </div>
                   </div>
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">Qty</div>
-                    <div className="text-xl font-semibold">
+                  <div className="rounded-lg bg-slate-100 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Qty
+                    </div>
+                    <div className="text-lg font-bold tabular-nums">
                       {grandReturnQty}
                     </div>
                   </div>
-                  <div className="rounded-md bg-slate-100 p-3">
-                    <div className="text-xs text-muted-foreground">Amount</div>
-                    <div className="text-xl font-semibold">
-                      {money(grandReturnAmount)}
+                  <div className="rounded-lg bg-[#3aa838]/10 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-[#2f8a2f]">
+                      Amount
+                    </div>
+                    <div className="text-lg font-bold tabular-nums text-[#2f8a2f]">
+                      ৳ {money(grandReturnAmount)}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-3 rounded-md border bg-slate-50 p-4">
+                <div className="space-y-2 rounded-lg border bg-slate-50 p-3 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Dealer
-                    </span>
-                    <span className="font-semibold">
+                    <span className="text-muted-foreground">Dealer</span>
+                    <span className="max-w-[180px] truncate font-semibold">
                       {dealer?.label || "-"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      Return date
-                    </span>
+                    <span className="text-muted-foreground">Return date</span>
                     <span className="font-semibold">{returnDate || "-"}</span>
                   </div>
-                  <div className="flex items-center justify-between border-t pt-3">
-                    <span className="text-base font-semibold">
-                      Grand return amount
-                    </span>
-                    <span className="text-lg font-bold text-indigo-700">
-                      {money(grandReturnAmount)} BDT
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                    <span className="font-semibold">Grand return</span>
+                    <span className="text-lg font-extrabold tabular-nums text-[#2f8a2f]">
+                      ৳ {money(grandReturnAmount)}
                     </span>
                   </div>
                 </div>
 
-                <div className="rounded-md border p-4">
-                  <div className="text-sm font-semibold">Rules</div>
-                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    <div>Only invoice products can be returned.</div>
-                    <div>Fully paid invoices are blocked.</div>
-                    <div>Only orders that have been delivered are shown.</div>
-                    <div>
-                      Same product cannot be added twice in the same invoice.
-                    </div>
-                    <div>Return qty cannot exceed the remaining qty.</div>
-                    <div>Return amount cannot exceed invoice balance.</div>
-                    <div>
-                      Bonus units are included in the returnable quantity.
-                    </div>
+                {invoiceCards.some((c) => c.overLimit) && (
+                  <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Some invoices exceed the remaining returnable amount. Fix
+                    them before submitting.
                   </div>
-                </div>
+                )}
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Notes</div>
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-slate-600">
+                    Notes
+                  </div>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    rows={4}
-                    placeholder="Reason, damaged items, transport notes, negotiation remarks..."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
+                    rows={3}
+                    placeholder="Reason, damaged items, transport notes..."
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838]"
                   />
                 </div>
 
                 <div className="flex gap-2">
                   <Button
                     type="button"
-                    className="flex-1"
-                    disabled={submitting || !dealer?.value || !sections.length}
+                    className="h-10 flex-1 bg-[#3aa838] text-white hover:bg-[#2f8a2f] disabled:opacity-50"
+                    disabled={!canSubmit}
                     onClick={submit}
                   >
                     {submitting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-1.5 h-4 w-4" />
+                    )}
                     {submitting ? "Submitting..." : "Create return"}
                   </Button>
-
                   <Button
                     type="button"
                     variant="outline"
+                    className="h-10"
                     onClick={() => {
                       setSections((current) =>
                         current.map((section) => ({
@@ -1670,6 +1902,7 @@ export default function SalesReturnCreatePage() {
                       );
                     }}
                     disabled={!sections.length}
+                    title="Clear quantities"
                   >
                     <RefreshCw className="h-4 w-4" />
                   </Button>
@@ -1679,24 +1912,49 @@ export default function SalesReturnCreatePage() {
                   type="button"
                   variant="ghost"
                   onClick={resetPage}
-                  className="w-full"
+                  className="w-full text-xs text-slate-500"
                 >
                   Reset form
                 </Button>
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Workflow</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <div>1. Pick dealer.</div>
-                <div>2. Select one or more invoices (delivered only).</div>
-                <div>3. Add product rows for each invoice.</div>
-                <div>4. Choose products manually from the invoice only.</div>
-                <div>5. Enter return quantity and reason.</div>
-                <div>6. Submit for approvals.</div>
+            {/* Rules */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Package}
+                title="Rules"
+                subtitle="What the backend will enforce"
+              />
+              <CardContent className="space-y-2 p-4 text-xs text-muted-foreground">
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Only invoice products can be returned.
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Fully paid invoices are blocked.
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Only delivered orders appear in the picker.
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Same product cannot be added twice per invoice.
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Return qty ≤ remaining returnable qty.
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Return amount ≤ balance − already returned.
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[#3aa838]" />
+                  Bonus units are included in the returnable qty.
+                </div>
               </CardContent>
             </Card>
           </div>

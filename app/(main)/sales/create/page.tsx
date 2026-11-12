@@ -283,8 +283,7 @@ function SectionHeader({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
       <div className="flex items-center gap-3">
-        {/* 🟢 emerald accent */}
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3aa838]/10 text-[#3aa838]">
           <Icon className="h-4 w-4" />
         </div>
         <div>
@@ -310,7 +309,7 @@ function StatPill({
 }) {
   const map = {
     slate: "bg-slate-100 text-slate-700",
-    emerald: "bg-emerald-50 text-emerald-700",
+    emerald: "bg-[#3aa838]/10 text-[#2f8a2f]",
     black: "bg-slate-900 text-white",
     amber: "bg-amber-50 text-amber-700",
   } as const;
@@ -868,13 +867,13 @@ export default function SalesOrderCreatePage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        {/* ---------- Hero header (black → green) ---------- */}
-        <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-800 p-6 text-white shadow-lg">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.25),transparent_55%)]" />
+        {/* ---------- Hero header ---------- */}
+        <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1a4d1a] p-6 text-white shadow-lg">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(58,168,56,0.25),transparent_55%)]" />
           <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/25 backdrop-blur-sm ring-1 ring-emerald-400/40">
-                <ShoppingCart className="h-6 w-6 text-emerald-300" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#3aa838]/25 backdrop-blur-sm ring-1 ring-[#3aa838]/40">
+                <ShoppingCart className="h-6 w-6 text-[#7cd67a]" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight">
@@ -899,8 +898,8 @@ export default function SalesOrderCreatePage() {
                 </div>
                 <div className="font-semibold">{selectedWarehouseLabel}</div>
               </div>
-              <div className="rounded-lg bg-emerald-500 px-3 py-2 shadow-md shadow-emerald-900/30">
-                <div className="text-[10px] uppercase tracking-wide text-emerald-100">
+              <div className="rounded-lg bg-[#3aa838] px-3 py-2 shadow-md shadow-black/40">
+                <div className="text-[10px] uppercase tracking-wide text-[#c6e8c5]">
                   Total
                 </div>
                 <div className="font-semibold tabular-nums">
@@ -913,14 +912,14 @@ export default function SalesOrderCreatePage() {
 
         {/* ---------- Success card ---------- */}
         {createdOrder ? (
-          <Card className="mb-6 border-emerald-200 bg-gradient-to-r from-emerald-50 to-white shadow-md">
+          <Card className="mb-6 border-[#3aa838]/30 bg-gradient-to-r from-[#3aa838]/10 to-white shadow-md">
             <CardContent className="flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-200">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#3aa838] text-white shadow-lg shadow-[#3aa838]/30">
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-emerald-700">
+                  <div className="text-sm font-medium text-[#2f8a2f]">
                     Order created successfully
                   </div>
                   <div className="mt-0.5 text-xl font-bold tabular-nums">
@@ -928,7 +927,7 @@ export default function SalesOrderCreatePage() {
                       createdOrder?.data?.orderNo ||
                       "Saved"}
                   </div>
-                  <div className="text-xs text-emerald-700">
+                  <div className="text-xs text-[#2f8a2f]">
                     Status: {createdOrder.status || "PENDING_AM"}
                   </div>
                 </div>
@@ -942,7 +941,7 @@ export default function SalesOrderCreatePage() {
                 <Button
                   type="button"
                   onClick={() => router.push("/sales/list")}
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className="bg-[#3aa838] hover:bg-[#2f8a2f]"
                 >
                   Go to list
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -1017,7 +1016,7 @@ export default function SalesOrderCreatePage() {
                   </label>
                   <select
                     {...register("paymentMethod")}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838]"
                   >
                     <option value="CASH">Cash</option>
                     <option value="CREDIT">Credit</option>
@@ -1072,7 +1071,7 @@ export default function SalesOrderCreatePage() {
                       className={`rounded-xl border-2 bg-white p-4 transition-colors ${
                         lowStock
                           ? "border-rose-300 bg-rose-50/40"
-                          : "border-slate-200 hover:border-emerald-300"
+                          : "border-slate-200 hover:border-[#3aa838]/50"
                       }`}
                     >
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1085,7 +1084,7 @@ export default function SalesOrderCreatePage() {
                               {row.productName || "New item"}
                             </div>
                             {row.promoAppliedId ? (
-                              <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                              <div className="flex items-center gap-1 text-[11px] font-medium text-[#3aa838]">
                                 <Sparkles className="h-3 w-3" />
                                 Promotion applied
                               </div>
@@ -1186,7 +1185,7 @@ export default function SalesOrderCreatePage() {
                             className={`flex items-center gap-1 text-[11px] font-medium ${
                               lowStock
                                 ? "text-rose-600"
-                                : "text-emerald-600"
+                                : "text-[#3aa838]"
                             }`}
                           >
                             {lowStock ? (
@@ -1207,7 +1206,7 @@ export default function SalesOrderCreatePage() {
                           <label className="text-xs font-medium text-slate-600">
                             Bonus
                           </label>
-                          <div className="flex h-10 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-2 text-sm font-semibold tabular-nums text-emerald-700">
+                          <div className="flex h-10 items-center justify-center rounded-md border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 text-sm font-semibold tabular-nums text-[#2f8a2f]">
                             {Number(row.bonusQty || 0)}
                           </div>
                         </div>
@@ -1234,7 +1233,7 @@ export default function SalesOrderCreatePage() {
                           <label className="text-xs font-medium text-slate-600">
                             Line total
                           </label>
-                          <div className="flex h-10 items-center justify-end rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-bold tabular-nums text-emerald-700">
+                          <div className="flex h-10 items-center justify-end rounded-md border border-[#3aa838]/30 bg-[#3aa838]/10 px-3 text-sm font-bold tabular-nums text-[#2f8a2f]">
                             ৳ {money(line.lineTotal)}
                           </div>
                         </div>
@@ -1299,7 +1298,7 @@ export default function SalesOrderCreatePage() {
                 <textarea
                   {...register("notes")}
                   rows={4}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838]"
                   placeholder="Anything the team should know about this order..."
                 />
               </CardContent>
@@ -1362,7 +1361,7 @@ export default function SalesOrderCreatePage() {
                   </div>
                   <div className="mt-1 flex items-center justify-between border-t pt-3">
                     <span className="text-sm font-semibold">Grand total</span>
-                    <span className="text-xl font-extrabold tabular-nums text-emerald-700">
+                    <span className="text-xl font-extrabold tabular-nums text-[#2f8a2f]">
                       ৳ {money(totals.grandTotal)}
                     </span>
                   </div>
@@ -1414,7 +1413,7 @@ export default function SalesOrderCreatePage() {
                         <span className="text-muted-foreground">Available</span>
                         <span
                           className={`font-bold tabular-nums ${
-                            willExceed ? "text-rose-600" : "text-emerald-600"
+                            willExceed ? "text-rose-600" : "text-[#3aa838]"
                           }`}
                         >
                           ৳ {money(creditSummary.available)}
@@ -1424,7 +1423,7 @@ export default function SalesOrderCreatePage() {
                       <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200">
                         <div
                           className={`h-full rounded-full transition-all ${
-                            willExceed ? "bg-rose-500" : "bg-emerald-500"
+                            willExceed ? "bg-rose-500" : "bg-[#3aa838]"
                           }`}
                           style={{ width: `${usage}%` }}
                         />
@@ -1459,7 +1458,7 @@ export default function SalesOrderCreatePage() {
                   <Button
                     type="submit"
                     disabled={!canSubmit}
-                    className="h-11 flex-1 bg-emerald-600 text-base font-semibold shadow-md shadow-emerald-200 hover:bg-emerald-700 disabled:opacity-50"
+                    className="h-11 flex-1 bg-[#3aa838] text-base font-semibold shadow-md shadow-[#3aa838]/30 hover:bg-[#2f8a2f] disabled:opacity-50"
                   >
                     {saving ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1504,7 +1503,7 @@ export default function SalesOrderCreatePage() {
                   "Submit for approvals.",
                 ].map((text, i) => (
                   <div key={i} className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#3aa838]/15 text-[10px] font-bold text-[#2f8a2f]">
                       {i + 1}
                     </span>
                     {text}

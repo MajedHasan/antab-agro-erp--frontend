@@ -14,6 +14,10 @@ import {
   ArrowUpRight,
   RotateCcw,
   Wallet,
+  Filter as FilterIcon,
+  CalendarRange,
+  X,
+  RefreshCw,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -39,6 +43,13 @@ type DealerOption = { value: string; label: string; description?: string };
 type CommissionDirection = "ADD" | "DEDUCT";
 type CommissionCalcMode = "PERCENT" | "FLAT" | "NONE";
 type FilterType = "ALL" | "SALE" | "PAYMENT" | "RETURN";
+type DatePreset =
+  | "this_week"
+  | "last_week"
+  | "this_month"
+  | "last_3_months"
+  | "this_year"
+  | "";
 
 type LedgerEntry = {
   id: string;
@@ -108,13 +119,58 @@ const formatDate = (v?: string | Date) => {
   });
 };
 
+function getPresetRange(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  switch (preset) {
+    case "this_week": {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - diff);
+      return { from: fmt(monday), to: fmt(now) };
+    }
+    case "last_week": {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - diff - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      return { from: fmt(lastMonday), to: fmt(lastSunday) };
+    }
+    case "this_month": {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: fmt(first), to: fmt(now) };
+    }
+    case "last_3_months": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 3);
+      return { from: fmt(d), to: fmt(now) };
+    }
+    case "this_year": {
+      const first = new Date(now.getFullYear(), 0, 1);
+      return { from: fmt(first), to: fmt(now) };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
 const typeConfig: Record<
   LedgerEntry["type"],
   { icon: LucideIcon; color: string; label: string }
 > = {
-  SALE: { icon: ArrowUpRight, color: "text-emerald-600", label: "Sale" },
-  PAYMENT: { icon: ArrowDownLeft, color: "text-blue-600", label: "Payment" },
-  RETURN: { icon: RotateCcw, color: "text-orange-600", label: "Return" },
+  SALE: { icon: ArrowUpRight, color: "text-[#3aa838]", label: "Sale" },
+  PAYMENT: { icon: ArrowDownLeft, color: "text-[#2f8a2f]", label: "Payment" },
+  RETURN: { icon: RotateCcw, color: "text-amber-600", label: "Return" },
 };
 
 /* --------------------------- Dealer Search --------------------------- */
@@ -171,10 +227,10 @@ function DealerSearchSelect({
         <Button
           type="button"
           variant="outline"
-          className="w-full justify-between truncate"
+          className="h-9 w-full justify-between truncate bg-white text-xs"
         >
           <span className="truncate">{selectedLabel || "Search dealer..."}</span>
-          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <Search className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[400px] p-0" align="start">
@@ -217,22 +273,13 @@ function DealerSearchSelect({
   );
 }
 
-/* --------------------------- Summary strip components --------------------------- */
-type SummaryColor =
-  | "indigo"
-  | "emerald"
-  | "blue"
-  | "purple"
-  | "orange"
-  | "amber";
+/* --------------------------- Summary strip --------------------------- */
+type SummaryColor = "slate" | "green" | "greenDark";
 
 const summaryBorderMap: Record<SummaryColor, string> = {
-  indigo: "border-l-indigo-500",
-  emerald: "border-l-emerald-500",
-  blue: "border-l-blue-500",
-  purple: "border-l-purple-500",
-  orange: "border-l-orange-500",
-  amber: "border-l-amber-500",
+  slate: "border-l-slate-400",
+  green: "border-l-[#3aa838]",
+  greenDark: "border-l-[#2f8a2f]",
 };
 
 function LedgerSummaryCard({
@@ -250,19 +297,19 @@ function LedgerSummaryCard({
 }) {
   return (
     <Card
-      className={`flex-1 min-w-[120px] border-l-4 ${summaryBorderMap[color]} shadow-sm ${
-        highlight ? "ring-2 ring-amber-400 ring-offset-1" : ""
+      className={`min-w-[110px] flex-1 border-l-4 ${summaryBorderMap[color]} shadow-sm ${
+        highlight ? "ring-2 ring-[#3aa838] ring-offset-1" : ""
       }`}
     >
-      <CardContent className="p-3 md:p-4">
-        <div className="text-[10px] md:text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <CardContent className="p-2.5 md:p-3">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </div>
-        <div className="mt-1 text-base md:text-lg font-bold tabular-nums truncate">
+        <div className="mt-0.5 truncate text-sm font-bold tabular-nums md:text-base">
           ৳ {value}
         </div>
         {hint && (
-          <div className="mt-0.5 text-[10px] text-muted-foreground truncate">
+          <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
             {hint}
           </div>
         )}
@@ -273,14 +320,14 @@ function LedgerSummaryCard({
 
 function OperatorBadge({ op }: { op: "+" | "−" | "=" }) {
   const styles: Record<"+" | "−" | "=", string> = {
-    "+": "bg-emerald-500 text-white shadow-emerald-200/60",
+    "+": "bg-[#3aa838] text-white shadow-[#3aa838]/30",
     "−": "bg-rose-500 text-white shadow-rose-200/60",
     "=": "bg-slate-800 text-white shadow-slate-300/60",
   };
   return (
     <div
       aria-label={`operator ${op}`}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-full text-sm font-bold shadow-md ${styles[op]}`}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center self-center rounded-full text-xs font-bold shadow-md ${styles[op]}`}
     >
       {op}
     </div>
@@ -307,7 +354,7 @@ function CommissionBadge({ entry }: { entry: LedgerEntry }) {
   const isAdd = direction === "ADD";
   const sign = isAdd ? "+" : "−";
   const cls = isAdd
-    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    ? "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30"
     : "bg-rose-50 text-rose-700 border-rose-200";
   const rateLabel =
     calcMode === "PERCENT" ? `${rate}%` : calcMode === "FLAT" ? "flat" : "";
@@ -355,13 +402,13 @@ function LedgerRow({
           </div>
           <CommissionBadge entry={entry} />
         </td>
-        <td className="px-3 py-2 text-right text-xs font-mono">
+        <td className="px-3 py-2 text-right font-mono text-xs">
           {entry.debit > 0 ? money(entry.debit) : "—"}
         </td>
-        <td className="px-3 py-2 text-right text-xs font-mono">
+        <td className="px-3 py-2 text-right font-mono text-xs">
           {entry.credit > 0 ? money(entry.credit) : "—"}
         </td>
-        <td className="px-3 py-2 text-right text-xs font-bold">
+        <td className="px-3 py-2 text-right text-xs font-bold tabular-nums">
           {money(entry.balance)}
         </td>
         <td className="px-2 py-2 text-center">
@@ -491,7 +538,7 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
               <div className="text-muted-foreground">Direction</div>
               <div>
                 {commDir === "ADD" ? (
-                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                  <span className="rounded bg-[#3aa838]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#2f8a2f]">
                     ADDED
                   </span>
                 ) : (
@@ -503,7 +550,7 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
             </div>
             <div className="text-xs">
               <div className="text-muted-foreground">Total Credit</div>
-              <div className="font-bold text-emerald-700">
+              <div className="font-bold text-[#2f8a2f]">
                 ৳ {money(d.totalCredit)}
               </div>
             </div>
@@ -586,7 +633,7 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
   );
 }
 
-/* --------------------------- Print helpers --------------------------- */
+/* --------------------------- Print helpers (unchanged) --------------------------- */
 function buildSummaryPrintHtml(data: LedgerData): string {
   const { dealer, summary, entries } = data;
   const rows = entries
@@ -756,6 +803,9 @@ export default function DealerLedgerPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [typeFilter, setTypeFilter] = useState<FilterType>("ALL");
+  const [datePreset, setDatePreset] = useState<DatePreset>("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -810,6 +860,37 @@ export default function DealerLedgerPage() {
       return n;
     });
 
+  /* ------------------- Date preset actions ------------------- */
+  const applyPreset = (preset: DatePreset) => {
+    if (!preset) {
+      setStartDate("");
+      setEndDate("");
+      setDatePreset("");
+      return;
+    }
+    const { from, to } = getPresetRange(preset);
+    setStartDate(from);
+    setEndDate(to);
+    setDatePreset(preset);
+  };
+
+  const onDateChange = (which: "from" | "to", value: string) => {
+    if (which === "from") setStartDate(value);
+    else setEndDate(value);
+    setDatePreset("");
+  };
+
+  const clearAll = () => {
+    setStartDate("");
+    setEndDate("");
+    setTypeFilter("ALL");
+    setDatePreset("");
+  };
+
+  const activeFilterCount =
+    (startDate || endDate ? 1 : 0) + (typeFilter !== "ALL" ? 1 : 0);
+  const hasAnyFilter = activeFilterCount > 0;
+
   const from =
     data && data.entries.length
       ? (data.pagination.page - 1) * data.pagination.limit + 1
@@ -831,120 +912,222 @@ export default function DealerLedgerPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        {/* Header */}
-        <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold">Dealer Ledger</h1>
-              <p className="text-sm text-muted-foreground">
-                Complete transaction history and balances for any dealer.
-              </p>
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ============ COMPACT HERO ============ */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <Wallet className="h-4 w-4 text-[#3aa838]" />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {data && (
-                <>
-                  <GlobalPrintButton
-                    contentHtml={buildSummaryPrintHtml(data)}
-                    label="Print Summary"
-                    title="Dealer Ledger (Summary)"
-                    orientation="landscape"
-                    company={printCompany}
-                    showHeader={false}
-                    showFooter={false}
-                  />
-                  <GlobalPrintButton
-                    contentHtml={buildDetailedPrintHtml(data)}
-                    label="Print Detailed"
-                    title="Dealer Ledger (Detailed)"
-                    orientation="landscape"
-                    company={printCompany}
-                    showHeader={false}
-                    showFooter={false}
-                  />
-                </>
-              )}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-semibold leading-tight">
+                Dealer Ledger
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                {selectedDealer ? (
+                  <>
+                    <span className="truncate">
+                      <b className="text-slate-900">{selectedDealer.label}</b>
+                    </span>
+                    {data && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span>
+                          Current due{" "}
+                          <b className="text-[#2f8a2f] tabular-nums">
+                            ৳ {money(data.summary.closingBalance)}
+                          </b>
+                        </span>
+                        <span className="text-slate-300">·</span>
+                        <span>
+                          Limit{" "}
+                          <b className="text-slate-900 tabular-nums">
+                            ৳ {money(data.dealer.creditLimit)}
+                          </b>
+                        </span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span>Select a dealer to see their ledger.</span>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => void fetchLedger()}
+              disabled={loading || !selectedDealer}
+              title="Refresh"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              />
+            </Button>
+            {data && (
+              <>
+                <GlobalPrintButton
+                  contentHtml={buildSummaryPrintHtml(data)}
+                  label="Summary"
+                  title="Dealer Ledger (Summary)"
+                  orientation="landscape"
+                  company={printCompany}
+                  showHeader={false}
+                  showFooter={false}
+                />
+                <GlobalPrintButton
+                  contentHtml={buildDetailedPrintHtml(data)}
+                  label="Detailed"
+                  title="Dealer Ledger (Detailed)"
+                  orientation="landscape"
+                  company={printCompany}
+                  showHeader={false}
+                  showFooter={false}
+                />
+              </>
+            )}
           </div>
         </div>
 
-        {/* Filters */}
-        <Card className="mb-6 border-slate-200 shadow-sm">
-          <CardContent className="grid gap-4 p-4 md:grid-cols-5">
-            <div className="space-y-2 md:col-span-1">
-              <div className="text-sm font-medium">Select Dealer</div>
+        {/* ============ FILTER BAR ============ */}
+        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <div className="w-full max-w-[280px]">
               <DealerSearchSelect
                 value={selectedDealer?.value}
                 selectedLabel={selectedDealer?.label}
                 onPick={setSelectedDealer}
               />
             </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Start Date</div>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium">End Date</div>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Transaction Type</div>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value as FilterType)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
-              >
-                <option value="ALL">All</option>
-                <option value="SALE">Sales</option>
-                <option value="PAYMENT">Payments</option>
-                <option value="RETURN">Returns</option>
-              </select>
-            </div>
-            <div className="flex items-end">
+
+            <select
+              value={datePreset}
+              onChange={(e) => applyPreset(e.target.value as DatePreset)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+            >
+              <option value="">
+                {startDate || endDate ? "Custom range" : "All dates"}
+              </option>
+              <option value="this_week">This Week</option>
+              <option value="last_week">Last Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_3_months">Last 3 Months</option>
+              <option value="this_year">This Year</option>
+            </select>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={`h-9 ${
+                activeFilterCount > 0
+                  ? "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]"
+                  : ""
+              }`}
+            >
+              <FilterIcon className="mr-1.5 h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
+                  {activeFilterCount}
+                </span>
+              )}
+              {filtersOpen ? (
+                <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+              )}
+            </Button>
+
+            {hasAnyFilter && (
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => {
-                  setStartDate("");
-                  setEndDate("");
-                  setTypeFilter("ALL");
-                }}
-                className="w-full"
+                variant="ghost"
+                size="sm"
+                onClick={clearAll}
+                className="h-9 text-slate-500"
               >
-                Clear Filters
+                <X className="mr-1 h-3.5 w-3.5" />
+                Clear
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            )}
 
-        {/* Summary strip with operator badges */}
+            <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {data ? `${data.pagination.total} records` : "No data"}
+            </div>
+          </div>
+
+          {filtersOpen && (
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-3">
+              <div className="space-y-1">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                  <CalendarRange className="h-3 w-3" /> Start date
+                </label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => onDateChange("from", e.target.value)}
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                  <CalendarRange className="h-3 w-3" /> End date
+                </label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => onDateChange("to", e.target.value)}
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600">
+                  Transaction type
+                </label>
+                <select
+                  value={typeFilter}
+                  onChange={(e) =>
+                    setTypeFilter(e.target.value as FilterType)
+                  }
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+                >
+                  <option value="ALL">All</option>
+                  <option value="SALE">Sales</option>
+                  <option value="PAYMENT">Payments</option>
+                  <option value="RETURN">Returns</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ============ SUMMARY STRIP ============ */}
         {data && (
-          <div className="mb-6 flex flex-col gap-2 lg:flex-row lg:items-stretch lg:gap-2">
+          <div className="mb-3 flex flex-col gap-1.5 lg:flex-row lg:items-stretch lg:gap-1.5">
             <LedgerSummaryCard
               label="Opening"
               value={money(data.summary.openingBalance)}
-              color="indigo"
+              color="slate"
             />
             <OperatorBadge op="+" />
             <LedgerSummaryCard
               label="Total Sales"
               value={money(data.summary.totalSales)}
-              color="emerald"
+              color="green"
             />
             <OperatorBadge op="−" />
             <LedgerSummaryCard
               label="Total Payments"
               value={money(data.summary.totalPayments)}
               hint="cash only"
-              color="blue"
+              color="greenDark"
             />
             <OperatorBadge
               op={data.summary.totalCommissionEffect >= 0 ? "−" : "+"}
@@ -957,28 +1140,28 @@ export default function DealerLedgerPage() {
                   ? "credited"
                   : "deducted"
               }
-              color="purple"
+              color="greenDark"
             />
             <OperatorBadge op="−" />
             <LedgerSummaryCard
               label="Total Returns"
               value={money(data.summary.totalReturns)}
-              color="orange"
+              color="greenDark"
             />
             <OperatorBadge op="=" />
             <LedgerSummaryCard
               label="Current Due"
               value={money(data.summary.closingBalance)}
               hint={`Limit: ৳ ${money(data.dealer.creditLimit)}`}
-              color="amber"
+              color="green"
               highlight
             />
           </div>
         )}
 
-        {/* Due mismatch warning */}
+        {/* ============ DUE MISMATCH ============ */}
         {data && data.summary.dueMismatch !== 0 && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             <strong>Note:</strong> stored due{" "}
             <code>৳ {money(data.summary.storedDue)}</code> differs from computed{" "}
             <code>৳ {money(data.summary.closingBalance)}</code> (diff{" "}
@@ -987,28 +1170,31 @@ export default function DealerLedgerPage() {
           </div>
         )}
 
-        {/* Table */}
-        <Card className="border-slate-200 shadow-sm">
+        {/* ============ TABLE ============ */}
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
-                <thead className="sticky top-0 bg-slate-100 text-left">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-left">
                   <tr>
-                    <th className="border-b px-3 py-2.5 font-medium">Date</th>
-                    <th className="border-b px-3 py-2.5 font-medium">
-                      Reference
-                    </th>
-                    <th className="border-b px-3 py-2.5 font-medium">Type</th>
-                    <th className="border-b px-3 py-2.5 text-right font-medium">
-                      Debit
-                    </th>
-                    <th className="border-b px-3 py-2.5 text-right font-medium">
-                      Credit
-                    </th>
-                    <th className="border-b px-3 py-2.5 text-right font-medium">
-                      Balance
-                    </th>
-                    <th className="w-8 border-b px-3 py-2.5"></th>
+                    {[
+                      "Date",
+                      "Reference",
+                      "Type",
+                      "Debit",
+                      "Credit",
+                      "Balance",
+                    ].map((h, i) => (
+                      <th
+                        key={h}
+                        className={`border-b border-slate-200 px-3 py-2.5 text-[10px] font-medium uppercase tracking-wide text-slate-600 ${
+                          i >= 3 && i <= 5 ? "text-right" : ""
+                        }`}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                    <th className="w-8 border-b border-slate-200"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1030,7 +1216,7 @@ export default function DealerLedgerPage() {
                       </td>
                       <td className="px-3 py-2 text-right text-xs">—</td>
                       <td className="px-3 py-2 text-right text-xs">—</td>
-                      <td className="px-3 py-2 text-right text-xs font-bold">
+                      <td className="px-3 py-2 text-right text-xs font-bold tabular-nums">
                         {money(data.summary.openingBalance)}
                       </td>
                       <td />
@@ -1050,14 +1236,14 @@ export default function DealerLedgerPage() {
                     <tr>
                       <td
                         colSpan={7}
-                        className="px-4 py-12 text-center text-red-600"
+                        className="px-4 py-12 text-center text-rose-600"
                       >
                         {error}
                         <div className="mt-2">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={fetchLedger}
+                            onClick={() => void fetchLedger()}
                           >
                             Retry
                           </Button>
@@ -1075,13 +1261,32 @@ export default function DealerLedgerPage() {
                     ))
                   ) : (
                     <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-12 text-center text-muted-foreground"
-                      >
-                        {selectedDealer
-                          ? "No transactions found for the selected period."
-                          : "Select a dealer to view their ledger."}
+                      <td colSpan={7} className="px-4 py-16 text-center">
+                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
+                          <div className="rounded-full bg-slate-100 p-3">
+                            <Wallet className="h-6 w-6" />
+                          </div>
+                          <div className="text-sm font-medium text-slate-700">
+                            {selectedDealer
+                              ? "No transactions found"
+                              : "No dealer selected"}
+                          </div>
+                          <div className="text-xs">
+                            {selectedDealer
+                              ? "Try widening the filters or date range."
+                              : "Pick a dealer above to see their ledger."}
+                          </div>
+                          {selectedDealer && hasAnyFilter && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={clearAll}
+                            >
+                              <X className="mr-1.5 h-3.5 w-3.5" />
+                              Clear filters
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -1091,20 +1296,24 @@ export default function DealerLedgerPage() {
           </CardContent>
         </Card>
 
-        {/* Pagination */}
+        {/* ============ PAGINATION ============ */}
         {data && data.pagination.total > 0 && (
-          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span>
-                Showing <strong>{from}</strong>–<strong>{to}</strong> of{" "}
-                <strong>{data.pagination.total}</strong>
+                Showing{" "}
+                <strong className="text-slate-900 tabular-nums">{from}</strong>–
+                <strong className="text-slate-900 tabular-nums">{to}</strong> of{" "}
+                <strong className="text-slate-900">
+                  {data.pagination.total}
+                </strong>
               </span>
               <div className="flex items-center gap-1">
-                <span className="text-xs">Rows:</span>
+                <span>Rows:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
                 >
                   {[10, 20, 30, 50, 100].map((n) => (
                     <option key={n} value={n}>
@@ -1116,11 +1325,16 @@ export default function DealerLedgerPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                Page {data.pagination.page} / {data.pagination.totalPages}
+                Page{" "}
+                <strong className="text-slate-900">
+                  {data.pagination.page}
+                </strong>{" "}
+                / {data.pagination.totalPages}
               </span>
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={!data.pagination.hasPrev || loading}
               >
@@ -1129,6 +1343,7 @@ export default function DealerLedgerPage() {
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={!data.pagination.hasNext || loading}
               >

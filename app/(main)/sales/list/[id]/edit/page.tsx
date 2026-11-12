@@ -37,7 +37,6 @@ import {
   Plus,
   Trash2,
   RefreshCw,
-  Printer,
   Upload,
   Ban,
   Save,
@@ -47,7 +46,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileText,
-  ExternalLink,
+  Building2,
+  Warehouse as WarehouseIcon,
+  Calendar,
+  CreditCard,
+  Package,
+  Wallet,
+  TrendingUp,
+  Receipt,
+  Minus,
+  Sparkles,
 } from "lucide-react";
 
 /* --------------------------- Types --------------------------- */
@@ -60,6 +68,8 @@ type LookupOption = {
   salePrice?: number;
   stock?: number;
   sku?: string;
+  warehouseId?: string;
+  warehouseName?: string;
 };
 
 type OrderStatus =
@@ -231,17 +241,17 @@ function calcLine(item: LineItem, taxPercent: number) {
 function StatusBadge({ status }: { status: OrderStatus }) {
   const styles: Record<OrderStatus, string> = {
     PENDING_AM: "bg-slate-100 text-slate-700 border-slate-200",
-    PENDING_RM: "bg-indigo-100 text-indigo-700 border-indigo-200",
-    PENDING_NSM: "bg-violet-100 text-violet-700 border-violet-200",
-    PENDING_FULFILLMENT: "bg-amber-100 text-amber-700 border-amber-200",
-    IN_SHIPPING: "bg-cyan-100 text-cyan-700 border-cyan-200",
-    DELIVERED: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    REJECTED: "bg-red-100 text-red-700 border-red-200",
-    CANCELLED: "bg-rose-100 text-rose-700 border-rose-200",
+    PENDING_RM: "bg-slate-100 text-slate-700 border-slate-200",
+    PENDING_NSM: "bg-slate-100 text-slate-700 border-slate-200",
+    PENDING_FULFILLMENT: "bg-amber-50 text-amber-700 border-amber-200",
+    IN_SHIPPING: "bg-amber-50 text-amber-700 border-amber-200",
+    DELIVERED: "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30",
+    REJECTED: "bg-rose-50 text-rose-700 border-rose-200",
+    CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
   };
   return (
     <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status]}`}
+      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles[status]}`}
     >
       {status.replaceAll("_", " ")}
     </span>
@@ -252,11 +262,11 @@ function PaymentBadge({ method }: { method?: "CASH" | "CREDIT" }) {
   if (!method) return <span className="text-xs text-muted-foreground">-</span>;
   const styles =
     method === "CREDIT"
-      ? "bg-orange-100 text-orange-700 border-orange-200"
-      : "bg-slate-100 text-slate-700 border-slate-200";
+      ? "bg-amber-50 text-amber-700 border-amber-200"
+      : "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30";
   return (
     <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${styles}`}
+      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles}`}
     >
       {method}
     </span>
@@ -316,7 +326,7 @@ function LookupSelect({
           type="button"
           variant="outline"
           disabled={disabled}
-          className="w-full justify-between overflow-hidden"
+          className="h-10 w-full justify-between overflow-hidden bg-white disabled:opacity-60"
         >
           <span className="truncate">{selectedLabel || placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -367,8 +377,69 @@ function LookupSelect({
   );
 }
 
+/* --------------------------- SectionHeader --------------------------- */
+function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  right,
+}: {
+  icon: React.ElementType;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3aa838]/10 text-[#3aa838]">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle && (
+            <div className="text-xs text-muted-foreground">{subtitle}</div>
+          )}
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/* --------------------------- UploadTile --------------------------- */
+function UploadTile({
+  label,
+  hint,
+  onFile,
+  disabled,
+}: {
+  label: string;
+  hint: string;
+  onFile: (f: File | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={`block cursor-pointer rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center transition-colors hover:border-[#3aa838] hover:bg-[#3aa838]/5 ${
+        disabled ? "pointer-events-none opacity-60" : ""
+      }`}
+    >
+      <Upload className="mx-auto h-6 w-6 text-slate-400" />
+      <div className="mt-2 text-xs font-medium text-slate-700">{label}</div>
+      <div className="text-[10px] text-muted-foreground">{hint}</div>
+      <input
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        onChange={(e) => onFile(e.target.files?.[0] || null)}
+      />
+    </label>
+  );
+}
+
 /* =============================================================
-   PRINT HELPERS
+   PRINT HELPERS  (unchanged)
    ============================================================= */
 function buildSalesOrderPrintHtml(
   order: SalesOrderDetail,
@@ -378,7 +449,7 @@ function buildSalesOrderPrintHtml(
   warehouseName: string,
   items: LineItem[],
   taxPercent: number,
-  totals: ReturnType<typeof useMemo> | any,
+  totals: any,
 ): string {
   const dateFmt = (d: any) =>
     d
@@ -394,7 +465,7 @@ function buildSalesOrderPrintHtml(
   const paymentStatus = order.invoiceId?.paymentStatus || "UNPAID";
 
   const rowsHtml = items
-    .map((item, idx) => {
+    .map((item) => {
       const line = calcLine(item, taxPercent);
       return `
       <tr style="border-bottom:1px solid #e2e8f0;">
@@ -417,8 +488,7 @@ function buildSalesOrderPrintHtml(
     <div>
       <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">SALES INVOICE</div>
       <div style="font-size: 13px; opacity: 0.9; margin-top: 2px;">
-        ${order.paymentMethod === "CREDIT" ? "Credit Sale" : "Cash Sale"}
-        · ${paymentStatus}
+        ${order.paymentMethod === "CREDIT" ? "Credit Sale" : "Cash Sale"} · ${paymentStatus}
       </div>
     </div>
     <div style="text-align: right;">
@@ -429,17 +499,17 @@ function buildSalesOrderPrintHtml(
   </div>
 
   <div style="padding: 14px 28px; display: flex; gap: 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
       <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Dealer</div>
       <div style="font-weight: 700; margin-top: 2px;">${dealerName}</div>
       <div style="font-size: 12px; color: #475569;">${dealerPhone}</div>
     </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
       <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Warehouse</div>
       <div style="font-weight: 700; margin-top: 2px;">${warehouseName}</div>
       <div style="font-size: 12px; color: #475569;">Dispatch location</div>
     </div>
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 10px 14px;">
       <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700;">Payment</div>
       <div style="font-weight: 700; margin-top: 2px; color: ${order.paymentMethod === "CREDIT" ? "#f59e0b" : "#16a34a"};">${order.paymentMethod}</div>
       <div style="font-size: 12px; color: #475569;">Grand Total: ৳ ${(order.grandTotal ?? 0).toFixed(2)}</div>
@@ -483,19 +553,18 @@ function buildSalesOrderPrintHtml(
         <span style="color:#0f172a;">৳ ${(order.grandTotal ?? 0).toFixed(2)}</span>
       </div>
       <div style="margin-top: 8px; padding: 6px 10px; background: ${order.paymentMethod === "CREDIT" ? "#fef3c7" : "#d1fae5"}; border-radius: 8px; font-size: 11px; text-align: center; color: ${order.paymentMethod === "CREDIT" ? "#92400e" : "#065f46"};">
-        ${order.paymentMethod === "CREDIT" ? "This is a credit sale." : "This is a cash sale."}
-        Total bonus items: ${order.totalBonusQty || 0}
+        ${order.paymentMethod === "CREDIT" ? "This is a credit sale." : "This is a cash sale."} · Total bonus items: ${order.totalBonusQty || 0}
       </div>
     </div>
   </div>
 
   <div style="display: flex; gap: 16px; padding: 14px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
-    <div style="flex: 1; background: white; border-radius: 10px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+    <div style="flex: 1; background: white; border-radius: 10px; padding: 14px; text-align: center;">
       <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">QR Code</div>
       ${qrImageDataUrl ? `<img src="${qrImageDataUrl}" alt="QR" style="width:140px; height:140px; border:1px solid #e2e8f0; border-radius:10px;" />` : `<div style="width:140px; height:140px; border:2px dashed #cbd5e1; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; color:#94a3b8; font-size:11px;">QR not ready</div>`}
       <div style="font-size: 10px; color: #94a3b8; margin-top: 6px;">Scan to verify</div>
     </div>
-    <div style="flex: 2; background: white; border-radius: 10px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+    <div style="flex: 2; background: white; border-radius: 10px; padding: 14px;">
       <div style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 8px;">Dealer Signature</div>
       <div style="height: 110px; border: 2px dashed #cbd5e1; border-radius: 10px; display: flex; align-items: flex-end; justify-content: center; padding: 10px; color: #94a3b8; font-size: 12px;">
         Sign here after receiving goods
@@ -517,8 +586,7 @@ function buildSalesOrderPrintHeaderRight(order: SalesOrderDetail): string {
     <div style="text-align:right;">
       <div style="font-size: 20px; font-weight: 800; color: #0f172a;">#${order.orderNo}</div>
       <div style="font-size: 13px; color: #475569; margin-top: 2px;">
-        ${order.paymentMethod === "CREDIT" ? "Credit Sale" : "Cash Sale"}
-        · ${paymentStatus}
+        ${order.paymentMethod === "CREDIT" ? "Credit Sale" : "Cash Sale"} · ${paymentStatus}
       </div>
       <div style="
         display: inline-block; background: ${order.status === "DELIVERED" ? "#065f46" : order.status === "CANCELLED" ? "#b91c1c" : "#1e40af"};
@@ -527,7 +595,6 @@ function buildSalesOrderPrintHeaderRight(order: SalesOrderDetail): string {
     </div>`;
 }
 
-/* 🆕 Delivery Chalan (DC) print helper */
 function buildDCPrintHtml(
   order: SalesOrderDetail,
   dealerName: string,
@@ -536,7 +603,13 @@ function buildDCPrintHtml(
   items: LineItem[],
 ): string {
   const dateFmt = (d: any) =>
-    d ? new Date(d).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "—";
+    d
+      ? new Date(d).toLocaleDateString("en-IN", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "—";
 
   const rowsHtml = items
     .map((item, idx) => {
@@ -657,7 +730,9 @@ export default function SalesOrderEditActionPage() {
     },
   });
 
-  const { fields, append, remove, update, replace } = useFieldArray({
+  // ⚠️ NOTE: `update` removed from destructuring — we now use setRow() which
+  //    wraps setValue() to avoid remounting inputs on every keystroke.
+  const { fields, append, remove, replace } = useFieldArray({
     control,
     name: "items",
   });
@@ -666,8 +741,7 @@ export default function SalesOrderEditActionPage() {
   const warehouseId = useWatch({ control, name: "warehouseId" });
   const paymentMethod = useWatch({ control, name: "paymentMethod" });
   const taxPercent = Number(useWatch({ control, name: "taxPercent" }) || 0);
-  const watchedItems = (useWatch({ control, name: "items" }) ||
-    []) as LineItem[];
+  const watchedItems = (useWatch({ control, name: "items" }) || []) as LineItem[];
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -685,18 +759,27 @@ export default function SalesOrderEditActionPage() {
   const [deliveryVerification, setDeliveryVerification] = useState<any>(null);
   const [qrImageForPrint, setQrImageForPrint] = useState<string>("");
 
-  // 🆕 DC state
   const [dcFile, setDcFile] = useState<File | null>(null);
   const [dcUploadLoading, setDcUploadLoading] = useState(false);
   const [dcMediaId, setDcMediaId] = useState<string | null>(null);
 
-  const promoTimers = useRef<
-    Record<string, ReturnType<typeof setTimeout> | undefined>
-  >({});
+  const promoTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const stockCache = useRef<Record<string, StockInfo>>({});
-  const promoCache = useRef<
-    Record<string, { bonusQty: number; appliedPromotionId: string | null }>
-  >({});
+  const promoCache = useRef<Record<string, { bonusQty: number; appliedPromotionId: string | null }>>({});
+
+  /* ---------- setRow — fixes qty focus loss ---------- */
+  const setRow = useCallback(
+    (index: number, patch: Partial<LineItem>) => {
+      const row = getValues(`items.${index}`) as LineItem | undefined;
+      if (!row) return;
+      const next: LineItem = { ...row, ...patch };
+      setValue(`items.${index}` as any, next, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+    },
+    [getValues, setValue],
+  );
 
   /* ---------- Lookups ---------- */
   const fetchDealers = useCallback(async (search: string) => {
@@ -709,6 +792,8 @@ export default function SalesOrderEditActionPage() {
       description: `${d.phoneNumber || d.phone || ""}${d.status ? ` · ${d.status}` : ""}`,
       status: d.status,
       dealerType: d.type,
+      warehouseId: d.warehouse?._id ? String(d.warehouse._id) : undefined,
+      warehouseName: d.warehouse?.name || undefined,
     })) as LookupOption[];
   }, []);
 
@@ -740,13 +825,7 @@ export default function SalesOrderEditActionPage() {
   const fetchStockInfo = useCallback(
     async (productId: string, wId?: string): Promise<StockInfo> => {
       if (!productId || !wId) {
-        return {
-          quantity: 0,
-          incomingTransfer: 0,
-          reservedForSales: 0,
-          reservedForTransfer: 0,
-          availableToSell: 0,
-        };
+        return { quantity: 0, incomingTransfer: 0, reservedForSales: 0, reservedForTransfer: 0, availableToSell: 0 };
       }
       const cacheKey = `${productId}|${wId}`;
       if (stockCache.current[cacheKey]) return stockCache.current[cacheKey];
@@ -765,13 +844,7 @@ export default function SalesOrderEditActionPage() {
         stockCache.current[cacheKey] = stock;
         return stock;
       } catch {
-        const fallback: StockInfo = {
-          quantity: 0,
-          incomingTransfer: 0,
-          reservedForSales: 0,
-          reservedForTransfer: 0,
-          availableToSell: 0,
-        };
+        const fallback: StockInfo = { quantity: 0, incomingTransfer: 0, reservedForSales: 0, reservedForTransfer: 0, availableToSell: 0 };
         stockCache.current[cacheKey] = fallback;
         return fallback;
       }
@@ -781,9 +854,7 @@ export default function SalesOrderEditActionPage() {
 
   const fetchPromo = useCallback(
     async (productId: string, qty: number, dId?: string, wId?: string) => {
-      if (!productId || !qty || qty <= 0) {
-        return { bonusQty: 0, appliedPromotionId: null };
-      }
+      if (!productId || !qty || qty <= 0) return { bonusQty: 0, appliedPromotionId: null };
       const key = `${productId}|${qty}|${dId || ""}|${wId || ""}`;
       if (promoCache.current[key]) return promoCache.current[key];
       try {
@@ -816,9 +887,7 @@ export default function SalesOrderEditActionPage() {
 
   const canShip = order?.status === "PENDING_FULFILLMENT";
   const canDeliver = order?.status === "IN_SHIPPING";
-  const canCancel = order
-    ? !["DELIVERED", "CANCELLED"].includes(order.status)
-    : false;
+  const canCancel = order ? !["DELIVERED", "CANCELLED"].includes(order.status) : false;
 
   /* ---------- Load order & map to form ---------- */
   const mapOrderToForm = useCallback(
@@ -980,7 +1049,7 @@ export default function SalesOrderEditActionPage() {
     };
   }, [order?.invoiceId]);
 
-  /* ---------- Refresh row helpers ---------- */
+  /* ---------- Refresh row ---------- */
   const refreshRowById = useCallback(
     async (fieldId: string, opts?: { stock?: boolean; promo?: boolean }) => {
       const index = fields.findIndex((f) => f.id === fieldId);
@@ -1002,9 +1071,9 @@ export default function SalesOrderEditActionPage() {
         next.bonusQty = promo.bonusQty || 0;
         next.promoAppliedId = promo.appliedPromotionId;
       }
-      update(index, { ...row, ...next });
+      setRow(index, next);
     },
-    [fields, getValues, update, warehouseId, customerId, fetchStockInfo, fetchPromo],
+    [fields, getValues, setRow, warehouseId, customerId, fetchStockInfo, fetchPromo],
   );
 
   const refreshAllRows = useCallback(async () => {
@@ -1027,7 +1096,7 @@ export default function SalesOrderEditActionPage() {
     return { lineData, totalQty, totalBonusQty, subtotal, totalDiscount, totalTax, grandTotal };
   }, [watchedItems, taxPercent]);
 
-  /* ---------- Actions ---------- */
+  /* ---------- Save ---------- */
   const updateOrder = useCallback(
     async (nextValues: FormValues) => {
       if (!orderId || !order) return;
@@ -1078,6 +1147,7 @@ export default function SalesOrderEditActionPage() {
     [orderId, order, totals, loadOrder],
   );
 
+  /* ---------- Uploads ---------- */
   const uploadProofFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -1119,7 +1189,7 @@ export default function SalesOrderEditActionPage() {
     if (!confirm("Create invoice and move this order to fulfillment?")) return;
     setSavingAction("ship");
     try {
-      const res = await api.post(`/sales-orders/${orderId}/ship`);
+      await api.post(`/sales-orders/${orderId}/ship`);
       toast.success("Invoice created.");
       await loadOrder();
     } catch (err: any) {
@@ -1156,9 +1226,7 @@ export default function SalesOrderEditActionPage() {
       const uploadedDocumentFileId = await uploadProofFile(proofFile);
       const res = await api.post(`/sales-orders/${orderId}/deliver`, { uploadedDocumentFileId });
       const data = res.data?.data || res.data;
-      if (data?.verification) {
-        setDeliveryVerification(data.verification);
-      }
+      if (data?.verification) setDeliveryVerification(data.verification);
       toast.success("Delivery approved.");
       setProofFile(null);
       await loadOrder();
@@ -1171,7 +1239,6 @@ export default function SalesOrderEditActionPage() {
     }
   };
 
-  /* 🆕 DC Upload handler */
   const handleDCUpload = async () => {
     if (!dcFile) {
       toast.error("Select a DC file first");
@@ -1182,7 +1249,6 @@ export default function SalesOrderEditActionPage() {
       const mediaId = await uploadProofFile(dcFile);
       setDcMediaId(mediaId);
       toast.success("Delivery Chalan uploaded.");
-      // Later we can save dcMediaId to the order via a separate API call
     } catch (err: any) {
       toast.error(err?.message || "DC upload failed");
     } finally {
@@ -1195,6 +1261,20 @@ export default function SalesOrderEditActionPage() {
     setValue("customerId", opt.value, { shouldDirty: true, shouldTouch: true });
     setDealerMeta(opt);
     setCreditSummary(null);
+
+    // ⭐ Auto-select warehouse from dealer (user can still change it)
+    if (opt.warehouseId) {
+      setValue("warehouseId", opt.warehouseId, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
+      setWarehouseMeta({
+        value: opt.warehouseId,
+        label: opt.warehouseName || "",
+        description: "Auto-selected from dealer",
+      });
+    }
+
     await refreshAllRows();
   };
 
@@ -1217,8 +1297,7 @@ export default function SalesOrderEditActionPage() {
           availableToSell: Number(opt.stock || 0),
         };
     const promo = await fetchPromo(opt.value, Number(row.qty || 0), customerId || undefined, warehouseId || undefined);
-    update(index, {
-      ...row,
+    setRow(index, {
       productId: opt.value,
       productName: opt.label,
       unitPrice: Number(opt.salePrice || 0),
@@ -1233,9 +1312,8 @@ export default function SalesOrderEditActionPage() {
   };
 
   const onQtyChange = (index: number, qty: number) => {
-    const row = getValues(`items.${index}`) as LineItem | undefined;
-    if (!row) return;
-    update(index, { ...row, qty: Math.max(0, qty) });
+    // ⭐ setRow (setValue) instead of update() → no remount, no focus loss
+    setRow(index, { qty: Math.max(0, qty) });
     const fieldId = fields[index]?.id;
     if (!fieldId) return;
     const existingTimer = promoTimers.current[fieldId];
@@ -1268,10 +1346,10 @@ export default function SalesOrderEditActionPage() {
     await handleSubmit(updateOrder)();
   };
 
-  /* ---------- Loading state ---------- */
+  /* ---------- Loading / not-found ---------- */
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading sales order...
@@ -1282,7 +1360,7 @@ export default function SalesOrderEditActionPage() {
 
   if (!order) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <Card className="w-full max-w-lg">
           <CardContent className="p-6 text-center">
             <div className="text-lg font-semibold">Sales order not found</div>
@@ -1310,114 +1388,227 @@ export default function SalesOrderEditActionPage() {
   const dealerPhone = order.customerId?.phoneNumber || order.customerId?.phone || "-";
   const warehouseName = warehouseMeta?.label || order.warehouseId?.name || "-";
 
+  const printCompany = {
+    name: "Antab Agro LTD",
+    address: "123 Agro Street, Dhaka",
+    phone: "+880 1711-111111",
+    email: "info@antabagro.com",
+  };
+
+  /* ---------- Workflow stepper helpers ---------- */
+  const approvalFlow: OrderStatus[] = [
+    "PENDING_AM",
+    "PENDING_RM",
+    "PENDING_NSM",
+    "PENDING_FULFILLMENT",
+    "IN_SHIPPING",
+    "DELIVERED",
+  ];
+  const statusIndex = approvalFlow.indexOf(order.status);
+  const isFinalFailed = ["REJECTED", "CANCELLED"].includes(order.status);
+  const lastFailedStep = isFinalFailed
+    ? (order.approvalLogs
+        ?.map((l) => approvalFlow.indexOf(l.role as OrderStatus))
+        .filter((i) => i >= 0)
+        .sort((a, b) => b - a)[0] ?? -1)
+    : -1;
+
+  const stepState = (i: number): "done" | "active" | "pending" => {
+    if (order.status === "DELIVERED") return "done";
+    if (isFinalFailed) return i <= lastFailedStep ? "done" : "pending";
+    if (statusIndex < 0) return "pending";
+    if (i < statusIndex) return "done";
+    if (i === statusIndex) return "active";
+    return "pending";
+  };
+
+  const creditLimit = Number(order.creditSnapshot?.creditLimit || 0);
+  const creditUsed = Number(order.creditSnapshot?.used || 0);
+  const creditPct = creditLimit > 0 ? Math.min(100, (creditUsed / creditLimit) * 100) : 0;
+  const creditDanger = creditPct > 80;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        {/* ----- Header ----- */}
-        <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="text-sm text-muted-foreground">Sales Order Action</div>
-              <h1 className="text-2xl font-semibold">{order.orderNo}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <StatusBadge status={order.status} />
-                <PaymentBadge method={order.paymentMethod} />
-                <span className="text-sm text-muted-foreground">
-                  Created: {fmtDate(order.createdAt || order.orderDate)}
-                </span>
-                {invoice && (
-                  <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    Invoice: {invoice.invoiceNo}
+        {/* ---------- HERO ---------- */}
+        <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-[#1a4d1a] p-6 text-white shadow-lg">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(58,168,56,0.25),transparent_55%)]" />
+          <div className="relative">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-white/60">
+                  Sales Order · Edit / Act
+                </div>
+                <h1 className="mt-1 text-3xl font-bold tracking-tight tabular-nums">
+                  {order.orderNo}
+                </h1>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <StatusBadge status={order.status} />
+                  <PaymentBadge method={order.paymentMethod} />
+                  {invoice && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium ring-1 ring-white/15">
+                      <FileText className="h-3 w-3" />
+                      {invoice.invoiceNo}
+                    </span>
+                  )}
+                  <span className="text-xs text-white/60">
+                    {fmtDate(order.createdAt || order.orderDate)}
                   </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void loadOrder()}
+                  className="border border-white/20 bg-white/10 text-white hover:bg-white/20"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+
+                {isEditable && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={saveChanges}
+                    disabled={saving || isSubmitting}
+                    className="border border-white/20 bg-white/10 text-white hover:bg-white/20"
+                  >
+                    {saving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Save
+                  </Button>
+                )}
+
+                {currentApprovalRole && (
+                  <Button
+                    size="sm"
+                    className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                    onClick={() => void handleApprove()}
+                    disabled={savingAction === "approve"}
+                  >
+                    {savingAction === "approve" ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                    )}
+                    Approve {currentApprovalRole}
+                  </Button>
+                )}
+
+                {canShip && (
+                  <Button
+                    size="sm"
+                    className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                    onClick={() => void handleShip()}
+                  >
+                    {savingAction === "ship" ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Truck className="mr-2 h-4 w-4" />
+                    )}
+                    Ship
+                  </Button>
+                )}
+
+                {invoice && (
+                  <GlobalPrintButton
+                    contentHtml={buildSalesOrderPrintHtml(
+                      order, qrImageForPrint, dealerName, dealerPhone,
+                      warehouseName, watchedItems, taxPercent, totals,
+                    )}
+                    headerRightHtml={buildSalesOrderPrintHeaderRight(order)}
+                    label="Print Invoice"
+                    title="Sales Invoice"
+                    orientation="portrait"
+                    company={printCompany}
+                    showHeader={false}
+                    showFooter={false}
+                  />
+                )}
+
+                {canCancel && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="border border-rose-500/30 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25"
+                    onClick={() => void handleCancel()}
+                  >
+                    {savingAction === "cancel" ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Ban className="mr-2 h-4 w-4" />
+                    )}
+                    Cancel
+                  </Button>
                 )}
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => void loadOrder()}>
-                <RefreshCw className="mr-2 h-4 w-4" /> Refresh
-              </Button>
-
-              {isEditable && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={saveChanges}
-                  disabled={saving || isSubmitting}
-                >
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save
-                </Button>
-              )}
-
-              {currentApprovalRole && (
-                <Button type="button" variant="outline" onClick={() => void handleApprove()}>
-                  {savingAction === "approve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                  Approve {currentApprovalRole}
-                </Button>
-              )}
-
-              {canShip && (
-                <Button type="button" onClick={() => void handleShip()}>
-                  {savingAction === "ship" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-                  Ship
-                </Button>
-              )}
-
-              {invoice && (
-                <GlobalPrintButton
-                  contentHtml={buildSalesOrderPrintHtml(
-                    order,
-                    qrImageForPrint,
-                    dealerName,
-                    dealerPhone,
-                    warehouseName,
-                    watchedItems,
-                    taxPercent,
-                    totals,
-                  )}
-                  headerRightHtml={buildSalesOrderPrintHeaderRight(order)}
-                  label="Print Invoice"
-                  title="Sales Invoice"
-                  orientation="portrait"
-                  company={{
-                    name: "Antab Agro LTD",
-                    address: "123 Agro Street, Dhaka",
-                    phone: "+880 1711-111111",
-                    email: "info@antabagro.com",
-                  }}
-                  showHeader={false}
-                  showFooter={false}
-                />
-              )}
-
-              {canCancel && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="text-red-600 hover:text-red-700"
-                  onClick={() => void handleCancel()}
-                >
-                  {savingAction === "cancel" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
-                  Cancel
-                </Button>
-              )}
+            {/* Quick info pills */}
+            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15 backdrop-blur-sm">
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-white/60">
+                  <Building2 className="h-3 w-3" />
+                  Dealer
+                </div>
+                <div className="mt-0.5 truncate text-sm font-semibold">{dealerName}</div>
+                <div className="truncate text-[11px] text-white/60">{dealerPhone}</div>
+              </div>
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15 backdrop-blur-sm">
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-white/60">
+                  <WarehouseIcon className="h-3 w-3" />
+                  Warehouse
+                </div>
+                <div className="mt-0.5 truncate text-sm font-semibold">{warehouseName}</div>
+                <div className="truncate text-[11px] text-white/60">
+                  {warehouseMeta?.description || ""}
+                </div>
+              </div>
+              <div className="rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/15 backdrop-blur-sm">
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-white/60">
+                  <Calendar className="h-3 w-3" />
+                  Order date
+                </div>
+                <div className="mt-0.5 text-sm font-semibold">
+                  {fmtDate(order.orderDate || order.createdAt)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#3aa838] px-3 py-2 shadow-md shadow-black/40">
+                <div className="text-[10px] uppercase tracking-wide text-[#c6e8c5]">
+                  Grand total
+                </div>
+                <div className="mt-0.5 text-base font-bold tabular-nums">
+                  ৳ {money(order.grandTotal ?? totals.grandTotal)}
+                </div>
+                <div className="text-[11px] text-[#c6e8c5]">{order.paymentMethod}</div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* ----- Main layout ----- */}
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Left column (unchanged) */}
+        {/* ---------- BODY ---------- */}
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          {/* ============ LEFT ============ */}
           <div className="space-y-6">
-            {/* Basics */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Order basics</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Dealer</div>
+            {/* Order basics */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Receipt}
+                title="Order basics"
+                subtitle="Dealer, warehouse, date, payment"
+              />
+              <CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <Building2 className="h-3.5 w-3.5" />
+                    Dealer
+                  </label>
                   <LookupSelect
                     value={customerId}
                     selectedLabel={dealerMeta?.label}
@@ -1427,12 +1618,15 @@ export default function SalesOrderEditActionPage() {
                     searchPlaceholder="Type dealer name / phone..."
                     disabled={!isEditable}
                   />
-                  <div className="text-xs text-muted-foreground">
-                    {dealerMeta?.description || "Open and search to load dealers."}
+                  <div className="text-[11px] text-muted-foreground">
+                    {dealerMeta?.description || "Open to load dealers."}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Warehouse</div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <Package className="h-3.5 w-3.5" />
+                    Warehouse
+                  </label>
                   <LookupSelect
                     value={warehouseId}
                     selectedLabel={warehouseMeta?.label}
@@ -1442,52 +1636,63 @@ export default function SalesOrderEditActionPage() {
                     searchPlaceholder="Type warehouse name..."
                     disabled={!isEditable}
                   />
-                  <div className="text-xs text-muted-foreground">
-                    {warehouseMeta?.description || "Open and search to load warehouses."}
+                  <div className="text-[11px] text-muted-foreground">
+                    {warehouseMeta?.description || "Auto-selected from dealer when available."}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Order date</div>
-                  <Input type="date" {...register("orderDate")} disabled={!isEditable} />
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Order date
+                  </label>
+                  <Input type="date" {...register("orderDate")} disabled={!isEditable} className="h-10" />
                 </div>
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Payment method</div>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                    <CreditCard className="h-3.5 w-3.5" />
+                    Payment method
+                  </label>
                   <select
                     {...register("paymentMethod")}
                     disabled={!isEditable}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none disabled:opacity-50"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838] disabled:opacity-50"
                   >
                     <option value="CASH">Cash</option>
                     <option value="CREDIT">Credit</option>
                   </select>
-                  <div className="text-xs text-muted-foreground">
-                    Credit orders are validated against dealer credit summary.
+                  <div className="text-[11px] text-muted-foreground">
+                    Credit orders validated against dealer summary.
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             {/* Items */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Order items</CardTitle>
-                {isEditable && (
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" onClick={addRow}>
-                      <Plus className="mr-2 h-4 w-4" /> Add item
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void refreshAllRows()}
-                      disabled={!customerId || !warehouseId}
-                    >
-                      <RefreshCw className="mr-2 h-4 w-4" /> Refresh
-                    </Button>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Package}
+                title="Order items"
+                subtitle={`${fields.length} line item${fields.length === 1 ? "" : "s"}`}
+                right={
+                  isEditable ? (
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={addRow}>
+                        <Plus className="mr-1.5 h-4 w-4" /> Add item
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void refreshAllRows()}
+                        disabled={!customerId || !warehouseId}
+                      >
+                        <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
+                      </Button>
+                    </div>
+                  ) : null
+                }
+              />
+              <CardContent className="space-y-4 p-5">
                 {fields.map((field, index) => {
                   const row = watchedItems[index] || makeLine();
                   const line = calcLine(row, taxPercent);
@@ -1495,33 +1700,53 @@ export default function SalesOrderEditActionPage() {
                   return (
                     <div
                       key={field.id}
-                      className={`rounded-xl border bg-white p-4 ${lowStock ? "border-red-200 bg-red-50/40" : ""}`}
+                      className={`rounded-xl border-2 bg-white p-4 transition-colors ${
+                        lowStock
+                          ? "border-rose-300 bg-rose-50/40"
+                          : "border-slate-200 hover:border-[#3aa838]/50"
+                      }`}
                     >
-                      <div className="mb-4 flex items-center justify-between gap-2">
-                        <div>
-                          <div className="text-sm font-semibold">Item #{index + 1}</div>
-                          <div className="text-xs text-muted-foreground">{row.productName || "Select a product"}</div>
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+                            {index + 1}
+                          </span>
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {row.productName || "New item"}
+                            </div>
+                            {row.promoAppliedId ? (
+                              <div className="flex items-center gap-1 text-[11px] font-medium text-[#3aa838]">
+                                <Sparkles className="h-3 w-3" /> Promotion applied
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-muted-foreground">
+                                Select a product to begin
+                              </div>
+                            )}
+                          </div>
                         </div>
                         {isEditable && (
-                          <div className="flex gap-2">
-                            <Button type="button" variant="ghost" onClick={() => duplicateRow(index)}>
-                              <Copy className="mr-2 h-4 w-4" /> Duplicate
+                          <div className="flex gap-1">
+                            <Button type="button" variant="ghost" size="sm" onClick={() => duplicateRow(index)}>
+                              <Copy className="mr-1 h-3.5 w-3.5" /> Duplicate
                             </Button>
                             <Button
                               type="button"
                               variant="ghost"
+                              size="sm"
                               onClick={() => removeRow(index)}
-                              className="text-red-600 hover:text-red-700"
+                              className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                             >
-                              <Trash2 className="mr-2 h-4 w-4" /> Remove
+                              <Trash2 className="mr-1 h-3.5 w-3.5" /> Remove
                             </Button>
                           </div>
                         )}
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-12">
-                        <div className="space-y-2 md:col-span-4">
-                          <div className="text-sm font-medium">Product</div>
+                      <div className="grid gap-3 md:grid-cols-12">
+                        <div className="space-y-1.5 md:col-span-5">
+                          <label className="text-xs font-medium text-slate-600">Product</label>
                           <LookupSelect
                             value={row.productId}
                             selectedLabel={row.productName || undefined}
@@ -1531,90 +1756,99 @@ export default function SalesOrderEditActionPage() {
                             searchPlaceholder="Type product name / SKU..."
                             disabled={!isEditable}
                           />
-                          <div className="text-xs text-muted-foreground">
-                            {row.productName ? `Price: ${money(row.unitPrice)} BDT` : "Open and search to load products."}
+                          <div className="text-[11px] text-muted-foreground">
+                            {row.productName ? `Unit price: ৳ ${money(row.unitPrice)}` : "Open to search products."}
                           </div>
                         </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <div className="text-sm font-medium">Available</div>
+
+                        <div className="space-y-1.5 md:col-span-3">
+                          <label className="text-xs font-medium text-slate-600">Quantity</label>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-9 shrink-0"
+                              disabled={!isEditable}
+                              onClick={() => onQtyChange(index, Math.max(0, Number(row.qty || 0) - 1))}
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={row.qty}
+                              onChange={(e) => onQtyChange(index, Number(e.target.value || 0))}
+                              disabled={!isEditable}
+                              className="h-10 flex-1 text-center text-sm font-semibold tabular-nums"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-9 shrink-0"
+                              disabled={!isEditable}
+                              onClick={() => onQtyChange(index, Number(row.qty || 0) + 1)}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                           <div
-                            className={`flex h-10 items-center rounded-md border px-3 text-sm font-semibold ${
-                              lowStock ? "border-red-300 bg-red-100 text-red-700" : "bg-slate-50"
+                            className={`flex items-center gap-1 text-[11px] font-medium ${
+                              lowStock ? "text-rose-600" : "text-[#3aa838]"
                             }`}
                           >
-                            {Number(row.availableToSell || 0)}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Sellable = qty + incoming - reserved sales - reserved transfer
+                            {lowStock ? (
+                              <>
+                                <AlertTriangle className="h-3 w-3" /> Only {Number(row.availableToSell || 0)} sellable
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" /> {Number(row.availableToSell || 0)} sellable
+                              </>
+                            )}
                           </div>
                         </div>
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Qty</div>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={row.qty}
-                            onChange={(e) => onQtyChange(index, Number(e.target.value || 0))}
-                            disabled={!isEditable}
-                          />
-                        </div>
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Bonus</div>
-                          <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm">
+
+                        <div className="space-y-1.5 md:col-span-1">
+                          <label className="text-xs font-medium text-slate-600">Bonus</label>
+                          <div className="flex h-10 items-center justify-center rounded-md border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 text-sm font-semibold tabular-nums text-[#2f8a2f]">
                             {Number(row.bonusQty || 0)}
                           </div>
                         </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <div className="text-sm font-medium">Unit price</div>
-                          <Input
-                            type="number"
-                            value={row.unitPrice}
-                            onChange={(e) => update(index, { ...row, unitPrice: Number(e.target.value || 0) })}
-                            disabled={!isEditable}
-                          />
-                        </div>
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Disc %</div>
+
+                        <div className="space-y-1.5 md:col-span-1">
+                          <label className="text-xs font-medium text-slate-600">Disc %</label>
                           <Input
                             type="number"
                             min={0}
                             step="0.01"
                             value={row.discountPercent}
-                            onChange={(e) => update(index, { ...row, discountPercent: Number(e.target.value || 0) })}
+                            onChange={(e) => setRow(index, { discountPercent: Number(e.target.value || 0) })}
                             disabled={!isEditable}
+                            className="h-10 text-center tabular-nums"
                           />
                         </div>
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Subtotal</div>
-                          <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm font-medium">
-                            {money(line.lineSubtotal)} BDT
-                          </div>
-                        </div>
-                        <div className="space-y-2 md:col-span-1">
-                          <div className="text-sm font-medium">Total</div>
-                          <div className="flex h-10 items-center rounded-md border bg-indigo-50 px-3 text-sm font-semibold text-indigo-700">
-                            {money(line.lineTotal)} BDT
+
+                        <div className="space-y-1.5 md:col-span-2">
+                          <label className="text-xs font-medium text-slate-600">Line total</label>
+                          <div className="flex h-10 items-center justify-end rounded-md border border-[#3aa838]/30 bg-[#3aa838]/10 px-3 text-sm font-bold tabular-nums text-[#2f8a2f]">
+                            ৳ {money(line.lineTotal)}
                           </div>
                         </div>
                       </div>
 
-                      <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
-                        <div>Qty in stock: {row.quantity}</div>
-                        <div>Incoming transfer: {row.incomingTransfer}</div>
-                        <div>Reserved sales: {row.reservedForSales}</div>
-                        <div>Reserved transfer: {row.reservedForTransfer}</div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="text-muted-foreground">
-                          {row.promoAppliedId ? (
-                            <span className="text-emerald-600">Promotion applied automatically</span>
-                          ) : (
-                            <span>No promotion applied yet</span>
-                          )}
-                        </div>
-                        {lowStock && (
-                          <div className="font-medium text-red-600">Quantity exceeds available to sell</div>
-                        )}
+                      <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <span>In stock: <b className="tabular-nums">{row.quantity}</b></span>
+                        <span className="text-slate-300">•</span>
+                        <span>Incoming: <b className="tabular-nums">{row.incomingTransfer}</b></span>
+                        <span className="text-slate-300">•</span>
+                        <span>Reserved sales: <b className="tabular-nums">{row.reservedForSales}</b></span>
+                        <span className="text-slate-300">•</span>
+                        <span>Reserved transfer: <b className="tabular-nums">{row.reservedForTransfer}</b></span>
+                        <span className="ml-auto rounded bg-white px-2 py-0.5 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+                          Subtotal ৳ {money(line.lineSubtotal)}
+                        </span>
                       </div>
                     </div>
                   );
@@ -1623,128 +1857,182 @@ export default function SalesOrderEditActionPage() {
             </Card>
 
             {/* Notes */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={FileText}
+                title="Notes"
+                subtitle="Internal remarks, delivery notes, special instructions"
+              />
+              <CardContent className="p-5">
                 <textarea
                   {...register("notes")}
                   rows={4}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none disabled:opacity-50"
-                  placeholder="Internal remarks, delivery notes, special instructions..."
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838] disabled:opacity-50"
+                  placeholder="Anything the team should know about this order..."
                   disabled={!isEditable}
                 />
               </CardContent>
             </Card>
 
-            {/* Workflow timeline */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Workflow timeline</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT", "IN_SHIPPING", "DELIVERED"].map((step) => {
-                    const matched = order.approvalLogs?.find((l) => l.role === step);
-                    const active = step === order.status;
-                    const done =
-                      matched?.status === "APPROVED" ||
-                      ["DELIVERED"].includes(order.status) ||
-                      ["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT", "IN_SHIPPING", "DELIVERED"].indexOf(step) <
-                        ["PENDING_AM", "PENDING_RM", "PENDING_NSM", "PENDING_FULFILLMENT", "IN_SHIPPING", "DELIVERED"].indexOf(order.status);
-
-                    return (
-                      <div
-                        key={step}
-                        className={`rounded-md border p-4 ${
-                          active ? "border-indigo-300 bg-indigo-50" : done ? "border-emerald-200 bg-emerald-50/70" : "bg-white"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{step.replaceAll("_", " ")}</div>
-                          <StatusBadge status={step as OrderStatus} />
-                        </div>
-                        <div className="mt-2 text-xs text-muted-foreground">
-                          {matched?.actionDate ? fmtDate(matched.actionDate) : "No action yet"}
-                        </div>
-                        {matched?.remarks && (
-                          <div className="mt-2 text-xs text-muted-foreground">{matched.remarks}</div>
-                        )}
-                      </div>
-                    );
-                  })}
+            {/* Approval stepper + activity log */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={CheckCircle2}
+                title="Approval progress"
+                subtitle="Track the order through the workflow"
+              />
+              <CardContent className="p-5">
+                <div className="overflow-x-auto pb-2">
+                  <div className="flex min-w-max items-start justify-between">
+                    {approvalFlow.map((step, i) => {
+                      const state = stepState(i);
+                      const circleClass =
+                        state === "done"
+                          ? "bg-[#3aa838] text-white"
+                          : state === "active"
+                            ? "bg-[#3aa838] text-white ring-4 ring-[#3aa838]/20"
+                            : "bg-slate-200 text-slate-500";
+                      const labelClass =
+                        state === "done" || state === "active"
+                          ? "font-semibold text-slate-900"
+                          : "text-slate-500";
+                      const connectorDone = state === "done" || order.status === "DELIVERED";
+                      return (
+                        <React.Fragment key={step}>
+                          <div className="flex min-w-[70px] flex-col items-center gap-1.5">
+                            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-all ${circleClass}`}>
+                              {state === "done" ? <Check className="h-4 w-4" /> : i + 1}
+                            </div>
+                            <div className={`max-w-[70px] truncate text-center text-[10px] uppercase tracking-wide ${labelClass}`}>
+                              {step.replaceAll("_", " ")}
+                            </div>
+                          </div>
+                          {i < approvalFlow.length - 1 && (
+                            <div className={`mx-1 mt-4 h-0.5 flex-1 rounded ${connectorDone ? "bg-[#3aa838]" : "bg-slate-200"}`} />
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {isFinalFailed && (
+                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
+                    Order was {order.status.toLowerCase()}.
+                  </div>
+                )}
+
+                {order.approvalLogs && order.approvalLogs.length > 0 ? (
+                  <div className="mt-5 space-y-2 border-t border-slate-200 pt-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Activity</div>
+                    {order.approvalLogs.map((log, i) => {
+                      const approved = (log.status || "").toUpperCase() === "APPROVED";
+                      return (
+                        <div key={i} className="flex items-start gap-2 text-sm">
+                          <div className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${approved ? "bg-[#3aa838]/10" : "bg-rose-50"}`}>
+                            <Check className={`h-3 w-3 ${approved ? "text-[#3aa838]" : "text-rose-500"}`} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-1.5">
+                              <span className="font-medium">{log.role?.replaceAll("_", " ") || "Step"}</span>
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                  approved ? "bg-[#3aa838]/10 text-[#2f8a2f]" : "bg-rose-50 text-rose-700"
+                                }`}
+                              >
+                                {log.status}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{fmtDate(log.actionDate)}</span>
+                            </div>
+                            {log.remarks && (
+                              <div className="mt-0.5 text-xs text-muted-foreground">{log.remarks}</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-muted-foreground">
+                    No approval actions recorded yet.
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Right column */}
-          <div className="space-y-6">
+          {/* ============ RIGHT ============ */}
+          <div className="h-fit space-y-6 lg:sticky lg:top-6">
             {/* Summary */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Qty</span>
-                  <span className="font-medium">{totals.totalQty}</span>
+            <Card className="overflow-hidden border-slate-200 shadow-md">
+              <SectionHeader icon={Wallet} title="Summary" />
+              <CardContent className="space-y-3 p-5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Qty</span>
+                  <span className="font-medium tabular-nums">{totals.totalQty}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Bonus qty</span>
-                  <span className="font-medium">{totals.totalBonusQty}</span>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Bonus qty</span>
+                  <span className="font-medium tabular-nums">{totals.totalBonusQty}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Sub total</span>
-                  <span className="font-medium">{money(order.subTotal ?? totals.subtotal)} BDT</span>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Sub total</span>
+                  <span className="font-medium tabular-nums">{money(order.subTotal ?? totals.subtotal)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Discount</span>
-                  <span className="font-medium">{money(order.totalDiscount)} BDT</span>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span className="font-medium tabular-nums text-rose-600">- {money(order.totalDiscount)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Tax</span>
-                  <span className="font-medium">{money(order.totalTax)} BDT</span>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Tax</span>
+                  <span className="font-medium tabular-nums">{money(order.totalTax)}</span>
                 </div>
-                <div className="flex items-center justify-between border-t pt-3">
-                  <span className="text-base font-semibold">Grand total</span>
-                  <span className="text-lg font-bold text-indigo-700">
-                    {money(order.grandTotal ?? totals.grandTotal)} BDT
+                <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                  <span className="text-sm font-semibold">Grand total</span>
+                  <span className="text-xl font-extrabold tabular-nums text-[#2f8a2f]">
+                    ৳ {money(order.grandTotal ?? totals.grandTotal)}
                   </span>
                 </div>
               </CardContent>
             </Card>
 
             {/* Credit summary */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Credit summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={TrendingUp} title="Credit summary" />
+              <CardContent className="space-y-3 p-5">
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Credit limit</span>
-                  <span className="font-medium">{money(order.creditSnapshot?.creditLimit)} BDT</span>
+                  <span className="font-medium tabular-nums">{money(order.creditSnapshot?.creditLimit)}</span>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Used</span>
-                  <span className="font-medium">{money(order.creditSnapshot?.used)} BDT</span>
+                  <span className="font-medium tabular-nums">{money(order.creditSnapshot?.used)}</span>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Available</span>
-                  <span className="font-medium">{money(order.creditSnapshot?.available)} BDT</span>
+                  <span className="font-bold tabular-nums text-[#3aa838]">
+                    {money(order.creditSnapshot?.available)}
+                  </span>
                 </div>
 
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={`h-full rounded-full transition-all ${creditDanger ? "bg-rose-500" : "bg-[#3aa838]"}`}
+                    style={{ width: `${creditPct}%` }}
+                  />
+                </div>
+                <div className="text-[10px] text-muted-foreground">{creditPct.toFixed(1)}% of limit used</div>
+
                 {creditLoading ? (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading live credit...
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading live credit...
                   </div>
                 ) : creditSummary ? (
-                  <div className="rounded-md bg-slate-50 p-3 text-xs">
-                    <div className="mb-1 font-medium text-muted-foreground">Live dealer credit</div>
-                    <div className="space-y-1">
-                      <div>Current due: {money(creditSummary.currentDue)} BDT</div>
-                      <div>Available: {money(creditSummary.available)} BDT</div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+                    <div className="mb-1 font-semibold text-slate-700">Live dealer credit</div>
+                    <div className="space-y-0.5 text-slate-600">
+                      <div>Current due: {money(creditSummary.currentDue)}</div>
+                      <div>Available: {money(creditSummary.available)}</div>
                     </div>
                   </div>
                 ) : null}
@@ -1752,66 +2040,79 @@ export default function SalesOrderEditActionPage() {
             </Card>
 
             {/* Invoice & QR */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Invoice</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={Receipt} title="Invoice" />
+              <CardContent className="space-y-4 p-5">
                 {invoice ? (
                   <>
-                    <div className="rounded-md border bg-slate-50 p-4">
-                      <div className="text-xs text-muted-foreground">Invoice No</div>
-                      <div className="mt-1 font-semibold">{invoice.invoiceNo || "-"}</div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Date: {fmtDate(invoice.invoiceDate || order.createdAt)}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        Payment: {invoice.paymentStatus || "UNPAID"}
+                    <div className="rounded-lg border border-[#3aa838]/20 bg-[#3aa838]/5 p-4">
+                      <div className="text-[10px] uppercase tracking-wide text-[#2f8a2f]">Invoice No</div>
+                      <div className="mt-0.5 font-semibold text-slate-900">{invoice.invoiceNo || "-"}</div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <div className="text-muted-foreground">Date</div>
+                          <div className="font-medium">{fmtDate(invoice.invoiceDate || order.createdAt)}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">Payment</div>
+                          <div className="font-medium">{invoice.paymentStatus || "UNPAID"}</div>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="rounded-md border bg-white p-4">
-                      <div className="text-xs font-medium text-muted-foreground">QR image</div>
-                      <div className="mt-3 flex items-center justify-center rounded-md border bg-slate-50 p-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 text-center">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">QR Code</div>
+                      <div className="mt-3 flex justify-center">
                         {qrImage ? (
-                          <img src={qrImage} alt="Invoice QR" className="h-44 w-44" />
+                          <img src={qrImage} alt="Invoice QR" className="h-48 w-48 rounded border border-slate-200" />
                         ) : (
-                          <div className="text-sm text-muted-foreground">QR not ready yet</div>
+                          <div className="flex h-48 w-48 items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 text-xs text-muted-foreground">
+                            QR not ready
+                          </div>
                         )}
                       </div>
-                      {qrParsed && (
-                        <div className="mt-3 space-y-2 rounded-md bg-blue-50 p-3 text-xs">
-                          <div className="font-medium text-blue-800">Decoded QR data</div>
-                          <div>
-                            <span className="text-muted-foreground">Dealer: </span>
-                            <span className="font-medium">
-                              {qrParsed?.dealer?.name} ({qrParsed?.dealer?.code})
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Phone: </span>
-                            {qrParsed?.dealer?.phone}
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Credit: </span>
-                            {money(qrParsed?.dealer?.creditLimit)} limit / {money(qrParsed?.dealer?.available)} avail
-                          </div>
-                          <div className="mt-1 font-medium">Products:</div>
-                          {qrParsed?.products?.map((p, i) => (
-                            <div key={i} className="ml-2 text-slate-600">
-                              {p.name} – {p.qty} × {money(p.unitPrice)} BDT
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <div className="mt-2 text-[10px] text-muted-foreground">Scan to verify</div>
                     </div>
 
-                    <div className="rounded-md border bg-white p-4">
-                      <div className="text-xs font-medium text-muted-foreground">Dealer signature template</div>
-                      <div className="mt-2 rounded-md border border-dashed bg-slate-50 p-4 text-sm">
-                        {dealerSignatureId ? (
+                    {qrParsed && (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+                        <div className="font-semibold text-slate-900">Decoded data</div>
+                        <div className="mt-2 space-y-1 text-slate-600">
                           <div>
-                            Signature media linked: <span className="font-medium">{String(dealerSignatureId)}</span>
+                            <span className="text-muted-foreground">Dealer:</span>{" "}
+                            <span className="font-medium">{qrParsed?.dealer?.name}</span> ({qrParsed?.dealer?.code})
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Phone:</span> {qrParsed?.dealer?.phone}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Credit:</span>{" "}
+                            {money(qrParsed?.dealer?.creditLimit)} limit / {money(qrParsed?.dealer?.available)} avail
+                          </div>
+                        </div>
+                        {qrParsed?.products && qrParsed.products.length > 0 && (
+                          <div className="mt-2 border-t border-slate-200 pt-2">
+                            <div className="font-semibold text-slate-900">Products</div>
+                            <div className="mt-1 space-y-0.5 text-slate-600">
+                              {qrParsed.products.map((p, i) => (
+                                <div key={i} className="truncate">
+                                  {p.name} · {p.qty} × {money(p.unitPrice)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="rounded-lg border border-slate-200 bg-white p-4">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Dealer signature template
+                      </div>
+                      <div className="mt-2 text-sm">
+                        {dealerSignatureId ? (
+                          <div className="rounded border border-[#3aa838]/30 bg-[#3aa838]/5 p-2 font-mono text-xs text-[#2f8a2f]">
+                            {String(dealerSignatureId)}
                           </div>
                         ) : (
                           <div className="text-muted-foreground">No dealer signature uploaded.</div>
@@ -1821,85 +2122,63 @@ export default function SalesOrderEditActionPage() {
 
                     <GlobalPrintButton
                       contentHtml={buildSalesOrderPrintHtml(
-                        order,
-                        qrImageForPrint,
-                        dealerName,
-                        dealerPhone,
-                        warehouseName,
-                        watchedItems,
-                        taxPercent,
-                        totals,
+                        order, qrImageForPrint, dealerName, dealerPhone,
+                        warehouseName, watchedItems, taxPercent, totals,
                       )}
                       headerRightHtml={buildSalesOrderPrintHeaderRight(order)}
                       label="Print Invoice"
                       title="Sales Invoice"
                       orientation="portrait"
-                      company={{
-                        name: "Antab Agro LTD",
-                        address: "123 Agro Street, Dhaka",
-                        phone: "+880 1711-111111",
-                        email: "info@antabagro.com",
-                      }}
+                      company={printCompany}
                       showHeader={false}
                       showFooter={false}
                     />
                   </>
                 ) : (
-                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    Invoice not created yet. Use Ship to generate it.
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
+                    <FileText className="mx-auto h-8 w-8 text-slate-300" />
+                    <div className="mt-2 text-sm font-medium text-slate-700">No invoice yet</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Use Ship to generate the invoice.</div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* 🆕 Delivery Chalan Card */}
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader>
-                <CardTitle>Delivery Chalan (DC)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            {/* Delivery Chalan */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={FileText} title="Delivery Chalan (DC)" />
+              <CardContent className="space-y-4 p-5">
                 <GlobalPrintButton
-                  contentHtml={buildDCPrintHtml(
-                    order,
-                    dealerName,
-                    dealerPhone,
-                    warehouseName,
-                    watchedItems,
-                  )}
-                  headerRightHtml={`<div style="text-align:right;"><div style="font-size: 20px; font-weight: 800; color: #0f172a;">DC #${order.orderNo}</div></div>`}
+                  contentHtml={buildDCPrintHtml(order, dealerName, dealerPhone, warehouseName, watchedItems)}
+                  headerRightHtml={`<div style="text-align:right;"><div style="font-size:20px;font-weight:800;color:#0f172a;">DC #${order.orderNo}</div></div>`}
                   label="Print D.C."
                   title="Delivery Chalan"
                   orientation="portrait"
-                  company={{
-                    name: "Antab Agro LTD",
-                    address: "123 Agro Street, Dhaka",
-                    phone: "+880 1711-111111",
-                    email: "info@antabagro.com",
-                  }}
+                  company={printCompany}
                   showHeader={false}
                   showFooter={false}
                 />
 
-                <div className="text-sm text-muted-foreground">
-                  Upload the signed Delivery Chalan (optional).
+                <div className="text-xs text-muted-foreground">
+                  Upload the signed DC (optional).
                 </div>
 
-                <Input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setDcFile(e.target.files?.[0] || null)}
+                <UploadTile
+                  label="Click to upload DC"
+                  hint="PDF or image"
+                  onFile={setDcFile}
                 />
 
                 {dcFile && (
-                  <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                    Selected file: <span className="font-medium">{dcFile.name}</span>
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
+                    <span className="text-muted-foreground">Selected:</span>{" "}
+                    <span className="font-medium">{dcFile.name}</span>
                   </div>
                 )}
 
                 <Button
                   type="button"
-                  variant="outline"
-                  className="w-full"
+                  className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                   onClick={handleDCUpload}
                   disabled={dcUploadLoading || !dcFile}
                 >
@@ -1912,35 +2191,37 @@ export default function SalesOrderEditActionPage() {
                 </Button>
 
                 {dcMediaId && (
-                  <div className="rounded-md bg-emerald-50 p-3 text-sm">
-                    <div className="flex items-center gap-1 font-medium text-emerald-700">
+                  <div className="rounded-lg border border-[#3aa838]/30 bg-[#3aa838]/10 p-3">
+                    <div className="flex items-center gap-1 text-sm font-medium text-[#2f8a2f]">
                       <CheckCircle2 className="h-4 w-4" /> DC uploaded
                     </div>
-                    <div className="mt-1 text-xs text-emerald-600">
-                      Media ID: {dcMediaId}
+                    <div className="mt-1 truncate font-mono text-[10px] text-[#2f8a2f]">
+                      {dcMediaId}
                     </div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Approval remarks & button */}
+            {/* Approval remarks */}
             {currentApprovalRole && (
-              <Card className="border-slate-200 shadow-sm">
-                <CardHeader>
-                  <CardTitle>Approval remarks</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <Card className="overflow-hidden border-[#3aa838]/30 shadow-md ring-2 ring-[#3aa838]/10">
+                <SectionHeader
+                  icon={ShieldCheck}
+                  title="Approval remarks"
+                  subtitle={`Approve as ${currentApprovalRole}`}
+                />
+                <CardContent className="space-y-3 p-5">
                   <textarea
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
                     rows={3}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#3aa838]"
                     placeholder="Optional remarks before approval..."
                   />
                   <Button
                     type="button"
-                    className="w-full"
+                    className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                     onClick={() => void handleApprove()}
                     disabled={savingAction === "approve"}
                   >
@@ -1957,48 +2238,52 @@ export default function SalesOrderEditActionPage() {
 
             {/* Delivery verification */}
             {canDeliver && (
-              <Card className="border-slate-200 shadow-sm">
-                <CardHeader>
-                  <CardTitle>Delivery verification</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-sm text-muted-foreground">
-                    Upload the signed invoice scan/photo. The backend will verify QR and dealer signature.
+              <Card className="overflow-hidden border-[#3aa838]/30 shadow-md ring-2 ring-[#3aa838]/10">
+                <SectionHeader
+                  icon={Truck}
+                  title="Delivery verification"
+                  subtitle="Upload signed invoice to complete delivery"
+                />
+                <CardContent className="space-y-4 p-5">
+                  <div className="rounded-lg border border-[#3aa838]/20 bg-[#3aa838]/5 p-3 text-xs text-[#2f8a2f]">
+                    Upload the signed invoice. The backend will verify the QR and dealer signature before approving delivery.
                   </div>
 
-                  <Input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                  <UploadTile
+                    label="Click to upload signed invoice"
+                    hint="PDF or image"
+                    onFile={setProofFile}
                   />
 
                   {proofFile && (
-                    <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                      Selected file: <span className="font-medium">{proofFile.name}</span>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
+                      <span className="text-muted-foreground">Selected:</span>{" "}
+                      <span className="font-medium">{proofFile.name}</span>
                     </div>
                   )}
 
                   <Button
                     type="button"
-                    className="w-full"
+                    className="w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                     onClick={() => void handleDeliver()}
                     disabled={proofUploading || savingAction === "deliver" || !proofFile}
                   >
                     {proofUploading || savingAction === "deliver" ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
-                      <Upload className="mr-2 h-4 w-4" />
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
                     )}
                     Verify and deliver
                   </Button>
 
                   {deliveryVerification && (
-                    <div className="rounded-md bg-emerald-50 p-3 text-sm">
-                      <div className="flex items-center gap-1 font-medium text-emerald-700">
+                    <div className="rounded-lg border border-[#3aa838]/30 bg-[#3aa838]/10 p-3">
+                      <div className="flex items-center gap-1 text-sm font-medium text-[#2f8a2f]">
                         <CheckCircle2 className="h-4 w-4" /> Delivery verified
                       </div>
-                      <div className="mt-1 text-xs text-emerald-600">
-                        Signature similarity: {((deliveryVerification.signatureSimilarity || 0) * 100).toFixed(1)}%
+                      <div className="mt-1 text-xs text-[#2f8a2f]">
+                        Signature similarity:{" "}
+                        {((deliveryVerification.signatureSimilarity || 0) * 100).toFixed(1)}%
                       </div>
                     </div>
                   )}
