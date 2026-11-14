@@ -1,7 +1,7 @@
 // app/inventory/material-wip/[wipId]/produce/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -9,9 +9,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -33,6 +32,10 @@ import {
   ChevronLeft,
   X,
   Edit3,
+  Search,
+  Factory as FactoryIcon,
+  Package,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -103,7 +106,9 @@ type BOMWithProduct = {
 const safeNum = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const safeFixed3 = (v: any) => safeNum(v).toFixed(3);
 const safeTaka = (v: any) =>
-  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(safeNum(v));
+  new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 2,
+  }).format(safeNum(v));
 const safeUnit = (u: any) =>
   u && u !== "NaN" && u !== "null" && u !== "undefined" ? String(u) : "—";
 
@@ -115,6 +120,30 @@ function nameOf(maybe: any) {
 
 const EPSILON = 0.0001;
 
+/* ---------- Section header ---------- */
+function SectionHeader({
+  icon: Icon,
+  title,
+  right,
+}: {
+  icon: React.ElementType;
+  title: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5">
+      <div className="flex items-center gap-2">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3aa838]/10">
+          <Icon className="h-3.5 w-3.5 text-[#3aa838]" />
+        </div>
+        <div className="text-sm font-semibold">{title}</div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/* ---------- Main ---------- */
 export default function ProduceMaterialWipPage() {
   const { wipId } = useParams<{ wipId: string }>();
   const router = useRouter();
@@ -123,17 +152,22 @@ export default function ProduceMaterialWipPage() {
   const [loading, setLoading] = useState(true);
 
   // Name lookups
-  const [rawMaterialNames, setRawMaterialNames] = useState<Record<string, string>>({});
-  const [packagingNames, setPackagingNames] = useState<Record<string, string>>({});
+  const [rawMaterialNames, setRawMaterialNames] = useState<
+    Record<string, string>
+  >({});
+  const [packagingNames, setPackagingNames] = useState<
+    Record<string, string>
+  >({});
 
   // ACTIVE flow
   const [possibleBoms, setPossibleBoms] = useState<BOMWithProduct[]>([]);
   const [loadingBoms, setLoadingBoms] = useState(false);
+  const [bomSearch, setBomSearch] = useState("");
   const [selectedProducts, setSelectedProducts] = useState<
     { productId: string; quantityProduced: number }[]
   >([]);
   const [step, setStep] = useState<1 | 2>(1);
-  const [remainingRawStr, setRemainingRawStr] = useState("");   // text input
+  const [remainingRawStr, setRemainingRawStr] = useState("");
   const [bypassWastage, setBypassWastage] = useState(false);
   const [requesting, setRequesting] = useState(false);
 
@@ -145,11 +179,12 @@ export default function ProduceMaterialWipPage() {
   const [editingProducts, setEditingProducts] = useState<
     { productId: string; quantityProduced: number }[]
   >([]);
-  const [editingRemainingStr, setEditingRemainingStr] = useState("");  // text input
+  const [editingRemainingStr, setEditingRemainingStr] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editSearch, setEditSearch] = useState("");
   const [updating, setUpdating] = useState(false);
 
-  // Load WIP + names
+  /* Load WIP + names */
   useEffect(() => {
     if (!wipId) return;
     setLoading(true);
@@ -171,11 +206,13 @@ export default function ProduceMaterialWipPage() {
       .finally(() => setLoading(false));
   }, [wipId]);
 
-  // Fetch BOMs when ACTIVE or editing
+  /* Fetch BOMs when ACTIVE or editing */
   useEffect(() => {
     if (!wip || (wip.status !== "ACTIVE" && !editMode)) return;
     const rawId =
-      typeof wip.rawMaterialId === "object" ? wip.rawMaterialId._id : wip.rawMaterialId;
+      typeof wip.rawMaterialId === "object"
+        ? wip.rawMaterialId._id
+        : wip.rawMaterialId;
     setLoadingBoms(true);
     api
       .get(`/material-wip/products/${rawId}`)
@@ -184,18 +221,21 @@ export default function ProduceMaterialWipPage() {
       .finally(() => setLoadingBoms(false));
   }, [wip, editMode]);
 
-  // Prefill edit form
+  /* Prefill edit form */
   useEffect(() => {
     if (wip?.status === "PENDING_APPROVAL" && wip.pendingConversion && editMode) {
       const pc = wip.pendingConversion;
       setEditingProducts(
         pc.products?.map((p: any) => ({
-          productId: typeof p.productId === "object" ? p.productId._id : p.productId,
+          productId:
+            typeof p.productId === "object" ? p.productId._id : p.productId,
           quantityProduced: safeNum(p.quantityProduced),
-        })) || []
+        })) || [],
       );
       setEditingRemainingStr(
-        pc.remainingRawQuantity != null ? String(pc.remainingRawQuantity) : ""
+        pc.remainingRawQuantity != null
+          ? String(pc.remainingRawQuantity)
+          : "",
       );
       setEditNotes(pc.notes || "");
     }
@@ -206,7 +246,28 @@ export default function ProduceMaterialWipPage() {
       ? rawMaterialNames[itemId] || itemId
       : packagingNames[itemId] || itemId;
 
-  // ACTIVE helpers
+  /* Filtered BOMs */
+  const filteredBoms = useMemo(() => {
+    const q = bomSearch.trim().toLowerCase();
+    if (!q) return possibleBoms;
+    return possibleBoms.filter((bom) =>
+      `${bom.productId.name} ${bom.productId.sku || ""}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [possibleBoms, bomSearch]);
+
+  const filteredEditBoms = useMemo(() => {
+    const q = editSearch.trim().toLowerCase();
+    if (!q) return possibleBoms;
+    return possibleBoms.filter((bom) =>
+      `${bom.productId.name} ${bom.productId.sku || ""}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [possibleBoms, editSearch]);
+
+  /* ACTIVE helpers */
   const toggleProduct = (productId: string) => {
     setSelectedProducts((prev) => {
       const exists = prev.find((p) => p.productId === productId);
@@ -217,28 +278,35 @@ export default function ProduceMaterialWipPage() {
 
   const updateQty = (productId: string, qty: number) => {
     setSelectedProducts((prev) =>
-      prev.map((p) => (p.productId === productId ? { ...p, quantityProduced: qty } : p))
+      prev.map((p) =>
+        p.productId === productId ? { ...p, quantityProduced: qty } : p,
+      ),
     );
   };
 
-  const selectedCount = selectedProducts.filter((p) => p.quantityProduced > 0).length;
+  const selectedCount = selectedProducts.filter(
+    (p) => p.quantityProduced > 0,
+  ).length;
   const canProceed = selectedCount > 0;
 
-  // Parse remaining raw from string, allowing intermediate partial entries
   const remainingRaw = parseFloat(remainingRawStr);
   const remainingValid =
     !isNaN(remainingRaw) &&
     remainingRaw >= 0 &&
     remainingRaw <= safeNum(wip?.initialQuantity);
   const canSubmit = canProceed && remainingValid;
-  const taken = safeNum(wip?.initialQuantity) - safeNum(remainingValid ? remainingRaw : 0);
+  const taken =
+    safeNum(wip?.initialQuantity) - safeNum(remainingValid ? remainingRaw : 0);
 
   const handleRequest = async () => {
     if (!wip || !canSubmit) return;
-    const validProducts = selectedProducts.filter((p) => p.quantityProduced > 0);
+    const validProducts = selectedProducts.filter(
+      (p) => p.quantityProduced > 0,
+    );
     setRequesting(true);
     try {
-      const factoryId = typeof wip.factoryId === "object" ? wip.factoryId._id : wip.factoryId;
+      const factoryId =
+        typeof wip.factoryId === "object" ? wip.factoryId._id : wip.factoryId;
       await api.post("/material-wip/request-conversion", {
         wipId: wip._id,
         factoryId,
@@ -255,7 +323,7 @@ export default function ProduceMaterialWipPage() {
     }
   };
 
-  // PENDING_APPROVAL helpers
+  /* PENDING_APPROVAL helpers */
   const handleApprove = async () => {
     if (!wip) return;
     setApproving(true);
@@ -272,10 +340,13 @@ export default function ProduceMaterialWipPage() {
 
   const handleReject = async () => {
     if (!wip) return;
-    if (!rejectReason.trim()) return toast.error("Please provide a rejection reason");
+    if (!rejectReason.trim())
+      return toast.error("Please provide a rejection reason");
     setRejecting(true);
     try {
-      await api.post(`/material-wip/${wip._id}/reject`, { reason: rejectReason });
+      await api.post(`/material-wip/${wip._id}/reject`, {
+        reason: rejectReason,
+      });
       toast.success("Conversion rejected, WIP returned to ACTIVE");
       router.push("/inventory/material-wip");
     } catch (err: any) {
@@ -287,16 +358,24 @@ export default function ProduceMaterialWipPage() {
 
   const handleUpdate = async () => {
     if (!wip) return;
-    const validProducts = editingProducts.filter((p) => p.quantityProduced > 0);
-    if (validProducts.length === 0) return toast.error("Select at least one product");
+    const validProducts = editingProducts.filter(
+      (p) => p.quantityProduced > 0,
+    );
+    if (validProducts.length === 0)
+      return toast.error("Select at least one product");
     const remaining = parseFloat(editingRemainingStr);
-    if (isNaN(remaining) || remaining < 0 || remaining > safeNum(wip.initialQuantity)) {
+    if (
+      isNaN(remaining) ||
+      remaining < 0 ||
+      remaining > safeNum(wip.initialQuantity)
+    ) {
       toast.error("Invalid remaining quantity");
       return;
     }
     setUpdating(true);
     try {
-      const factoryId = typeof wip.factoryId === "object" ? wip.factoryId._id : wip.factoryId;
+      const factoryId =
+        typeof wip.factoryId === "object" ? wip.factoryId._id : wip.factoryId;
       await api.patch(`/material-wip/${wip._id}/pending-conversion`, {
         factoryId,
         products: validProducts,
@@ -314,7 +393,6 @@ export default function ProduceMaterialWipPage() {
     }
   };
 
-  // Edit form toggles
   const toggleEditProduct = (productId: string) => {
     setEditingProducts((prev) => {
       const exists = prev.find((p) => p.productId === productId);
@@ -325,21 +403,38 @@ export default function ProduceMaterialWipPage() {
 
   const updateEditQty = (productId: string, qty: number) => {
     setEditingProducts((prev) =>
-      prev.map((p) => (p.productId === productId ? { ...p, quantityProduced: qty } : p))
+      prev.map((p) =>
+        p.productId === productId ? { ...p, quantityProduced: qty } : p,
+      ),
     );
   };
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading WIP...
+        </div>
       </div>
     );
   }
   if (!wip) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center text-gray-500">
-        WIP not found.
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Card className="w-full max-w-lg">
+          <CardContent className="p-8 text-center">
+            <div className="text-lg font-semibold">WIP not found</div>
+            <Button
+              className="mt-4"
+              variant="outline"
+              onClick={() => router.push("/inventory/material-wip")}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to list
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -347,176 +442,260 @@ export default function ProduceMaterialWipPage() {
   const pc = wip.pendingConversion;
   const isPending = wip.status === "PENDING_APPROVAL";
 
-  // Derived values
-  const loss = safeNum(pc?.productionLossQuantity);      // production loss (exceeds allowed)
+  /* Derived values */
+  const loss = safeNum(pc?.productionLossQuantity);
   const gain = safeNum(pc?.gainQuantity);
-  const normalWastage = safeNum(pc?.normalWastageQuantity); // within allowed wastage
+  const normalWastage = safeNum(pc?.normalWastageQuantity);
   const expectedRaw = safeNum(pc?.expectedRawUsed);
   const actualRaw = safeNum(pc?.actualRawUsed);
   const allowedWastage = safeNum(pc?.allowedWastageRawUsed);
   const remainingRawFromPC = safeNum(pc?.remainingRawQuantity);
 
-  // Banner logic – uses productionLossQuantity to detect actual excess loss
   const hasGain = gain > EPSILON;
-  const hasProductionLoss = loss > EPSILON;               // backend says some loss exceeds allowed
-  const hasNormalWastageOnly = !hasGain && !hasProductionLoss && (normalWastage > EPSILON || (actualRaw > expectedRaw + EPSILON));
+  const hasProductionLoss = loss > EPSILON;
+  const hasNormalWastageOnly =
+    !hasGain && !hasProductionLoss && normalWastage > EPSILON;
   const isPerfect = !hasGain && !hasProductionLoss && !hasNormalWastageOnly;
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ============ HERO ============ */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push(`/inventory/material-wip/${wip._id}`)}
+              variant="outline"
+              size="icon"
+              onClick={() =>
+                router.push(`/inventory/material-wip/${wip._id}`)
+              }
+              className="h-8 w-8"
+              title="Back to WIP"
             >
-              <ArrowLeft className="h-4 w-4 mr-1" /> Back to WIP
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <FactoryIcon className="h-4 w-4 text-[#3aa838]" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold leading-tight">
                 {isPending ? "Review & Approval" : "Production Request"}
               </h1>
-              <p className="text-xs text-gray-500">
-                {nameOf(wip.rawMaterialId)} — {wip.unit}
+              <p className="truncate text-[11px] text-muted-foreground">
+                {nameOf(wip.rawMaterialId)} · {wip.unit} · Issued{" "}
+                {safeFixed3(wip.initialQuantity)}
               </p>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
-        {/* ========== ACTIVE WIP ========== */}
+          <div className="flex shrink-0 gap-2">
+            <Badge
+              className={cn(
+                "border text-[11px] font-semibold",
+                isPending
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-[#3aa838]/30 bg-[#3aa838]/10 text-[#2f8a2f]",
+              )}
+            >
+              {isPending ? "Pending approval" : "Active"}
+            </Badge>
+          </div>
+        </div>
+
+        {/* ============ ACTIVE WIP ============ */}
         {wip.status === "ACTIVE" && (
-          <>
+          <div className="space-y-3">
             {/* Step indicator */}
-            <div className="flex items-center gap-4 mb-6">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
               <div
                 className={cn(
                   "flex items-center gap-2",
-                  step === 1 ? "text-blue-600" : "text-gray-400"
+                  step === 1 ? "text-[#2f8a2f]" : "text-slate-400",
                 )}
               >
                 <div
                   className={cn(
-                    "w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium border-2",
-                    step === 1 ? "border-blue-600 bg-blue-50" : "border-gray-300"
+                    "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold",
+                    step === 1
+                      ? "border-[#3aa838] bg-[#3aa838]/10 text-[#2f8a2f]"
+                      : "border-slate-300",
                   )}
                 >
                   1
                 </div>
-                <span className="text-sm font-medium">Select Products</span>
+                <span className="text-sm font-medium">Select products</span>
               </div>
-              <ChevronRight className="h-4 w-4 text-gray-300" />
+              <ChevronRight className="h-4 w-4 text-slate-300" />
               <div
                 className={cn(
                   "flex items-center gap-2",
-                  step === 2 ? "text-blue-600" : "text-gray-400"
+                  step === 2 ? "text-[#2f8a2f]" : "text-slate-400",
                 )}
               >
                 <div
                   className={cn(
-                    "w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium border-2",
-                    step === 2 ? "border-blue-600 bg-blue-50" : "border-gray-300"
+                    "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold",
+                    step === 2
+                      ? "border-[#3aa838] bg-[#3aa838]/10 text-[#2f8a2f]"
+                      : "border-slate-300",
                   )}
                 >
                   2
                 </div>
-                <span className="text-sm font-medium">Remaining & Submit</span>
+                <span className="text-sm font-medium">Remaining & submit</span>
               </div>
             </div>
 
             {step === 1 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Step 1: Select Products & Quantities</CardTitle>
-                </CardHeader>
-                <CardContent>
+              <Card className="overflow-hidden border-slate-200 shadow-sm">
+                <SectionHeader
+                  icon={Package}
+                  title="Step 1 — Select products & quantities"
+                  right={
+                    <span className="text-[11px] text-muted-foreground">
+                      {selectedCount} selected
+                    </span>
+                  }
+                />
+
+                <CardContent className="space-y-3 p-4">
+                  {/* Search bar */}
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={bomSearch}
+                      onChange={(e) => setBomSearch(e.target.value)}
+                      placeholder="Search product by name or SKU..."
+                      className="h-9 pl-9 text-sm focus-visible:ring-[#3aa838]"
+                    />
+                  </div>
+
                   {loadingBoms ? (
                     <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin" />
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : possibleBoms.length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">
+                    <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-muted-foreground">
                       No BOMs found for this raw material.
-                    </p>
+                    </div>
+                  ) : filteredBoms.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-muted-foreground">
+                      No products match "{bomSearch}".
+                    </div>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Product</TableHead>
-                          <TableHead>BOM Components</TableHead>
-                          <TableHead className="w-40">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {possibleBoms.map((bom) => {
-                          const isSelected = selectedProducts.some(
-                            (p) => p.productId === bom.productId._id
-                          );
-                          return (
-                            <TableRow key={bom.productId._id}>
-                              <TableCell className="font-medium">
-                                {bom.productId.name} ({bom.productId.sku})
-                              </TableCell>
-                              <TableCell className="text-xs text-gray-600">
-                                {bom.components.map((c, i) => (
-                                  <div key={i}>
-                                    {c.itemType === "RawMaterial" ? "RM" : "PKG"}:{" "}
-                                    {resolveName(c.itemType, c.itemId)} — {c.quantity}{" "}
-                                    {c.unit || ""}
-                                    {c.wastagePercent
-                                      ? ` (wastage ${c.wastagePercent}%)`
-                                      : ""}
+                    <div className="overflow-hidden rounded-lg border border-slate-200">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-slate-50 hover:bg-slate-50">
+                            <TableHead className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                              Product
+                            </TableHead>
+                            <TableHead className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                              BOM components
+                            </TableHead>
+                            <TableHead className="w-44 text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                              Action
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredBoms.map((bom) => {
+                            const isSelected = selectedProducts.some(
+                              (p) => p.productId === bom.productId._id,
+                            );
+                            return (
+                              <TableRow
+                                key={bom.productId._id}
+                                className="border-b border-slate-100 last:border-0"
+                              >
+                                <TableCell className="px-3 py-2 font-medium">
+                                  <div className="text-sm text-slate-900">
+                                    {bom.productId.name}
                                   </div>
-                                ))}
-                              </TableCell>
-                              <TableCell>
-                                {isSelected ? (
-                                  <div className="flex items-center gap-2">
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      value={
-                                        selectedProducts.find(
-                                          (p) => p.productId === bom.productId._id
-                                        )?.quantityProduced || ""
-                                      }
-                                      onChange={(e) =>
-                                        updateQty(bom.productId._id, Number(e.target.value))
-                                      }
-                                      className="w-20 h-8"
-                                    />
+                                  {bom.productId.sku && (
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {bom.productId.sku}
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="px-3 py-2 text-[11px] text-slate-600">
+                                  {bom.components.map((c, i) => (
+                                    <div key={i} className="truncate">
+                                      <span className="font-medium text-slate-500">
+                                        {c.itemType === "RawMaterial"
+                                          ? "RM"
+                                          : "PKG"}
+                                        :
+                                      </span>{" "}
+                                      {resolveName(c.itemType, c.itemId)} —{" "}
+                                      {c.quantity} {c.unit || ""}
+                                      {c.wastagePercent
+                                        ? ` (wastage ${c.wastagePercent}%)`
+                                        : ""}
+                                    </div>
+                                  ))}
+                                </TableCell>
+                                <TableCell className="px-3 py-2">
+                                  {isSelected ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={
+                                          selectedProducts.find(
+                                            (p) =>
+                                              p.productId === bom.productId._id,
+                                          )?.quantityProduced || ""
+                                        }
+                                        onChange={(e) =>
+                                          updateQty(
+                                            bom.productId._id,
+                                            Number(e.target.value),
+                                          )
+                                        }
+                                        className="h-8 w-24 text-center tabular-nums focus-visible:ring-[#3aa838]"
+                                        placeholder="Qty"
+                                      />
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                        onClick={() =>
+                                          toggleProduct(bom.productId._id)
+                                        }
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  ) : (
                                     <Button
                                       size="sm"
-                                      variant="ghost"
-                                      onClick={() => toggleProduct(bom.productId._id)}
+                                      variant="outline"
+                                      onClick={() =>
+                                        toggleProduct(bom.productId._id)
+                                      }
+                                      className="h-8 border-[#3aa838]/40 text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f]"
                                     >
-                                      <X className="h-4 w-4" />
+                                      Select
                                     </Button>
-                                  </div>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => toggleProduct(bom.productId._id)}
-                                  >
-                                    Select
-                                  </Button>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )}
-                  <div className="flex justify-end mt-4">
-                    <Button onClick={() => setStep(2)} disabled={!canProceed}>
-                      Next <ChevronRight className="h-4 w-4 ml-1" />
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => setStep(2)}
+                      disabled={!canProceed}
+                      className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                    >
+                      Next
+                      <ChevronRight className="ml-1 h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
@@ -524,46 +703,53 @@ export default function ProduceMaterialWipPage() {
             )}
 
             {step === 2 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Step 2: Remaining Raw Material & Submit</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4 mb-2">
-                    <div className="bg-blue-50 p-3 rounded text-center">
-                      <div className="text-xs text-gray-500">Issued</div>
-                      <div className="text-lg font-semibold">
+              <Card className="overflow-hidden border-slate-200 shadow-sm">
+                <SectionHeader
+                  icon={Wallet}
+                  title="Step 2 — Remaining raw material & submit"
+                />
+                <CardContent className="space-y-3 p-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Issued
+                      </div>
+                      <div className="text-base font-semibold tabular-nums text-slate-900">
                         {safeFixed3(wip.initialQuantity)} {wip.unit}
                       </div>
                     </div>
-                    <div className="bg-amber-50 p-3 rounded text-center">
-                      <div className="text-xs text-gray-500">Taken (consumed)</div>
-                      <div className="text-lg font-semibold">
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-amber-700">
+                        Taken
+                      </div>
+                      <div className="text-base font-semibold tabular-nums text-amber-800">
                         {remainingValid ? safeFixed3(taken) : "—"} {wip.unit}
                       </div>
                     </div>
-                    <div className="bg-green-50 p-3 rounded text-center">
-                      <div className="text-xs text-gray-500">
-                        Remaining (will return)
+                    <div className="rounded-lg border border-[#3aa838]/30 bg-[#3aa838]/5 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-[#2f8a2f]">
+                        Remaining
                       </div>
-                      <div className="text-lg font-semibold">
+                      <div className="text-base font-semibold tabular-nums text-[#2f8a2f]">
                         {remainingRawStr || "0"} {wip.unit}
                       </div>
                     </div>
                   </div>
 
-                  <div>
-                    <Label>Enter remaining raw material after production</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-slate-600">
+                      Enter remaining raw material after production
+                    </Label>
                     <Input
                       type="text"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={remainingRawStr}
                       onChange={(e) => setRemainingRawStr(e.target.value)}
-                      className="mt-1"
+                      className="h-10 focus-visible:ring-[#3aa838]"
                     />
                     {remainingValid && (
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-[11px] text-muted-foreground">
                         Taken = {safeFixed3(taken)} {wip.unit}
                       </p>
                     )}
@@ -575,24 +761,25 @@ export default function ProduceMaterialWipPage() {
                         type="checkbox"
                         checked={bypassWastage}
                         onChange={(e) => setBypassWastage(e.target.checked)}
-                        className="rounded"
+                        className="rounded border-slate-300 text-[#3aa838] focus:ring-[#3aa838]"
                       />
-                      <Label>Override wastage check</Label>
+                      <Label className="text-sm">Override wastage check</Label>
                     </div>
                   )}
 
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-2">
                     <Button variant="ghost" onClick={() => setStep(1)}>
-                      <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                      <ChevronLeft className="mr-1 h-4 w-4" /> Back
                     </Button>
                     <Button
                       onClick={handleRequest}
                       disabled={!canSubmit || requesting}
+                      className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                     >
                       {requesting ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <CheckCircle className="h-4 w-4 mr-2" />
+                        <CheckCircle className="mr-2 h-4 w-4" />
                       )}
                       {requesting ? "Submitting..." : "Request Approval"}
                     </Button>
@@ -600,445 +787,546 @@ export default function ProduceMaterialWipPage() {
                 </CardContent>
               </Card>
             )}
-          </>
+          </div>
         )}
 
-        {/* ========== PENDING_APPROVAL ========== */}
+        {/* ============ PENDING_APPROVAL ============ */}
         {isPending && pc && !editMode && (
-          <>
+          <div className="space-y-3">
             {/* WIP summary */}
-            <div className="grid grid-cols-3 gap-4">
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Issued</div>
-                  <div className="text-lg font-semibold">
-                    {safeFixed3(wip.initialQuantity)} {wip.unit}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Taken (actual raw)</div>
-                  <div className="text-lg font-semibold">
-                    {safeFixed3(actualRaw)} {wip.unit}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Remaining (will return)</div>
-                  <div className="text-lg font-semibold">
-                    {safeFixed3(remainingRawFromPC)} {wip.unit}
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Issued
+                </div>
+                <div className="text-base font-semibold tabular-nums text-slate-900">
+                  {safeFixed3(wip.initialQuantity)} {wip.unit}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Actual raw
+                </div>
+                <div className="text-base font-semibold tabular-nums text-slate-900">
+                  {safeFixed3(actualRaw)} {wip.unit}
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#3aa838]/30 bg-[#3aa838]/5 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-[#2f8a2f]">
+                  Remaining
+                </div>
+                <div className="text-base font-semibold tabular-nums text-[#2f8a2f]">
+                  {safeFixed3(remainingRawFromPC)} {wip.unit}
+                </div>
+              </div>
             </div>
 
             {/* Variance banners */}
             {hasGain && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-300 text-green-800">
-                <BadgeCheck className="h-6 w-6 text-green-600" />
+              <div className="flex items-start gap-3 rounded-lg border border-[#3aa838]/30 bg-[#3aa838]/5 p-3 text-sm text-[#2f8a2f]">
+                <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
-                  <div className="font-semibold">GAIN Detected</div>
-                  <div className="text-sm">
-                    Actual raw usage ({safeFixed3(actualRaw)} {wip.unit}) is less than
-                    BOM expected ({safeFixed3(expectedRaw)} {wip.unit}). Gain of{" "}
-                    {safeFixed3(gain)} {wip.unit}.
+                  <div className="font-semibold">Gain detected</div>
+                  <div className="mt-0.5 text-xs">
+                    Actual usage ({safeFixed3(actualRaw)} {wip.unit}) is less
+                    than expected ({safeFixed3(expectedRaw)} {wip.unit}). Gain
+                    of <b>+{safeFixed3(gain)} {wip.unit}</b>.
                   </div>
                 </div>
               </div>
             )}
             {hasProductionLoss && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-300 text-red-800">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
+              <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <div className="font-semibold">
-                    Production Loss (exceeds allowed wastage)
+                    Production loss (exceeds allowed wastage)
                   </div>
-                  <div className="text-sm">
-                    Actual raw usage ({safeFixed3(actualRaw)} {wip.unit}) exceeds BOM
-                    expected ({safeFixed3(expectedRaw)} {wip.unit}) by{" "}
-                    {safeFixed3(loss + normalWastage)} {wip.unit}. Allowed wastage:{" "}
+                  <div className="mt-0.5 text-xs">
+                    Actual {safeFixed3(actualRaw)} {wip.unit} vs expected{" "}
+                    {safeFixed3(expectedRaw)} {wip.unit}. Allowed wastage:{" "}
                     {safeFixed3(allowedWastage)} {wip.unit}. Excess loss:{" "}
-                    {safeFixed3(loss)} {wip.unit}. Approver review required.
+                    <b>-{safeFixed3(loss)} {wip.unit}</b>.
                   </div>
                 </div>
               </div>
             )}
             {hasNormalWastageOnly && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-800">
-                <ShieldAlert className="h-6 w-6 text-amber-600" />
+              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
-                  <div className="font-semibold">Normal Wastage (within limit)</div>
-                  <div className="text-sm">
-                    Actual raw usage ({safeFixed3(actualRaw)} {wip.unit}) exceeds BOM
-                    expected by {safeFixed3(normalWastage)} {wip.unit}, within allowed
-                    wastage ({safeFixed3(allowedWastage)} {wip.unit}).
+                  <div className="font-semibold">
+                    Normal wastage (within limit)
+                  </div>
+                  <div className="mt-0.5 text-xs">
+                    Excess of {safeFixed3(normalWastage)} {wip.unit} is within
+                    the allowed {safeFixed3(allowedWastage)} {wip.unit} limit.
                   </div>
                 </div>
               </div>
             )}
             {isPerfect && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800">
-                <Info className="h-6 w-6 text-blue-600" />
+              <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <Info className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
-                  <div className="font-semibold">Perfect Usage</div>
-                  <div className="text-sm">
-                    Actual raw usage matches BOM expected (
-                    {safeFixed3(expectedRaw)} {wip.unit}). No gain or loss.
+                  <div className="font-semibold">Perfect usage</div>
+                  <div className="mt-0.5 text-xs">
+                    Actual usage matches expected ({safeFixed3(expectedRaw)}{" "}
+                    {wip.unit}).
                   </div>
                 </div>
               </div>
             )}
 
             {/* Variance cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Expected Raw</div>
-                  <div className="font-semibold">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={ShieldAlert} title="Variance breakdown" />
+              <CardContent className="grid grid-cols-2 gap-2 p-4 md:grid-cols-6">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                    Expected
+                  </div>
+                  <div className="text-xs font-semibold tabular-nums">
                     {safeFixed3(expectedRaw)} {wip.unit}
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Allowed Wastage</div>
-                  <div className="font-semibold">
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                    Allowed
+                  </div>
+                  <div className="text-xs font-semibold tabular-nums">
                     {safeFixed3(allowedWastage)} {wip.unit}
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Actual Raw</div>
-                  <div className="font-semibold">
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                    Actual
+                  </div>
+                  <div className="text-xs font-semibold tabular-nums">
                     {safeFixed3(actualRaw)} {wip.unit}
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Gain</div>
-                  <div className="font-semibold text-green-600">
-                    +{safeFixed3(gain)} {wip.unit}
+                </div>
+                <div className="rounded-md border border-[#3aa838]/30 bg-[#3aa838]/5 px-2 py-1.5">
+                  <div className="text-[9px] uppercase tracking-wide text-[#2f8a2f]">
+                    Gain
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Normal Wastage</div>
-                  <div className="font-semibold">
-                    {safeFixed3(normalWastage)} {wip.unit}
+                  <div className="text-xs font-semibold tabular-nums text-[#2f8a2f]">
+                    +{safeFixed3(gain)}
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Loss</div>
-                  <div className="font-semibold text-red-600">
-                    -{safeFixed3(loss)} {wip.unit}
+                </div>
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5">
+                  <div className="text-[9px] uppercase tracking-wide text-amber-700">
+                    Wastage
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <div className="text-xs font-semibold tabular-nums text-amber-800">
+                    {safeFixed3(normalWastage)}
+                  </div>
+                </div>
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5">
+                  <div className="text-[9px] uppercase tracking-wide text-rose-700">
+                    Loss
+                  </div>
+                  <div className="text-xs font-semibold tabular-nums text-rose-700">
+                    -{safeFixed3(loss)}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Cost summary */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Raw Mat. Cost</div>
-                  <div className="font-semibold">৳ {safeTaka(pc.rawMaterialCost)}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Packaging Cost</div>
-                  <div className="font-semibold">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={Wallet} title="Cost summary" />
+              <CardContent className="grid grid-cols-2 gap-2 p-4 md:grid-cols-4">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Raw material
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums text-slate-900">
+                    ৳ {safeTaka(pc.rawMaterialCost)}
+                  </div>
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Packaging
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums text-slate-900">
                     ৳ {safeTaka(pc.packagingMaterialCost)}
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Total Input Cost</div>
-                  <div className="font-semibold">৳ {safeTaka(pc.totalInputCost)}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <div className="text-xs text-gray-500">Finished Goods Cost</div>
-                  <div className="font-semibold">
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Input cost
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums text-slate-900">
+                    ৳ {safeTaka(pc.totalInputCost)}
+                  </div>
+                </div>
+                <div className="rounded-md border border-[#3aa838]/30 bg-[#3aa838]/5 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-[#2f8a2f]">
+                    Finished cost
+                  </div>
+                  <div className="text-sm font-bold tabular-nums text-[#2f8a2f]">
                     ৳ {safeTaka(pc.totalFinishedGoodsCost)}
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* Per‑product table */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Products Produced</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Exp Raw</TableHead>
-                      <TableHead className="text-right">Act Raw</TableHead>
-                      <TableHead className="text-right">Unit Cost</TableHead>
-                      <TableHead className="text-right">Total Cost</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pc.products?.map((p: any, idx: number) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">
-                          {typeof p.productId === "object"
-                            ? p.productId.name
-                            : nameOf(p.productId)}
+            {/* Product table */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={Package} title="Products produced" />
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50 hover:bg-slate-50">
+                        {[
+                          "Product",
+                          "Qty",
+                          "Exp Raw",
+                          "Act Raw",
+                          "Unit Cost",
+                          "Total Cost",
+                        ].map((h) => (
+                          <TableHead
+                            key={h}
+                            className={cn(
+                              "border-b border-slate-200 px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-600",
+                              h !== "Product" && "text-right",
+                            )}
+                          >
+                            {h}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pc.products?.map((p: any, idx: number) => (
+                        <TableRow
+                          key={idx}
+                          className="border-b border-slate-100 last:border-0"
+                        >
+                          <TableCell className="px-3 py-2 font-medium">
+                            {typeof p.productId === "object"
+                              ? p.productId.name
+                              : nameOf(p.productId)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right tabular-nums">
+                            {p.quantityProduced}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right tabular-nums text-[11px] text-muted-foreground">
+                            {safeFixed3(p.expectedRawUsed)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right tabular-nums text-[11px] text-muted-foreground">
+                            {safeFixed3(p.actualRawUsed)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right tabular-nums">
+                            ৳ {safeTaka(p.unitCost)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right tabular-nums font-semibold">
+                            ৳ {safeTaka(p.totalCost)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-slate-50 font-semibold">
+                        <TableCell className="px-3 py-2">Totals</TableCell>
+                        <TableCell className="px-3 py-2 text-right tabular-nums">
+                          {pc.products?.reduce(
+                            (sum: number, p: any) =>
+                              sum + safeNum(p.quantityProduced),
+                            0,
+                          )}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {p.quantityProduced}
+                        <TableCell className="px-3 py-2 text-right tabular-nums text-[11px]">
+                          {safeFixed3(expectedRaw)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {safeFixed3(p.expectedRawUsed)} {wip.unit}
+                        <TableCell className="px-3 py-2 text-right tabular-nums text-[11px]">
+                          {safeFixed3(actualRaw)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {safeFixed3(p.actualRawUsed)} {wip.unit}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ৳ {safeTaka(p.unitCost)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ৳ {safeTaka(p.totalCost)}
+                        <TableCell />
+                        <TableCell className="px-3 py-2 text-right tabular-nums text-[#2f8a2f]">
+                          ৳ {safeTaka(pc.totalFinishedGoodsCost)}
                         </TableCell>
                       </TableRow>
-                    ))}
-                    <TableRow className="font-semibold bg-gray-50">
-                      <TableCell>Totals</TableCell>
-                      <TableCell className="text-right">
-                        {pc.products?.reduce(
-                          (sum: number, p: any) => sum + safeNum(p.quantityProduced),
-                          0
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {safeFixed3(expectedRaw)} {wip.unit}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {safeFixed3(actualRaw)} {wip.unit}
-                      </TableCell>
-                      <TableCell></TableCell>
-                      <TableCell className="text-right">
-                        ৳ {safeTaka(pc.totalFinishedGoodsCost)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
 
             {/* Other materials */}
             {pc.otherMaterialsUsed?.length ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    Other Materials (expected)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 text-sm">
-                    {pc.otherMaterialsUsed.map((m, i) => (
-                      <div key={i} className="flex justify-between items-center">
-                        <span>{resolveName(m.itemType, m.itemId)}</span>
-                        <span>
-                          {m.quantity} {safeUnit(m.unit)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              <Card className="overflow-hidden border-slate-200 shadow-sm">
+                <SectionHeader
+                  icon={Package}
+                  title="Other materials (expected)"
+                />
+                <CardContent className="space-y-1.5 p-4 text-sm">
+                  {pc.otherMaterialsUsed.map((m, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span>{resolveName(m.itemType, m.itemId)}</span>
+                      <span className="font-medium tabular-nums">
+                        {m.quantity} {safeUnit(m.unit)}
+                      </span>
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
             ) : null}
 
             {pc.notes && (
-              <Card>
-                <CardContent className="py-3 text-sm text-gray-700">
-                  <span className="font-medium">Notes:</span> {pc.notes}
-                </CardContent>
-              </Card>
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+                <span className="font-medium">Notes:</span> {pc.notes}
+              </div>
             )}
 
-            {/* Action buttons */}
-            <div className="flex flex-col md:flex-row gap-4">
-              <Button
-                onClick={() => setEditMode(true)}
-                variant="outline"
-                className="flex-1"
-              >
-                <Edit3 className="h-4 w-4 mr-2" /> Edit Conversion
-              </Button>
-              <Button
-                onClick={handleApprove}
-                disabled={approving}
-                className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                {approving ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                )}
-                {approving ? "Approving..." : "Approve Conversion"}
-              </Button>
-              <div className="flex-1 space-y-2">
-                <Input
-                  placeholder="Rejection reason"
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleReject}
-                  disabled={rejecting}
-                  className="w-full"
-                >
-                  {rejecting ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Reject
-                </Button>
-              </div>
-            </div>
-          </>
+            {/* Action bar */}
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={CheckCircle} title="Actions" />
+              <CardContent className="space-y-3 p-4">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Button
+                    onClick={() => setEditMode(true)}
+                    variant="outline"
+                    className="h-10"
+                  >
+                    <Edit3 className="mr-2 h-4 w-4" />
+                    Edit conversion
+                  </Button>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={approving}
+                    className="h-10 bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                  >
+                    {approving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    )}
+                    {approving ? "Approving..." : "Approve conversion"}
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                    Reject
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Rejection reason..."
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      className="h-9 flex-1 focus-visible:ring-[#3aa838]"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleReject}
+                      disabled={rejecting || !rejectReason.trim()}
+                      className="h-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    >
+                      {rejecting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
-        {/* ========== EDIT MODE ========== */}
+        {/* ============ EDIT MODE ============ */}
         {isPending && editMode && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Edit3 className="h-5 w-5" /> Edit Pending Conversion
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <Card className="overflow-hidden border-slate-200 shadow-sm">
+            <SectionHeader
+              icon={Edit3}
+              title="Edit pending conversion"
+              right={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditMode(false)}
+                  className="h-7 text-slate-500"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" />
+                  Cancel
+                </Button>
+              }
+            />
+
+            <CardContent className="space-y-4 p-4">
+              {/* Search */}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={editSearch}
+                  onChange={(e) => setEditSearch(e.target.value)}
+                  placeholder="Search product by name or SKU..."
+                  className="h-9 pl-9 text-sm focus-visible:ring-[#3aa838]"
+                />
+              </div>
+
               {loadingBoms ? (
                 <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : possibleBoms.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No BOMs available.</p>
+              ) : filteredEditBoms.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-muted-foreground">
+                  {possibleBoms.length === 0
+                    ? "No BOMs available."
+                    : `No products match "${editSearch}".`}
+                </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Components</TableHead>
-                      <TableHead className="w-40">Quantity</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {possibleBoms.map((bom) => {
-                      const existing = editingProducts.find(
-                        (p) => p.productId === bom.productId._id
-                      );
-                      return (
-                        <TableRow key={bom.productId._id}>
-                          <TableCell className="font-medium">
-                            {bom.productId.name}
-                          </TableCell>
-                          <TableCell className="text-xs text-gray-600">
-                            {bom.components.map((c, i) => (
-                              <div key={i}>
-                                {c.itemType === "RawMaterial" ? "RM" : "PKG"}:{" "}
-                                {resolveName(c.itemType, c.itemId)} — {c.quantity}{" "}
-                                {c.unit || ""}
-                                {c.wastagePercent
-                                  ? ` (wastage ${c.wastagePercent}%)`
-                                  : ""}
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50 hover:bg-slate-50">
+                        <TableHead className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                          Product
+                        </TableHead>
+                        <TableHead className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                          Components
+                        </TableHead>
+                        <TableHead className="w-44 text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                          Quantity
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEditBoms.map((bom) => {
+                        const existing = editingProducts.find(
+                          (p) => p.productId === bom.productId._id,
+                        );
+                        return (
+                          <TableRow
+                            key={bom.productId._id}
+                            className="border-b border-slate-100 last:border-0"
+                          >
+                            <TableCell className="px-3 py-2 font-medium">
+                              <div className="text-sm text-slate-900">
+                                {bom.productId.name}
                               </div>
-                            ))}
-                          </TableCell>
-                          <TableCell>
-                            {existing ? (
-                              <div className="flex items-center gap-2">
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  value={existing.quantityProduced || ""}
-                                  onChange={(e) =>
-                                    updateEditQty(
-                                      bom.productId._id,
-                                      Number(e.target.value)
-                                    )
-                                  }
-                                  className="w-20 h-8"
-                                />
+                              {bom.productId.sku && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  {bom.productId.sku}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="px-3 py-2 text-[11px] text-slate-600">
+                              {bom.components.map((c, i) => (
+                                <div key={i} className="truncate">
+                                  <span className="font-medium text-slate-500">
+                                    {c.itemType === "RawMaterial" ? "RM" : "PKG"}:
+                                  </span>{" "}
+                                  {resolveName(c.itemType, c.itemId)} —{" "}
+                                  {c.quantity} {c.unit || ""}
+                                  {c.wastagePercent
+                                    ? ` (wastage ${c.wastagePercent}%)`
+                                    : ""}
+                                </div>
+                              ))}
+                            </TableCell>
+                            <TableCell className="px-3 py-2">
+                              {existing ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={existing.quantityProduced || ""}
+                                    onChange={(e) =>
+                                      updateEditQty(
+                                        bom.productId._id,
+                                        Number(e.target.value),
+                                      )
+                                    }
+                                    className="h-8 w-24 text-center tabular-nums focus-visible:ring-[#3aa838]"
+                                    placeholder="Qty"
+                                  />
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                    onClick={() =>
+                                      toggleEditProduct(bom.productId._id)
+                                    }
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              ) : (
                                 <Button
                                   size="sm"
-                                  variant="ghost"
-                                  onClick={() => toggleEditProduct(bom.productId._id)}
+                                  variant="outline"
+                                  onClick={() =>
+                                    toggleEditProduct(bom.productId._id)
+                                  }
+                                  className="h-8 border-[#3aa838]/40 text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f]"
                                 >
-                                  <X className="h-4 w-4" />
+                                  Add
                                 </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => toggleEditProduct(bom.productId._id)}
-                              >
-                                Add
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
 
-              <div className="space-y-2">
-                <Label>Remaining raw material</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-600">
+                  Remaining raw material
+                </Label>
                 <Input
                   type="text"
                   inputMode="decimal"
                   placeholder="0.00"
                   value={editingRemainingStr}
                   onChange={(e) => setEditingRemainingStr(e.target.value)}
+                  className="h-10 focus-visible:ring-[#3aa838]"
                 />
-                {editingRemainingStr && !isNaN(parseFloat(editingRemainingStr)) && (
-                  <p className="text-xs text-gray-500">
-                    Taken will be{" "}
-                    {safeFixed3(
-                      safeNum(wip.initialQuantity) - parseFloat(editingRemainingStr)
-                    )}{" "}
-                    {wip.unit}
-                  </p>
-                )}
+                {editingRemainingStr &&
+                  !isNaN(parseFloat(editingRemainingStr)) && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Taken will be{" "}
+                      {safeFixed3(
+                        safeNum(wip.initialQuantity) -
+                          parseFloat(editingRemainingStr),
+                      )}{" "}
+                      {wip.unit}
+                    </p>
+                  )}
               </div>
 
-              <div className="space-y-2">
-                <Label>Notes (optional)</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-600">
+                  Notes (optional)
+                </Label>
                 <Input
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
                   placeholder="Approval notes..."
+                  className="h-10 focus-visible:ring-[#3aa838]"
                 />
               </div>
 
-              <div className="flex justify-between">
+              <div className="flex justify-between border-t border-slate-200 pt-3">
                 <Button variant="ghost" onClick={() => setEditMode(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleUpdate} disabled={updating}>
+                <Button
+                  onClick={handleUpdate}
+                  disabled={updating}
+                  className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                >
                   {updating ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Save Changes
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                  )}
+                  Save changes
                 </Button>
               </div>
             </CardContent>

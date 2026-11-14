@@ -1,7 +1,11 @@
-// app/inventory/material-wip/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import api from "@/lib/api";
@@ -35,12 +39,15 @@ import {
   Play,
   CheckCircle,
   Eye,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  DollarSign,
-  Package,
   ChartLine,
+  Factory as FactoryIcon,
+  Filter as FilterIcon,
+  CalendarRange,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +87,14 @@ type MaterialWIP = {
   createdAt?: string;
 };
 
+type DatePreset =
+  | "this_week"
+  | "last_week"
+  | "this_month"
+  | "last_3_months"
+  | "this_year"
+  | "";
+
 /* ---------- helpers ---------- */
 const nameOf = (maybe: any) => {
   if (!maybe) return "-";
@@ -87,43 +102,106 @@ const nameOf = (maybe: any) => {
   return maybe.name || maybe._id || "-";
 };
 
-const statusBadge = (status: MaterialWIP["status"]) => {
-  const map: Record<string, string> = {
-    ACTIVE: "bg-blue-50 text-blue-700 border-blue-200",
-    PENDING_APPROVAL: "bg-amber-50 text-amber-700 border-amber-200",
-    APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    REJECTED: "bg-red-50 text-red-700 border-red-200",
+const fmtDate = (v?: string) => {
+  if (!v) return "-";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? "-" : format(d, "dd MMM yy");
+};
+
+function getPresetRange(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
   };
+  switch (preset) {
+    case "this_week": {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - diff);
+      return { from: fmt(monday), to: fmt(now) };
+    }
+    case "last_week": {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - diff - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      return { from: fmt(lastMonday), to: fmt(lastSunday) };
+    }
+    case "this_month": {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: fmt(first), to: fmt(now) };
+    }
+    case "last_3_months": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 3);
+      return { from: fmt(d), to: fmt(now) };
+    }
+    case "this_year": {
+      const first = new Date(now.getFullYear(), 0, 1);
+      return { from: fmt(first), to: fmt(now) };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+function statusBadge(status: MaterialWIP["status"]) {
+  const map: Record<string, string> = {
+    ACTIVE: "bg-slate-100 text-slate-700 border-slate-200",
+    PENDING_APPROVAL: "bg-amber-50 text-amber-700 border-amber-200",
+    APPROVED: "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30",
+    REJECTED: "bg-rose-50 text-rose-700 border-rose-200",
+  };
+  const Icon = {
+    ACTIVE: Play,
+    PENDING_APPROVAL: Clock,
+    APPROVED: CheckCircle,
+    REJECTED: XCircle,
+  }[status];
   return (
-    <Badge className={cn("font-normal text-xs", map[status])}>
+    <Badge
+      className={cn(
+        "inline-flex items-center gap-1 border text-[10px] font-semibold",
+        map[status],
+      )}
+    >
+      <Icon className="h-2.5 w-2.5" />
       {status === "PENDING_APPROVAL" ? "PENDING" : status}
     </Badge>
   );
-};
+}
 
+/* ---------------------------- Page ---------------------------- */
 export default function MaterialWipListPage() {
   const router = useRouter();
 
   const [wips, setWips] = useState<MaterialWIP[]>([]);
   const [loading, setLoading] = useState(false);
   const [factories, setFactories] = useState<Factory[]>([]);
+  const [summary, setSummary] = useState<any>(null);
 
-  // Filters
+  // filters
   const [search, setSearch] = useState("");
   const [factoryFilter, setFactoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [datePreset, setDatePreset] = useState<DatePreset>("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Pagination
+  // pagination
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(15);
   const [total, setTotal] = useState(0);
 
-  // Summary from backend
-  const [summary, setSummary] = useState<any>(null);
-
-  // Load factories
+  /* Load factories */
   useEffect(() => {
     api
       .get("/warehouses", { params: { type: "Factory", limit: 1000 } })
@@ -144,11 +222,10 @@ export default function MaterialWipListPage() {
         q: search.trim() || undefined,
       };
       const res = await api.get("/material-wip", { params });
-      // The backend returns { success: true, data: [...], total, page, limit, summary }
       setWips(res.data?.data || []);
       setTotal(res.data?.total || 0);
       setSummary(res.data?.summary || null);
-    } catch (err) {
+    } catch {
       toast.error("Failed to load WIP records");
     } finally {
       setLoading(false);
@@ -161,186 +238,522 @@ export default function MaterialWipListPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
+  const activeFilterCount =
+    (factoryFilter !== "all" ? 1 : 0) +
+    (statusFilter !== "all" ? 1 : 0) +
+    (fromDate || toDate ? 1 : 0);
+
+  const hasAnyFilter = activeFilterCount > 0 || Boolean(search);
+
+  /* Date actions */
+  const applyPreset = (preset: DatePreset) => {
+    if (!preset) {
+      setFromDate("");
+      setToDate("");
+      setDatePreset("");
+      setPage(1);
+      return;
+    }
+    const { from, to } = getPresetRange(preset);
+    setFromDate(from);
+    setToDate(to);
+    setDatePreset(preset);
+    setPage(1);
+  };
+
+  const onDateChange = (which: "from" | "to", value: string) => {
+    if (which === "from") setFromDate(value);
+    else setToDate(value);
+    setDatePreset("");
+    setPage(1);
+  };
+
+  const clearAll = () => {
+    setSearch("");
+    setFactoryFilter("all");
+    setStatusFilter("all");
+    setFromDate("");
+    setToDate("");
+    setDatePreset("");
+    setPage(1);
+  };
+
   return (
-    <div className="p-6 max-w-full mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Material WIP</h1>
-          <p className="text-sm text-gray-500 mt-1">Track work in progress, start new batches, and manage approvals.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => router.push("/inventory/material-wip/report")} className="gap-2 bg-gray-900 hover:bg-gray-800 text-white shadow-sm">
-            <ChartLine className="h-4 w-4" /> Report
-          </Button>
-          <Button onClick={() => router.push("/inventory/material-wip/create")} className="gap-2 bg-gray-900 hover:bg-gray-800 text-white shadow-sm">
-            <Plus className="h-4 w-4" /> Start New WIP
-          </Button>
-        </div>
-      </div>
-
-      {/* Summary Cards (from backend aggregation) */}
-      {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Active</div>
-              <div className="text-lg font-semibold">{summary.activeCount}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Pending</div>
-              <div className="text-lg font-semibold">{summary.pendingCount}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Approved</div>
-              <div className="text-lg font-semibold">{summary.approvedCount}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Total Issued</div>
-              <div className="text-lg font-semibold">{summary.totalIssuedQuantity ?? 0}</div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Filters */}
-      <Card className="shadow-sm border-gray-200">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search by name or ID..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="pl-9 h-9 border-gray-200"
-            />
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ============ HERO ============ */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <FactoryIcon className="h-4 w-4 text-[#3aa838]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-semibold leading-tight">
+                Material WIP
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Visible</span>
+                  <b className="tabular-nums text-slate-900">{wips.length}</b>
+                </div>
+                {summary && (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground">Active</span>
+                      <b className="tabular-nums text-slate-900">
+                        {summary.activeCount || 0}
+                      </b>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground">Pending</span>
+                      <b className="tabular-nums text-amber-700">
+                        {summary.pendingCount || 0}
+                      </b>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground">Approved</span>
+                      <b className="tabular-nums text-[#2f8a2f]">
+                        {summary.approvedCount || 0}
+                      </b>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground">Issued</span>
+                      <b className="tabular-nums text-slate-900">
+                        {Number(summary.totalIssuedQuantity || 0).toLocaleString()}
+                      </b>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-          <Select value={factoryFilter} onValueChange={(v) => { setFactoryFilter(v); setPage(1); }}>
-            <SelectTrigger className="h-9 border-gray-200"><SelectValue placeholder="All factories" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All factories</SelectItem>
+
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/inventory/material-wip/report")}
+              className="h-9"
+            >
+              <ChartLine className="mr-1.5 h-3.5 w-3.5" />
+              Report
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => router.push("/inventory/material-wip/create")}
+              className="h-9 bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              New WIP
+            </Button>
+          </div>
+        </div>
+
+        {/* ============ FILTER BAR ============ */}
+        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <div className="relative w-full max-w-[240px]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search material / ID..."
+                className="h-9 pl-8 text-sm"
+              />
+            </div>
+
+            <select
+              value={factoryFilter}
+              onChange={(e) => {
+                setFactoryFilter(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+            >
+              <option value="all">All factories</option>
               {factories.map((f) => (
-                <SelectItem key={f._id} value={f._id}>{f.name}</SelectItem>
+                <option key={f._id} value={f._id}>
+                  {f.name}
+                </option>
               ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-            <SelectTrigger className="h-9 border-gray-200"><SelectValue placeholder="All statuses" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="ACTIVE">Active</SelectItem>
-              <SelectItem value="PENDING_APPROVAL">Pending</SelectItem>
-              <SelectItem value="APPROVED">Approved</SelectItem>
-              <SelectItem value="REJECTED">Rejected</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex gap-2">
-            <Input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }} className="h-9 border-gray-200" placeholder="From" />
-            <Input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }} className="h-9 border-gray-200" placeholder="To" />
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setFactoryFilter("all"); setStatusFilter("all"); setFromDate(""); setToDate(""); setPage(1); }}>
-            Clear Filters
-          </Button>
-        </CardContent>
-      </Card>
+            </select>
 
-      {/* Table */}
-      <Card className="shadow-sm border-gray-200 overflow-hidden">
-        <div className="overflow-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50 hover:bg-gray-50">
-                <TableHead>Date</TableHead>
-                <TableHead>Raw Material</TableHead>
-                <TableHead>Factory</TableHead>
-                <TableHead className="text-right">Issued</TableHead>
-                <TableHead className="text-right">Consumed</TableHead>
-                <TableHead className="text-right">Remaining</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead className="text-right">Gain/Loss</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[180px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow><TableCell colSpan={10} className="py-10 text-center text-gray-500">Loading...</TableCell></TableRow>
-              ) : wips.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="py-10 text-center text-gray-500">No WIP records found.</TableCell></TableRow>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+            >
+              <option value="all">All status</option>
+              <option value="ACTIVE">Active</option>
+              <option value="PENDING_APPROVAL">Pending</option>
+              <option value="APPROVED">Approved</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+
+            <select
+              value={datePreset}
+              onChange={(e) => applyPreset(e.target.value as DatePreset)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+            >
+              <option value="">
+                {fromDate || toDate ? "Custom range" : "All dates"}
+              </option>
+              <option value="this_week">This Week</option>
+              <option value="last_week">Last Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_3_months">Last 3 Months</option>
+              <option value="this_year">This Year</option>
+            </select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={cn(
+                "h-9",
+                activeFilterCount > 0 &&
+                  "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]",
+              )}
+            >
+              <FilterIcon className="mr-1.5 h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
+                  {activeFilterCount}
+                </span>
+              )}
+              {filtersOpen ? (
+                <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
               ) : (
-                wips.map((wip) => {
-                  const netGainLoss = (wip.gainQuantity || 0) - (wip.productionLossQuantity || 0);
-                  return (
-                    <TableRow key={wip._id} className="hover:bg-blue-50/30 transition-colors">
-                      <TableCell className="text-sm whitespace-nowrap">{wip.date ? format(new Date(wip.date), "dd MMM yy") : "-"}</TableCell>
-                      <TableCell className="text-sm font-medium text-gray-900">{nameOf(wip.rawMaterialId)}</TableCell>
-                      <TableCell className="text-sm text-gray-600">{nameOf(wip.factoryId)}</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{wip.issuedQuantity || 0}</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{wip.consumedQuantity || 0}</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{wip.remainingQuantity}</TableCell>
-                      <TableCell className="text-sm">{wip.unit}</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">
-                        <span className={cn(netGainLoss > 0 ? "text-green-600" : netGainLoss < 0 ? "text-red-600" : "text-gray-500")}>
-                          {netGainLoss > 0 ? "+" : ""}{netGainLoss.toFixed(2)} {wip.unit}
-                        </span>
+                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+              )}
+            </Button>
+
+            {hasAnyFilter && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAll}
+                className="h-9 text-slate-500"
+              >
+                <X className="mr-1 h-3.5 w-3.5" />
+                Clear
+              </Button>
+            )}
+
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {total} records
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchWips()}
+                disabled={loading}
+                className="h-9"
+                title="Refresh"
+              >
+                <RefreshCw
+                  className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+                />
+              </Button>
+            </div>
+          </div>
+
+          {filtersOpen && (
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-3">
+              <div className="space-y-1">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                  <CalendarRange className="h-3 w-3" /> From date
+                </label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => onDateChange("from", e.target.value)}
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                  <CalendarRange className="h-3 w-3" /> To date
+                </label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => onDateChange("to", e.target.value)}
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFromDate("");
+                    setToDate("");
+                    setDatePreset("");
+                    setPage(1);
+                  }}
+                  className="h-9 w-full text-xs"
+                >
+                  <X className="mr-1 h-3 w-3" />
+                  Clear dates
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ============ TABLE ============ */}
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 hover:bg-slate-50">
+                    {[
+                      "Date",
+                      "Raw Material",
+                      "Factory",
+                      "Issued",
+                      "Consumed",
+                      "Remaining",
+                      "Unit",
+                      "Gain/Loss",
+                      "Status",
+                    ].map((h) => (
+                      <TableHead
+                        key={h}
+                        className={cn(
+                          "border-b border-slate-200 px-3 py-2.5 text-[10px] font-medium uppercase tracking-wide text-slate-600",
+                          ["Issued", "Consumed", "Remaining", "Gain/Loss"].includes(
+                            h,
+                          ) && "text-right",
+                        )}
+                      >
+                        {h}
+                      </TableHead>
+                    ))}
+                    <TableHead className="border-b border-slate-200 px-3 py-2.5 text-right text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-12 text-center">
+                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Loading WIP records...
+                        </div>
                       </TableCell>
-                      <TableCell>{statusBadge(wip.status)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => router.push(`/inventory/material-wip/${wip._id}`)}>
-                            <Eye className="h-4 w-4 mr-1" /> View
-                          </Button>
-                          {wip.status === "ACTIVE" && (
-                            <Button size="sm" onClick={() => router.push(`/inventory/material-wip/${wip._id}/produce`)}>
-                              <Play className="h-4 w-4 mr-1" /> Produce
+                    </TableRow>
+                  ) : wips.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-16 text-center">
+                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
+                          <div className="rounded-full bg-slate-100 p-3">
+                            <FactoryIcon className="h-6 w-6" />
+                          </div>
+                          <div className="text-sm font-medium text-slate-700">
+                            No WIP records found
+                          </div>
+                          <div className="text-xs">
+                            {hasAnyFilter
+                              ? "Try widening the filters or date range."
+                              : "Start a new WIP to get going."}
+                          </div>
+                          {hasAnyFilter ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={clearAll}
+                            >
+                              <X className="mr-1.5 h-3.5 w-3.5" />
+                              Clear filters
                             </Button>
-                          )}
-                          {wip.status === "PENDING_APPROVAL" && (
-                            <Button size="sm" onClick={() => router.push(`/inventory/material-wip/${wip._id}/produce`)}>
-                              <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                router.push("/inventory/material-wip/create")
+                              }
+                              className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                            >
+                              <Plus className="mr-1.5 h-3.5 w-3.5" />
+                              Start New WIP
                             </Button>
                           )}
                         </div>
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* Pagination */}
-        {total > 0 && (
-          <div className="flex items-center justify-between p-4 border-t bg-gray-50/50">
-            <div className="text-sm text-gray-600">Page {page} of {totalPages} ({total} records)</div>
-            <div className="flex items-center gap-2">
-              <Select value={String(limit)} onValueChange={(v) => { setLimit(Number(v)); setPage(1); }}>
-                <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="15">15</SelectItem>
-                  <SelectItem value="25">25</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm font-medium px-2">{page}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+                  ) : (
+                    wips.map((wip) => {
+                      const netGainLoss =
+                        (wip.gainQuantity || 0) -
+                        (wip.productionLossQuantity || 0);
+                      return (
+                        <TableRow
+                          key={wip._id}
+                          className="border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70"
+                        >
+                          <TableCell className="whitespace-nowrap px-3 py-2 text-xs text-slate-600 tabular-nums">
+                            {fmtDate(wip.date || wip.createdAt)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-sm font-medium text-slate-900">
+                            {nameOf(wip.rawMaterialId)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-xs text-slate-600">
+                            {nameOf(wip.factoryId)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
+                            {Number(wip.issuedQuantity || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
+                            {Number(wip.consumedQuantity || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
+                            {Number(wip.remainingQuantity || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-xs text-slate-600">
+                            {wip.unit}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums">
+                            <span
+                              className={cn(
+                                "font-semibold",
+                                netGainLoss > 0
+                                  ? "text-[#2f8a2f]"
+                                  : netGainLoss < 0
+                                    ? "text-rose-600"
+                                    : "text-slate-500",
+                              )}
+                            >
+                              {netGainLoss > 0 ? "+" : ""}
+                              {netGainLoss.toFixed(2)} {wip.unit}
+                            </span>
+                          </TableCell>
+                          <TableCell className="px-3 py-2">
+                            {statusBadge(wip.status)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  router.push(
+                                    `/inventory/material-wip/${wip._id}`,
+                                  )
+                                }
+                                title="View"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              {wip.status === "ACTIVE" && (
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    router.push(
+                                      `/inventory/material-wip/${wip._id}/produce`,
+                                    )
+                                  }
+                                  className="h-7 bg-[#3aa838] px-2 text-[11px] text-white hover:bg-[#2f8a2f]"
+                                >
+                                  <Play className="mr-1 h-3 w-3" />
+                                  Produce
+                                </Button>
+                              )}
+                              {wip.status === "PENDING_APPROVAL" && (
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    router.push(
+                                      `/inventory/material-wip/${wip._id}/produce`,
+                                    )
+                                  }
+                                  className="h-7 bg-amber-600 px-2 text-[11px] text-white hover:bg-amber-700"
+                                >
+                                  <CheckCircle className="mr-1 h-3 w-3" />
+                                  Approve
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
             </div>
-          </div>
-        )}
-      </Card>
+
+            {/* Pagination */}
+            {total > 0 && (
+              <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                <div className="text-xs text-muted-foreground">
+                  Showing{" "}
+                  <strong className="text-slate-900 tabular-nums">
+                    {(page - 1) * limit + 1}
+                  </strong>
+                  –
+                  <strong className="text-slate-900 tabular-nums">
+                    {Math.min(page * limit, total)}
+                  </strong>{" "}
+                  of <strong className="text-slate-900">{total}</strong>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={String(limit)}
+                    onChange={(e) => {
+                      setLimit(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+                  >
+                    {[10, 15, 25, 50].map((n) => (
+                      <option key={n} value={n}>
+                        {n}/page
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="min-w-16 text-center text-xs text-muted-foreground">
+                    Page <strong className="text-slate-900">{page}</strong> /{" "}
+                    {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
