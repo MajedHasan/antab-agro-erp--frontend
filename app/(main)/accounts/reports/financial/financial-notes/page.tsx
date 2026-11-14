@@ -1,279 +1,236 @@
-// src/app/(main)/reports/financial-notes/page.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import {
-  Plus,
-  Search,
-  Loader2,
-  ChevronDown,
-  ChevronUp,
-  Edit,
-  Trash2,
-  CheckCircle,
-  History,
-  Printer,
-  DollarSign,
-  BookOpen,
-  Calendar,
-  Filter,
-  X,
-  FileText,
-  Layers,
-  Clock,
-  BadgeCheck,
+  Plus, Search, Loader2, Edit3, Trash2, CheckCircle2, Lock, Unlock,
+  ArrowUp, ArrowDown, BookOpen, Eye, X, RefreshCw, AlertCircle,
+  ChevronDown, ChevronRight, Sparkles, FileText, Table as TableIcon,
+  TrendingUp, Clock, Link2, Printer,
 } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+  Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
 import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
+import { cn } from "@/lib/utils";
 
-/* --------------------------- Types --------------------------- */
-type AccountOption = {
-  value: string;
-  label: string;
-  description?: string;
-  balance?: number;
-};
+/* ---------------- Types ---------------- */
+type StatementType = "Balance Sheet" | "Income Statement" | "Cash Flow" | "Equity Statement" | "Notes";
+type NoteType =
+  | "BASIS_OF_PREPARATION" | "ACCOUNTING_POLICY" | "TABULAR"
+  | "MOVEMENT" | "AGING" | "NARRATIVE" | "SUBSEQUENT_EVENT" | "RELATED_PARTY";
 
-type RelatedAccount = {
-  account: string;
-  snapshotBalance: number;
-  currentBalance?: number;
-  name?: string;
-  code?: string;
-};
-
-type Version = {
-  _id?: string;
-  versionNo: number;
-  content: string;
-  author: string;
-  createdAt: string;
-};
-
-type FinancialNote = {
+type RawAccount = {
   _id: string;
-  noteNo: string;
-  title: string;
-  statement: "Balance Sheet" | "Income Statement" | "Cash Flow" | "Equity Statement" | "Notes";
-  year: number;
+  code: string;
+  name: string;
+  type: string;
+  parent?: string;
+  balance?: number;
+  openingBalance?: number;
+  closingBalance?: number;
+};
+
+type RolledLeaf = { account: string; code: string; name: string; snapshotBalance: number; currentBalance?: number };
+type RelatedAccount = {
+  account: string; accountCode?: string; accountName?: string;
+  isParentRollup?: boolean; rolledUpLeaves?: RolledLeaf[];
+  snapshotBalance: number; currentBalance?: number;
+};
+
+type NoteSection = { _id?: string; heading?: string; body: string; kind: "NARRATIVE" | "BULLETS" | "TABLE" | "SUB_NOTE"; order: number };
+type NoteVersion = { _id?: string; versionNo: number; content: string; summary?: string; author: string; createdAt: string; kind?: string };
+type FinancialNote = {
+  _id: string; noteNo: string; displayOrder: number; title: string;
+  statement: StatementType; noteType: NoteType; year: number;
   summary?: string;
-  relatedAccounts: RelatedAccount[];
-  versions: Version[];
-  isDraft: boolean;
-  createdAt: string;
-  updatedAt: string;
+  statementRef?: { lineItem?: string; accountCode?: string };
+  relatedAccounts: RelatedAccount[]; sections: NoteSection[];
+  versions: NoteVersion[]; isDraft: boolean;
+  finalisedAt?: string; finalisedBy?: string;
+  createdAt: string; updatedAt: string;
 };
 
-type FormValues = {
-  title: string;
-  statement: string;
-  year: number;
-  content: string;
-  author: string;
-  summary: string;
+type FormState = {
+  title: string; statement: StatementType; noteType: NoteType; year: number;
+  summary: string; statementLine: string;
+  sections: NoteSection[];
+  accounts: { accountId: string }[];
   isDraft: boolean;
-  relatedAccounts: { accountId: string; accountName?: string }[];
 };
 
-/* --------------------------- Helpers --------------------------- */
-const STATEMENT_OPTIONS = [
-  "Balance Sheet",
-  "Income Statement",
-  "Cash Flow",
-  "Equity Statement",
-  "Notes",
-];
+/* ---------------- Constants ---------------- */
+const STATEMENTS: StatementType[] = ["Balance Sheet", "Income Statement", "Cash Flow", "Equity Statement", "Notes"];
 
-const money = (n: number) =>
-  Number(n || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+const NOTE_TYPE_META: Record<NoteType, { label: string; icon: typeof FileText; hint: string }> = {
+  BASIS_OF_PREPARATION: { label: "Basis of preparation", icon: FileText, hint: "Note 1 typically. Narrative: measurement basis, going concern, compliance." },
+  ACCOUNTING_POLICY:     { label: "Accounting policy",     icon: FileText, hint: "Modular sub-sections: Revenue, Leases, Tax, Impairment, etc." },
+  TABULAR:               { label: "Numeric disclosure",    icon: TableIcon, hint: "Table breakdown of an account balance with sub-columns." },
+  MOVEMENT:              { label: "Movement / reconciliation", icon: TrendingUp, hint: "Opening → additions → disposals → closing (e.g. PPE Note 12)." },
+  AGING:                 { label: "Aging analysis",        icon: Clock, hint: "Current / 1–30 / 31–60 / 61–90 / >90 days buckets." },
+  NARRATIVE:             { label: "Narrative",             icon: BookOpen, hint: "Pure text — commitments, contingencies, judgments." },
+  SUBSEQUENT_EVENT:      { label: "Subsequent event",      icon: AlertCircle, hint: "Events between year-end and sign-off." },
+  RELATED_PARTY:         { label: "Related party",         icon: Link2, hint: "Balances + transactions with related entities." },
+};
 
-const formatDate = (v?: string) =>
-  v ? new Date(v).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "-";
+/* ---------------- Helpers ---------------- */
+const money = (n: number) => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const drCr = (n: number) => Math.abs(n) < 0.005 ? "—" : `৳ ${money(n)} ${n >= 0 ? "DR" : "CR"}`;
+const fmtDate = (v?: string) => v ? new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
-// 🆕 Moved outside component to be accessible by child components
-function buildPrintHtml(note: FinancialNote) {
-  const latestVersion = note.versions[0];
-  const accountsHtml = note.relatedAccounts
-    .map(
-      (ra) => `
-      <tr>
-        <td style="padding:6px 8px;">${ra.name || ra.account}</td>
-        <td style="padding:6px 8px; text-align:right;">${money(ra.snapshotBalance)}</td>
-        <td style="padding:6px 8px; text-align:right;">${money(ra.currentBalance || ra.snapshotBalance)}</td>
-      </tr>`
-    )
-    .join("");
-
-  return `
-<div style="font-family: 'Inter', sans-serif; max-width: 900px; margin: 0 auto; color: #1e293b; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
-  <div style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 24px 32px; color: white;">
-    <div style="font-size: 28px; font-weight: 800;">${note.noteNo}: ${note.title}</div>
-    <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">${note.statement} · ${note.year} · ${note.isDraft ? "Draft" : "Final"}</div>
-  </div>
-  <div style="padding: 24px 32px;">
-    <p style="font-size: 15px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 24px;">${latestVersion?.content || ""}</p>
-    <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 12px;">Related Accounts</h3>
-    <table style="width:100%; border-collapse: collapse; font-size: 14px;">
-      <thead>
-        <tr style="background: #f8fafc;">
-          <th style="padding:8px 12px; text-align:left;">Account</th>
-          <th style="padding:8px 12px; text-align:right;">Snapshot Balance</th>
-          <th style="padding:8px 12px; text-align:right;">Current Balance</th>
-        </tr>
-      </thead>
-      <tbody>${accountsHtml}</tbody>
-    </table>
-  </div>
-  <div style="background: #f8fafc; padding: 16px 32px; font-size: 12px; color: #64748b; display: flex; justify-content: space-between;">
-    <div>Version ${latestVersion?.versionNo || 1} · ${latestVersion?.author || "System"}</div>
-    <div>Printed on ${new Date().toLocaleDateString()}</div>
-  </div>
-</div>`;
+function mdToHtml(md?: string) {
+  if (!md) return "";
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let h = esc(md);
+  h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/(^|[^_])_(.+?)_([^_]|$)/g, "$1<em>$2</em>$3");
+  h = h.replace(/^- (.+)$/gm, "<li>$1</li>");
+  h = h.replace(/(<li>.*?<\/li>\s*)+/gs, (m) => `<ul>${m}</ul>`);
+  return h.split(/\n{2,}/).map((p) => (p.startsWith("<ul>") ? p : `<p>${p.replace(/\n/g, "<br/>")}</p>`)).join("");
 }
 
-/* --------------------------- Account Picker (Multi‑select) --------------------------- */
+/* ---------------- Hierarchical Account Picker ---------------- */
 function AccountPicker({
-  selectedIds,
-  onAdd,
-  onRemove,
+  accounts,
+  selected,
+  onChange,
 }: {
-  selectedIds: { accountId: string; accountName?: string }[];
-  onAdd: (acc: AccountOption) => void;
-  onRemove: (accountId: string) => void;
+  accounts: RawAccount[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [options, setOptions] = useState<AccountOption[]>([]);
-  const [loading, setLoading] = useState(false);
-  const cacheRef = useRef<Record<string, AccountOption[]>>({});
 
-  const fetchAccounts = useCallback(async (search: string) => {
-    const res = await api.get("/accounts", {
-      params: { q: search || undefined, page: 1, limit: 30, status: "Active" },
-    });
-    return (res.data?.data || []).map((a: any) => ({
-      value: String(a._id),
-      label: `${a.name} (${a.code || ""})`,
-      description: `Type: ${a.type} · Balance: ${money(a.balance || 0)}`,
-    }));
-  }, []);
+  // Build map
+  const accountsById = useMemo(() => new Map(accounts.map((a) => [a._id, a])), [accounts]);
+  const childrenMap = useMemo(() => {
+    const m = new Map<string, RawAccount[]>();
+    for (const a of accounts) {
+      const p = a.parent ? String(a.parent) : null;
+      if (!p) continue;
+      if (!m.has(p)) m.set(p, []);
+      m.get(p)!.push(a);
+    }
+    return m;
+  }, [accounts]);
 
-  useEffect(() => {
-    if (!open) return;
-    const key = query.trim().toLowerCase();
-    const timer = setTimeout(async () => {
-      if (cacheRef.current[key]) {
-        setOptions(cacheRef.current[key]);
-        return;
+  // Descendants of any selected account (so we can disable them)
+  const disabled = useMemo(() => {
+    const s = new Set<string>();
+    const walk = (id: string) => {
+      for (const c of childrenMap.get(id) || []) {
+        s.add(c._id);
+        walk(c._id);
       }
-      setLoading(true);
-      try {
-        const list = await fetchAccounts(query);
-        cacheRef.current[key] = list;
-        setOptions(list);
-      } catch {
-        setOptions([]);
-      } finally {
-        setLoading(false);
+    };
+    selected.forEach(walk);
+    return s;
+  }, [selected, childrenMap]);
+
+  // Ancestors of any selected account (show "included under X")
+  const ancestorOf = useMemo(() => {
+    const m = new Map<string, string>(); // child -> selected ancestor label
+    const walk = (id: string, rootLabel: string) => {
+      for (const c of childrenMap.get(id) || []) {
+        m.set(c._id, rootLabel);
+        walk(c._id, rootLabel);
       }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [open, query, fetchAccounts]);
+    };
+    for (const id of selected) {
+      const a = accountsById.get(id);
+      if (!a) continue;
+      walk(id, `${a.name}${a.code ? ` (${a.code})` : ""}`);
+    }
+    return m;
+  }, [selected, childrenMap, accountsById]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = accounts;
+    if (q) {
+      list = list.filter((a) =>
+        `${a.name} ${a.code}`.toLowerCase().includes(q),
+      );
+    }
+    return list.slice(0, 60);
+  }, [accounts, query]);
+
+  const toggle = (id: string) => {
+    if (disabled.has(id)) return;
+    if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
+    else onChange([...selected, id]);
+  };
 
   return (
-    <div>
+    <div className="space-y-2">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button type="button" variant="outline" className="w-full justify-between">
+          <Button variant="outline" className="h-9 w-full justify-between bg-white text-xs">
             <span className="truncate">
-              {selectedIds.length ? `${selectedIds.length} account(s) selected` : "Add account..."}
+              {selected.length === 0
+                ? "Search & link accounts (rollup applied)…"
+                : `${selected.length} account${selected.length === 1 ? "" : "s"} linked`}
             </span>
-            <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <Search className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[480px] p-0" align="start">
-          <Command>
-            <CommandInput
-              placeholder="Search accounts..."
-              value={query}
-              onValueChange={setQuery}
-            />
-            <CommandList>
-              <CommandEmpty>{loading ? "Loading..." : "No account found."}</CommandEmpty>
+          <Command shouldFilter={false}>
+            <CommandInput placeholder="Search by name or code…" value={query} onValueChange={setQuery} />
+            <CommandList className="max-h-[380px]">
+              <CommandEmpty>No account found.</CommandEmpty>
               <CommandGroup>
-                {options.map((opt) => {
-                  const alreadySelected = selectedIds.some((s) => s.accountId === opt.value);
+                {filtered.map((a) => {
+                  const isSelected = selected.includes(a._id);
+                  const isDisabled = disabled.has(a._id);
+                  const included = ancestorOf.get(a._id);
+                  const childCount = (childrenMap.get(a._id) || []).length;
                   return (
                     <CommandItem
-                      key={opt.value}
-                      value={`${opt.label} ${opt.description || ""}`}
-                      onSelect={() => {
-                        if (alreadySelected) {
-                          onRemove(opt.value);
-                        } else {
-                          onAdd(opt);
-                        }
-                      }}
+                      key={a._id}
+                      value={a._id}
+                      onSelect={() => toggle(a._id)}
+                      className={cn(isDisabled && "opacity-60 cursor-not-allowed")}
+                      disabled={isDisabled}
                     >
-                      <CheckCircle
-                        className={`mr-2 h-4 w-4 ${alreadySelected ? "opacity-100 text-emerald-600" : "opacity-0"}`}
+                      <CheckCircle2
+                        className={cn("mr-2 h-3.5 w-3.5 shrink-0", isSelected ? "text-[#3aa838]" : "opacity-0")}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{opt.label}</div>
-                        {opt.description && (
-                          <div className="truncate text-xs text-muted-foreground">{opt.description}</div>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-xs font-medium">{a.name}</span>
+                          {a.code && <span className="font-mono text-[10px] text-slate-500">{a.code}</span>}
+                          {childCount > 0 && (
+                            <Badge className="border border-[#3aa838]/30 bg-[#3aa838]/10 text-[9px] font-medium text-[#2f8a2f]">
+                              parent · {childCount} child{childCount === 1 ? "" : "ren"}
+                            </Badge>
+                          )}
+                          {included && !isDisabled && (
+                            <Badge className="border border-slate-200 bg-slate-50 text-[9px] font-medium text-slate-600">
+                              included via {included}
+                            </Badge>
+                          )}
+                          {isDisabled && (
+                            <Badge className="border border-slate-200 bg-slate-100 text-[9px] font-medium text-slate-500">
+                              auto-included
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      {alreadySelected && (
-                        <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                          Selected
-                        </span>
-                      )}
                     </CommandItem>
                   );
                 })}
@@ -282,538 +239,732 @@ function AccountPicker({
           </Command>
         </PopoverContent>
       </Popover>
-      {selectedIds.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {selectedIds.map((acc) => (
-            <div key={acc.accountId} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1 text-xs">
-              <span className="font-medium">{acc.accountName || acc.accountId}</span>
-              <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => onRemove(acc.accountId)}>
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
+
+      {selected.length > 0 && (
+        <div className="space-y-1">
+          {selected.map((id) => {
+            const a = accountsById.get(id);
+            if (!a) return null;
+            const childCount = (childrenMap.get(id) || []).length;
+            return (
+              <div key={id} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px]">
+                <span className="flex min-w-0 items-center gap-1.5 truncate">
+                  <span className="truncate font-medium">{a.name}</span>
+                  {childCount > 0 && (
+                    <span className="rounded bg-[#3aa838]/10 px-1 py-0 text-[9px] font-semibold text-[#2f8a2f]">
+                      +{childCount} child{childCount === 1 ? "" : "ren"} rolled up
+                    </span>
+                  )}
+                </span>
+                <button
+                  onClick={() => onChange(selected.filter((x) => x !== id))}
+                  className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/* --------------------------- Main Page --------------------------- */
-export default function FinancialNotesPage() {
+/* ---------------- Note preview renderer ---------------- */
+function NotePreview({ note }: { note: FinancialNote }) {
+  const latest = note.versions[0];
+  const meta = NOTE_TYPE_META[note.noteType];
+
+  const accountRows = note.relatedAccounts.map((ra) => (
+    <tr key={ra.account} className="border-b border-slate-100 last:border-0">
+      <td className="px-3 py-1.5">
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="font-mono text-[10px] text-slate-500">{ra.accountCode}</span>
+          <span className="font-medium text-slate-800">{ra.accountName}</span>
+          {ra.isParentRollup && (
+            <Badge className="border border-[#3aa838]/30 bg-[#3aa838]/10 text-[9px] font-medium text-[#2f8a2f]">
+              parent rollup
+            </Badge>
+          )}
+        </div>
+      </td>
+      <td className="px-3 py-1.5 text-right text-xs tabular-nums text-slate-800">{drCr(ra.snapshotBalance)}</td>
+    </tr>
+  ));
+
+  return (
+    <div className="space-y-4">
+      {/* header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {note.statement} · FY {note.year}
+          </div>
+          <h2 className="mt-0.5 text-lg font-bold text-slate-900">
+            <span className="font-mono text-slate-500">{note.noteNo}</span> — {note.title}
+          </h2>
+          {note.statementRef?.lineItem && (
+            <div className="mt-0.5 text-[11px] text-slate-500">
+              Referenced from: <span className="font-medium text-slate-700">{note.statementRef.lineItem}</span>
+            </div>
+          )}
+          {note.summary && (
+            <div className="mt-1 text-xs italic text-slate-600">{note.summary}</div>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Badge className={cn("border text-[10px] font-semibold", note.isDraft ? "border-amber-200 bg-amber-50 text-amber-700" : "border-[#3aa838]/30 bg-[#3aa838]/10 text-[#2f8a2f]")}>
+            {note.isDraft ? "Draft" : <><Lock className="mr-0.5 h-2.5 w-2.5" />Final</>}
+          </Badge>
+          <span className="text-[10px] text-muted-foreground">
+            {meta?.label} · v{latest?.versionNo || 1}
+          </span>
+        </div>
+      </div>
+
+      {/* narrative + sections */}
+      {note.sections?.length ? (
+        <div className="space-y-3">
+          {note.sections.map((s, i) => (
+            <div key={s._id || i}>
+              {s.heading && <h3 className="mb-1 text-sm font-semibold text-slate-800">{s.heading}</h3>}
+              <div
+                className="prose prose-sm max-w-none text-xs leading-relaxed text-slate-700 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5"
+                dangerouslySetInnerHTML={{ __html: mdToHtml(s.body) }}
+              />
+            </div>
+          ))}
+        </div>
+      ) : latest?.content ? (
+        <div
+          className="prose prose-sm max-w-none text-xs leading-relaxed text-slate-700 [&_p]:mb-2"
+          dangerouslySetInnerHTML={{ __html: mdToHtml(latest.content) }}
+        />
+      ) : null}
+
+      {/* linked accounts table */}
+      {note.relatedAccounts?.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-slate-200">
+          <div className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+            {note.noteType === "AGING" ? "Accounts by aging" : "Linked accounts"}
+          </div>
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50/70">
+              <tr>
+                <th className="px-3 py-1.5 text-left font-medium text-slate-600">Account</th>
+                <th className="px-3 py-1.5 text-right font-medium text-slate-600">
+                  {note.noteType === "MOVEMENT" ? "Closing (snapshot)" : "Balance (snapshot)"}
+                </th>
+              </tr>
+            </thead>
+            <tbody>{accountRows}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Main page ---------------- */
+export default function FinancialStatementNotesPage() {
   const [notes, setNotes] = useState<FinancialNote[]>([]);
   const [loading, setLoading] = useState(false);
+  const [accounts, setAccounts] = useState<RawAccount[]>([]);
+
   const [search, setSearch] = useState("");
-  const [statementFilter, setStatementFilter] = useState<string>("");
-  const [yearFilter, setYearFilter] = useState<string>("");
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const limit = 12;
+  const [yearFilter, setYearFilter] = useState<string>("All");
+  const [statementFilter, setStatementFilter] = useState<"All" | StatementType>("All");
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "final">("all");
 
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [formOpen, setFormOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<FinancialNote | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [noteDetails, setNoteDetails] = useState<FinancialNote | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [form, setForm] = useState<FormState>(emptyForm());
+  const [viewing, setViewing] = useState<FinancialNote | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    watch,
-    control,
-    formState: { isSubmitting },
-  } = useForm<FormValues>({
-    defaultValues: {
-      title: "",
-      statement: "Balance Sheet",
-      year: new Date().getFullYear(),
-      content: "",
-      author: "System",
-      summary: "",
-      isDraft: true,
-      relatedAccounts: [],
-    },
-  });
+  function emptyForm(): FormState {
+    return {
+      title: "", statement: "Balance Sheet", noteType: "TABULAR",
+      year: new Date().getFullYear(), summary: "", statementLine: "",
+      sections: [{ heading: "", body: "", kind: "NARRATIVE", order: 0 }],
+      accounts: [], isDraft: true,
+    };
+  }
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: "relatedAccounts",
-  });
-
-  // Fetch notes list
   const fetchNotes = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { page, limit };
-      if (search) params.q = search;
-      if (statementFilter) params.statement = statementFilter;
-      if (yearFilter) params.year = yearFilter;
+      const params: any = { page: 1, limit: 200 };
+      if (search.trim()) params.q = search.trim();
+      if (yearFilter !== "All") params.year = yearFilter;
+      if (statementFilter !== "All") params.statement = statementFilter;
+      if (statusFilter !== "all") params.status = statusFilter;
       const res = await api.get("/reports/financial-notes", { params });
       setNotes(res.data?.data || []);
-      setTotal(res.data?.total || 0);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to load notes");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, limit, search, statementFilter, yearFilter]);
+    } finally { setLoading(false); }
+  }, [search, yearFilter, statementFilter, statusFilter]);
 
-  useEffect(() => {
-    fetchNotes();
-  }, [fetchNotes]);
-
-  // Expand row – fetch live balances
-  const toggleExpand = async (id: string) => {
-    if (expandedId === id) {
-      setExpandedId(null);
-      setNoteDetails(null);
-      return;
-    }
-    setExpandedId(id);
-    setDetailsLoading(true);
+  const fetchAccounts = useCallback(async () => {
     try {
-      const res = await api.get(`/reports/financial-notes/${id}`);
-      setNoteDetails(res.data?.data);
-    } catch {
-      toast.error("Failed to load note details");
-      setExpandedId(null);
-    } finally {
-      setDetailsLoading(false);
+      const res = await api.get("/reports/financial-notes/account-tree");
+      setAccounts(res.data?.data || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchNotes(); }, [fetchNotes]);
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+  const years = useMemo(() => {
+    const s = new Set<number>(notes.map((n) => n.year));
+    s.add(new Date().getFullYear());
+    return Array.from(s).sort((a, b) => b - a);
+  }, [notes]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, { year: number; statement: StatementType; notes: FinancialNote[] }>();
+    for (const n of notes) {
+      const key = `${n.year}|${n.statement}`;
+      if (!map.has(key)) map.set(key, { year: n.year, statement: n.statement, notes: [] });
+      map.get(key)!.notes.push(n);
     }
-  };
+    for (const g of map.values()) g.notes.sort((a, b) => a.displayOrder - b.displayOrder);
+    const order = new Map(STATEMENTS.map((s, i) => [s, i]));
+    return Array.from(map.values()).sort((a, b) =>
+      a.year !== b.year ? b.year - a.year : (order.get(a.statement) ?? 99) - (order.get(b.statement) ?? 99),
+    );
+  }, [notes]);
 
-  // Open form for create/edit
-  const openCreate = () => {
-    reset({
-      title: "",
-      statement: "Balance Sheet",
-      year: new Date().getFullYear(),
-      content: "",
-      author: "System",
-      summary: "",
-      isDraft: true,
-      relatedAccounts: [],
-    });
-    setEditingNote(null);
-    setDialogOpen(true);
-  };
-
+  const openCreate = () => { setForm(emptyForm()); setEditingNote(null); setFormOpen(true); };
   const openEdit = (note: FinancialNote) => {
-    reset({
-      title: note.title,
-      statement: note.statement,
-      year: note.year,
-      content: note.versions[0]?.content || "",
-      author: "System",
-      summary: note.summary || "",
+    setForm({
+      title: note.title, statement: note.statement, noteType: note.noteType,
+      year: note.year, summary: note.summary || "",
+      statementLine: note.statementRef?.lineItem || "",
+      sections: (note.sections?.length ? note.sections : [{ heading: "", body: note.versions[0]?.content || "", kind: "NARRATIVE", order: 0 }]),
+      accounts: note.relatedAccounts.map((ra) => ({ accountId: ra.account })),
       isDraft: note.isDraft,
-      relatedAccounts: note.relatedAccounts.map((ra) => ({
-        accountId: ra.account,
-        accountName: ra.name || ra.account,
-      })),
     });
     setEditingNote(note);
-    setDialogOpen(true);
+    setFormOpen(true);
+  };
+  const openView = async (note: FinancialNote) => {
+    setViewing(note); setViewLoading(true);
+    try {
+      const res = await api.get(`/reports/financial-notes/${note._id}`);
+      setViewing(res.data?.data || note);
+    } catch { toast.error("Failed to load live balances"); }
+    finally { setViewLoading(false); }
   };
 
-  // Submit form
-  const onSubmit = async (data: FormValues) => {
+  const saveNote = async (publish: boolean) => {
+    if (!form.title.trim()) return toast.error("Title is required");
+    setSaving(true);
     try {
-      const payload = {
-        ...data,
-        relatedAccounts: data.relatedAccounts.map((ra) => ({ accountId: ra.accountId })),
+      const payload: any = {
+        title: form.title.trim(),
+        statement: form.statement,
+        noteType: form.noteType,
+        year: form.year,
+        summary: form.summary.trim(),
+        statementRef: form.statementLine.trim() ? { lineItem: form.statementLine.trim() } : undefined,
+        sections: form.sections.filter((s) => s.heading?.trim() || s.body?.trim()),
+        relatedAccounts: form.accounts.map((a) => ({ accountId: a.accountId })),
+        isDraft: true,
       };
+      let noteId = editingNote?._id;
       if (editingNote) {
-        await api.put(`/reports/financial-notes/${editingNote._id}`, payload);
-        toast.success("Note updated");
+        if (!editingNote.isDraft) payload.forceFinalised = true;
+        await api.put(`/reports/financial-notes/${noteId}`, payload);
       } else {
-        await api.post("/reports/financial-notes", payload);
-        toast.success("Note created");
+        const res = await api.post("/reports/financial-notes", payload);
+        noteId = res.data?.data?._id;
       }
-      setDialogOpen(false);
-      fetchNotes();
+      if (publish && noteId) {
+        await api.post(`/reports/financial-notes/${noteId}/finalise`);
+        toast.success("Note saved and finalised");
+      } else toast.success(editingNote ? "New version saved" : "Saved as draft");
+      setFormOpen(false); fetchNotes();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Save failed");
-    }
+    } finally { setSaving(false); }
   };
 
-  // Delete
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this note?")) return;
+  const finaliseNote = async (note: FinancialNote) => {
+    if (!confirm(`Finalise "${note.noteNo}"? This will lock it and re-snapshot account balances.`)) return;
+    setActionLoading(note._id);
     try {
-      await api.delete(`/reports/financial-notes/${id}`);
-      toast.success("Note deleted");
-      fetchNotes();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Delete failed");
-    }
+      await api.post(`/reports/financial-notes/${note._id}/finalise`);
+      toast.success("Finalised"); fetchNotes();
+      if (viewing?._id === note._id) openView(note);
+    } catch (err: any) { toast.error(err?.response?.data?.message || "Failed"); }
+    finally { setActionLoading(null); }
   };
 
-  // Finalise
-  const handleFinalise = async (id: string) => {
+  const reopenNote = async (note: FinancialNote) => {
+    if (!confirm(`Reopen "${note.noteNo}"?`)) return;
+    setActionLoading(note._id);
     try {
-      await api.post(`/reports/financial-notes/${id}/finalise`);
-      toast.success("Note finalised with current balances");
-      fetchNotes();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Finalise failed");
-    }
+      await api.post(`/reports/financial-notes/${note._id}/reopen`);
+      toast.success("Reopened"); fetchNotes();
+      if (viewing?._id === note._id) openView(note);
+    } catch (err: any) { toast.error(err?.response?.data?.message || "Failed"); }
+    finally { setActionLoading(null); }
   };
 
-  // Account picker handlers
-  const addAccount = (acc: AccountOption) => {
-    const current = watch("relatedAccounts") || [];
-    if (!current.some((a) => a.accountId === acc.value)) {
-      append({ accountId: acc.value, accountName: acc.label });
-    }
+  const deleteNote = async (note: FinancialNote) => {
+    if (!note.isDraft) return toast.error("Reopen before deleting");
+    if (!confirm(`Delete "${note.noteNo}"?`)) return;
+    setActionLoading(note._id);
+    try {
+      await api.delete(`/reports/financial-notes/${note._id}`);
+      toast.success("Deleted"); setViewing(null); fetchNotes();
+    } catch (err: any) { toast.error(err?.response?.data?.message || "Failed"); }
+    finally { setActionLoading(null); }
   };
 
-  const removeAccount = (accountId: string) => {
-    const index = fields.findIndex((f) => f.accountId === accountId);
-    if (index !== -1) remove(index);
+  const moveNote = async (note: FinancialNote, direction: "up" | "down") => {
+    setActionLoading(note._id);
+    try { await api.post(`/reports/financial-notes/${note._id}/move`, { direction }); fetchNotes(); }
+    catch (err: any) { toast.error(err?.response?.data?.message || "Failed"); }
+    finally { setActionLoading(null); }
   };
 
-  const selectedAccounts = watch("relatedAccounts") || [];
+  const toggleExpand = (id: string) => setExpanded((s) => {
+    const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
 
+  const printHtml = (note: FinancialNote) => {
+    const latest = note.versions[0];
+    const sections = note.sections?.length
+      ? note.sections.map((s) => `<h3 style="font-size:13px;font-weight:700;margin:14px 0 6px">${s.heading || ""}</h3><div>${mdToHtml(s.body)}</div>`).join("")
+      : `<div>${mdToHtml(latest?.content || "")}</div>`;
+    const rows = note.relatedAccounts.map((ra) => `
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">${ra.accountCode || ""} — ${ra.accountName || ra.account}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace">${drCr(ra.snapshotBalance)}</td>
+      </tr>`).join("");
+    return `
+<div style="font-family:Inter,sans-serif;max-width:900px;margin:0 auto;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+  <div style="background:#0f172a;padding:20px 28px;color:#fff">
+    <div style="font-size:20px;font-weight:800">${note.noteNo} — ${note.title}</div>
+    <div style="font-size:12px;opacity:.85;margin-top:3px">${note.statement} · FY ${note.year} · ${note.isDraft ? "DRAFT" : "FINAL"}</div>
+  </div>
+  <div style="padding:20px 28px">
+    ${note.summary ? `<div style="font-size:12px;font-style:italic;color:#475569;margin-bottom:12px">${note.summary}</div>` : ""}
+    ${sections}
+    ${rows ? `<table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px"><thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 8px">Account</th><th style="text-align:right;padding:6px 8px">Snapshot Balance</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
+  </div>
+  <div style="background:#f8fafc;padding:10px 28px;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between">
+    <div>Version ${latest?.versionNo || 1} · ${latest?.author || "System"} · ${fmtDate(latest?.createdAt)}</div>
+    <div>© Antab Agro LTD</div>
+  </div>
+</div>`;
+  };
+
+  const hasAnyFilter = Boolean(search) || yearFilter !== "All" || statementFilter !== "All" || statusFilter !== "all";
+  const clearFilters = () => { setSearch(""); setYearFilter("All"); setStatementFilter("All"); setStatusFilter("all"); };
+
+  /* ---------------- Render ---------------- */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-slate-100">
-      <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-        {/* Header */}
-        <div className="mb-8 rounded-3xl border bg-white/70 backdrop-blur-sm p-6 shadow-xl">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-slate-800 flex items-center gap-3">
-                <BookOpen className="h-8 w-8 text-indigo-600" />
-                Financial Notes
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Craft and manage detailed notes for every financial statement with full version control.
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-[1500px] p-3 md:p-4">
+        {/* Hero */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <BookOpen className="h-4 w-4 text-[#3aa838]" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold leading-tight">Financial Statement Notes</h1>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {notes.length} note{notes.length === 1 ? "" : "s"} ·{" "}
+                {notes.filter((n) => n.isDraft).length} draft ·{" "}
+                {notes.filter((n) => !n.isDraft).length} final
               </p>
             </div>
-            <Button onClick={openCreate} className="gap-2 bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200">
-              <Plus className="h-4 w-4" /> New Note
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={openCreate} className="h-8 bg-[#3aa838] text-white hover:bg-[#2f8a2f]">
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> New Note
+            </Button>
+            <Button size="icon" variant="outline" className="h-8 w-8" onClick={fetchNotes} disabled={loading}>
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
             </Button>
           </div>
         </div>
 
         {/* Filters */}
-        <Card className="mb-6 border-0 shadow-md bg-white/80 backdrop-blur-sm">
-          <CardContent className="grid gap-4 p-5 md:grid-cols-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-slate-600">Search</div>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search notes..."
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                  className="pl-9 border-slate-200 focus:border-indigo-400"
-                />
-              </div>
+        <Card className="mb-3 border-slate-200 shadow-sm">
+          <CardContent className="flex flex-wrap gap-2 p-3">
+            <div className="relative w-full max-w-[240px]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search note, title, content…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 pl-8 text-xs focus-visible:ring-[#3aa838]" />
             </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-slate-600">Statement</div>
-              <Select value={statementFilter} onValueChange={(v) => { setStatementFilter(v); setPage(1); }}>
-                <SelectTrigger className="border-slate-200">
-                  <SelectValue placeholder="All Statements" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value=" ">All</SelectItem>
-                  {STATEMENT_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-slate-600">Year</div>
-              <Input
-                type="number"
-                placeholder="e.g. 2025"
-                value={yearFilter}
-                onChange={(e) => { setYearFilter(e.target.value); setPage(1); }}
-                className="border-slate-200 focus:border-indigo-400"
-              />
-            </div>
-            <div className="flex items-end">
-              <Button variant="outline" onClick={() => { setSearch(""); setStatementFilter(""); setYearFilter(""); setPage(1); }}
-                className="border-slate-200 text-slate-600 hover:bg-slate-50">
-                Clear Filters
+            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-[#3aa838]">
+              <option value="All">All years</option>
+              {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+            </select>
+            <select value={statementFilter} onChange={(e) => setStatementFilter(e.target.value as any)} className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-[#3aa838]">
+              <option value="All">All statements</option>
+              {STATEMENTS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-[#3aa838]">
+              <option value="all">All status</option>
+              <option value="draft">Draft</option>
+              <option value="final">Final</option>
+            </select>
+            {hasAnyFilter && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9 text-slate-500">
+                <X className="mr-1 h-3.5 w-3.5" /> Clear
               </Button>
-            </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Notes Grid – Card layout for a stunning visual */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-          </div>
-        ) : notes.length === 0 ? (
-          <Card className="border-dashed border-2 border-slate-300 bg-white/60 py-20 shadow-sm">
-            <CardContent className="flex flex-col items-center justify-center gap-4">
-              <BookOpen className="h-12 w-12 text-slate-300" />
-              <p className="text-lg text-muted-foreground font-medium">No financial notes yet.</p>
-              <Button variant="outline" onClick={openCreate}>Create your first note</Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {notes.map((note) => (
-              <Card
-                key={note._id}
-                className={`group relative overflow-hidden border-0 shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer ${
-                  expandedId === note._id ? "ring-2 ring-indigo-300" : ""
-                }`}
-                onClick={() => toggleExpand(note._id)}
-              >
-                <div className={`absolute top-0 left-0 right-0 h-1.5 ${note.isDraft ? "bg-amber-400" : "bg-emerald-400"}`} />
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg font-bold text-slate-800 group-hover:text-indigo-700 transition-colors">
-                        {note.title}
-                      </CardTitle>
-                      <p className="text-xs text-muted-foreground mt-1">{note.noteNo}</p>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => { e.stopPropagation(); openEdit(note); }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(note._id); }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">{note.statement}</span>
-                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">{note.year}</span>
-                    <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 font-medium">
-                      v{note.versions[0]?.versionNo || 1}
-                    </span>
-                  </div>
-                  {note.summary && (
-                    <p className="text-xs text-slate-600 line-clamp-2">{note.summary}</p>
-                  )}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{note.relatedAccounts.length} linked account(s)</span>
-                    <span className="flex items-center gap-1">
-                      {note.isDraft ? (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">Draft</span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">Final</span>
-                      )}
-                    </span>
-                  </div>
+        <div className="grid gap-3 lg:grid-cols-3">
+          {/* Notes list */}
+          <div className="space-y-3 lg:col-span-2">
+            {loading ? (
+              <Card className="border-slate-200 shadow-sm">
+                <CardContent className="flex items-center justify-center gap-2 py-16 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading notes…
                 </CardContent>
-                {expandedId === note._id && (
-                  <div className="border-t bg-slate-50/50 p-4" onClick={(e) => e.stopPropagation()}>
-                    {detailsLoading ? (
-                      <div className="flex justify-center py-6">
-                        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
-                      </div>
-                    ) : noteDetails ? (
-                      <ExpandedDetails note={noteDetails} onFinalise={handleFinalise} />
-                    ) : null}
-                  </div>
-                )}
               </Card>
-            ))}
+            ) : grouped.length === 0 ? (
+              <Card className="border-slate-200 shadow-sm">
+                <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <div className="rounded-full bg-slate-100 p-3"><BookOpen className="h-6 w-6 text-slate-400" /></div>
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">No notes yet</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {hasAnyFilter ? "Try adjusting filters." : "Create your first disclosure."}
+                    </div>
+                  </div>
+                  {hasAnyFilter ? (
+                    <Button size="sm" variant="outline" onClick={clearFilters}><X className="mr-1.5 h-3.5 w-3.5" /> Clear filters</Button>
+                  ) : (
+                    <Button size="sm" onClick={openCreate} className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"><Plus className="mr-1.5 h-3.5 w-3.5" /> Create first note</Button>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              grouped.map((group) => (
+                <div key={`${group.year}-${group.statement}`} className="space-y-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">{group.year}</div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{group.statement}</span>
+                    <Badge className="border border-slate-200 bg-white text-[10px] font-medium text-slate-600">{group.notes.length}</Badge>
+                  </div>
+                  {group.notes.map((note, idx) => {
+                    const meta = NOTE_TYPE_META[note.noteType];
+                    const Icon = meta?.icon || FileText;
+                    const isExpanded = expanded.has(note._id);
+                    return (
+                      <Card key={note._id} className="overflow-hidden border-slate-200 shadow-sm hover:shadow-md">
+                        <CardContent className="p-0">
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-2 p-3">
+                            <div className="flex min-w-0 flex-1 items-start gap-2">
+                              <div className="flex flex-col pt-1">
+                                <button onClick={() => moveNote(note, "up")} disabled={idx === 0 || actionLoading === note._id} className="text-slate-400 hover:text-[#2f8a2f] disabled:opacity-25"><ArrowUp className="h-2.5 w-2.5" /></button>
+                                <button onClick={() => moveNote(note, "down")} disabled={idx === group.notes.length - 1 || actionLoading === note._id} className="text-slate-400 hover:text-[#2f8a2f] disabled:opacity-25"><ArrowDown className="h-2.5 w-2.5" /></button>
+                              </div>
+                              <button onClick={() => toggleExpand(note._id)} className="mt-1 text-slate-500">
+                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                              </button>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-[10px] font-bold text-slate-500">{note.noteNo}</span>
+                                  <button onClick={() => openView(note)} className="max-w-full truncate text-left text-sm font-semibold text-slate-900 hover:text-[#2f8a2f] hover:underline">{note.title}</button>
+                                  <Badge className="border border-slate-200 bg-slate-50 text-[9px] font-medium text-slate-600">
+                                    <Icon className="mr-0.5 h-2.5 w-2.5" />{meta?.label}
+                                  </Badge>
+                                  {note.isDraft ? (
+                                    <Badge className="border border-amber-200 bg-amber-50 text-[9px] font-semibold text-amber-700">Draft</Badge>
+                                  ) : (
+                                    <Badge className="border border-[#3aa838]/30 bg-[#3aa838]/10 text-[9px] font-semibold text-[#2f8a2f]"><Lock className="mr-0.5 h-2.5 w-2.5" />Final</Badge>
+                                  )}
+                                </div>
+                                {note.statementRef?.lineItem && (
+                                  <div className="mt-0.5 text-[10px] text-slate-500">
+                                    Cross-ref: <span className="font-medium text-slate-700">{note.statementRef.lineItem}</span>
+                                  </div>
+                                )}
+                                {note.summary && <p className="mt-0.5 text-[11px] text-slate-600 line-clamp-2">{note.summary}</p>}
+                                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                                  <span>{note.relatedAccounts?.length || 0} linked</span>
+                                  <span>·</span>
+                                  <span>v{note.versions[0]?.versionNo || 1}</span>
+                                  <span>·</span>
+                                  <span>{fmtDate(note.updatedAt)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openView(note)} title="View"><Eye className="h-3.5 w-3.5" /></Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(note)} title="Edit"><Edit3 className="h-3.5 w-3.5" /></Button>
+                              {note.isDraft ? (
+                                <Button size="sm" variant="outline" className="h-7 border-[#3aa838]/40 px-2 text-[10px] text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f]" onClick={() => finaliseNote(note)} disabled={actionLoading === note._id}>
+                                  <Lock className="mr-0.5 h-3 w-3" /> Finalise
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" className="h-7 border-slate-300 px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={() => reopenNote(note)} disabled={actionLoading === note._id}>
+                                  <Unlock className="mr-0.5 h-3 w-3" /> Reopen
+                                </Button>
+                              )}
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={() => deleteNote(note)} disabled={!note.isDraft || actionLoading === note._id}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="border-t border-slate-200 bg-slate-50/50 p-3">
+                              <NotePreview note={note} />
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ))
+            )}
           </div>
-        )}
 
-        {/* Pagination */}
-        {total > limit && (
-          <div className="mt-8 flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Page {page} of {Math.ceil(total / limit)} (Total {total})
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * limit >= total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+          {/* Right sidebar */}
+          <aside className="h-fit space-y-3 lg:sticky lg:top-4">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <div className="border-b border-slate-200 bg-[#3aa838]/5 px-3 py-2 text-xs font-semibold text-[#2f8a2f]">
+                <Sparkles className="mr-1 inline h-3 w-3" /> Quick guide
+              </div>
+              <CardContent className="space-y-2 p-3 text-[11px] text-slate-600">
+                <div><b className="text-slate-900">Pick a parent</b> → children auto-included in the balance, disabled in the picker (prevents double-counting).</div>
+                <div><b className="text-slate-900">Cross-reference</b> every note to the face-of-statement line item it explains.</div>
+                <div><b className="text-slate-900">Note types</b> drive the layout: MOVEMENT gets opening/additions/disposals, AGING gets buckets, TABULAR gets a simple table.</div>
+                <div><b className="text-slate-900">Finalise</b> → locks the note + re-snapshots balances. Reopen to edit.</div>
+              </CardContent>
+            </Card>
+          </aside>
+        </div>
       </div>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl">
+      {/* ========== CREATE / EDIT DIALOG ========== */}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-              <FileText className="h-6 w-6 text-indigo-600" />
-              {editingNote ? "Edit Note" : "New Financial Note"}
+            <DialogTitle className="text-base">
+              {editingNote ? `Edit ${editingNote.noteNo}` : "New financial note"}
             </DialogTitle>
+            <DialogDescription className="text-xs">
+              {editingNote
+                ? `Saving creates version ${(editingNote.versions[0]?.versionNo || 1) + 1}.`
+                : "The note will be numbered automatically within its (year, statement) group."}
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-5">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Title *</label>
-                <Input {...register("title", { required: true })} className="mt-1" placeholder="e.g. Inventory Valuation Note" />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Statement</label>
-                <Select value={watch("statement")} onValueChange={(v) => setValue("statement", v)}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATEMENT_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Year</label>
-                <Input type="number" {...register("year", { valueAsNumber: true })} className="mt-1" />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Author</label>
-                <Input {...register("author")} className="mt-1" placeholder="Your name" />
-              </div>
-            </div>
+
+          <div className="space-y-3">
+            {/* Note type picker as chips */}
             <div>
-              <label className="text-sm font-medium text-slate-700">Content *</label>
-              <Textarea rows={10} {...register("content", { required: true })} className="mt-1 font-mono text-sm" placeholder="Write your detailed note content here... (Markdown or plain text)" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Summary</label>
-              <Input {...register("summary")} className="mt-1" placeholder="Brief summary (optional)" />
-            </div>
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="isDraft" {...register("isDraft")} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-              <label htmlFor="isDraft" className="text-sm font-medium text-slate-700">Save as Draft</label>
+              <Label className="text-xs">Note type *</Label>
+              <div className="mt-1 grid grid-cols-2 gap-1.5 md:grid-cols-4">
+                {(Object.keys(NOTE_TYPE_META) as NoteType[]).map((t) => {
+                  const m = NOTE_TYPE_META[t];
+                  const Ic = m.icon;
+                  const active = form.noteType === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, noteType: t }))}
+                      className={cn(
+                        "rounded-md border p-1.5 text-left transition-colors",
+                        active ? "border-[#3aa838] bg-[#3aa838]/5" : "border-slate-200 bg-white hover:border-slate-300",
+                      )}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Ic className={cn("h-3 w-3", active ? "text-[#3aa838]" : "text-slate-500")} />
+                        <span className={cn("text-[10px] font-semibold", active ? "text-[#2f8a2f]" : "text-slate-700")}>{m.label}</span>
+                      </div>
+                      <div className="mt-0.5 line-clamp-2 text-[9px] text-slate-500">{m.hint}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Related Accounts – Dynamic Account Picker */}
-            <div>
-              <label className="text-sm font-medium text-slate-700 mb-2 block">Related Accounts</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Title *</Label>
+                <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Property, plant & equipment" className="h-9 text-sm focus-visible:ring-[#3aa838]" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Statement *</Label>
+                <select value={form.statement} onChange={(e) => setForm((f) => ({ ...f, statement: e.target.value as StatementType }))} className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs focus:ring-2 focus:ring-[#3aa838]">
+                  {STATEMENTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Year *</Label>
+                <Input type="number" value={form.year} onChange={(e) => setForm((f) => ({ ...f, year: Number(e.target.value) || new Date().getFullYear() }))} className="h-9 text-sm focus-visible:ring-[#3aa838]" />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Statement cross-reference line (optional)</Label>
+                <Input value={form.statementLine} onChange={(e) => setForm((f) => ({ ...f, statementLine: e.target.value }))} placeholder="e.g. Trade Receivables (appears on BS face)" className="h-9 text-sm focus-visible:ring-[#3aa838]" />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Summary</Label>
+                <Input value={form.summary} onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))} placeholder="One-line description (optional)" className="h-9 text-sm focus-visible:ring-[#3aa838]" />
+              </div>
+            </div>
+
+            {/* Linked accounts */}
+            <div className="space-y-1">
+              <Label className="text-xs">Linked accounts</Label>
               <AccountPicker
-                selectedIds={selectedAccounts}
-                onAdd={addAccount}
-                onRemove={removeAccount}
+                accounts={accounts}
+                selected={form.accounts.map((a) => a.accountId)}
+                onChange={(ids) => setForm((f) => ({ ...f, accounts: ids.map((id) => ({ accountId: id })) }))}
               />
+              <p className="text-[10px] text-muted-foreground">
+                Selecting a parent automatically rolls up its children — children are then locked.
+              </p>
             </div>
 
-            <DialogFooter className="gap-3">
-              <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200">
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-                {editingNote ? "Update Note" : "Create Note"}
+            {/* Sections */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Narrative sections</Label>
+                <Button
+                  type="button" size="sm" variant="outline" className="h-7 text-[10px]"
+                  onClick={() => setForm((f) => ({
+                    ...f,
+                    sections: [...f.sections, { heading: "", body: "", kind: "NARRATIVE", order: f.sections.length }],
+                  }))}
+                >
+                  <Plus className="mr-1 h-3 w-3" /> Section
+                </Button>
+              </div>
+              {form.sections.map((s, i) => (
+                <div key={i} className="rounded-md border border-slate-200 bg-white p-2 space-y-1">
+                  <div className="flex items-center gap-1">
+                    <Input
+                      value={s.heading || ""}
+                      onChange={(e) => setForm((f) => ({
+                        ...f,
+                        sections: f.sections.map((x, j) => j === i ? { ...x, heading: e.target.value } : x),
+                      }))}
+                      placeholder="Section heading (optional)"
+                      className="h-8 text-xs font-semibold focus-visible:ring-[#3aa838]"
+                    />
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-rose-600" onClick={() => setForm((f) => ({ ...f, sections: f.sections.filter((_, j) => j !== i) }))} disabled={form.sections.length === 1}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    value={s.body}
+                    onChange={(e) => setForm((f) => ({
+                      ...f,
+                      sections: f.sections.map((x, j) => j === i ? { ...x, body: e.target.value } : x),
+                    }))}
+                    placeholder="Markdown supported: **bold**, _italic_, blank line = new paragraph."
+                    className="text-xs focus-visible:ring-[#3aa838]"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <DialogFooter className="flex-wrap gap-2">
+              <Button variant="ghost" onClick={() => setFormOpen(false)} className="text-xs">Cancel</Button>
+              <Button variant="outline" onClick={() => saveNote(false)} disabled={saving} className="text-xs">
+                {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}Save Draft
+              </Button>
+              <Button onClick={() => saveNote(true)} disabled={saving} className="bg-[#3aa838] text-white hover:bg-[#2f8a2f] text-xs">
+                {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Lock className="mr-1.5 h-3.5 w-3.5" />}
+                Save & Finalise
               </Button>
             </DialogFooter>
-          </form>
+          </div>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
 
-/* --------------------------- Expanded Details Component --------------------------- */
-function ExpandedDetails({ note, onFinalise }: { note: FinancialNote; onFinalise: (id: string) => void }) {
-  const latestVersion = note.versions[0];
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-slate-800">{note.title}</h3>
-        <div className="flex gap-2">
-          {note.isDraft && (
-            <Button size="sm" variant="outline" onClick={() => onFinalise(note._id)} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
-              <BadgeCheck className="mr-1 h-4 w-4" /> Finalise
-            </Button>
-          )}
-          <GlobalPrintButton
-            contentHtml={buildPrintHtml(note)}
-            headerRightHtml={`<div style="text-align:right;"><div style="font-size:20px;font-weight:800;">${note.noteNo}</div></div>`}
-            label="Print"
-            title="Financial Note"
-            orientation="portrait"
-            company={{ name: "Antab Agro LTD", address: "123 Agro Street, Dhaka", phone: "+880 1711-111111", email: "info@antabagro.com" }}
-            showHeader={false}
-            showFooter={false}
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div><span className="text-muted-foreground">Statement:</span> {note.statement}</div>
-        <div><span className="text-muted-foreground">Year:</span> {note.year}</div>
-        <div className="col-span-2"><span className="text-muted-foreground">Summary:</span> {note.summary || "-"}</div>
-      </div>
-
-      {/* Latest Version */}
-      <div className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 text-sm font-semibold text-indigo-700 mb-2">
-          <Clock className="h-4 w-4" /> Version {latestVersion?.versionNo} (current)
-        </div>
-        <div className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">{latestVersion?.content}</div>
-        <div className="mt-3 text-xs text-muted-foreground">
-          By {latestVersion?.author} on {formatDate(latestVersion?.createdAt)}
-        </div>
-      </div>
-
-      {/* Related Accounts */}
-      <div>
-        <h4 className="text-sm font-semibold text-slate-700 mb-2">Linked Accounts</h4>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Account</TableHead>
-              <TableHead className="text-right">Snapshot Balance</TableHead>
-              <TableHead className="text-right">Current Balance</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {note.relatedAccounts.map((ra, i) => (
-              <TableRow key={i}>
-                <TableCell className="text-xs font-medium">{ra.name || ra.account}</TableCell>
-                <TableCell className="text-right">{money(ra.snapshotBalance)}</TableCell>
-                <TableCell className="text-right">{money(ra.currentBalance || ra.snapshotBalance)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Older Versions Timeline */}
-      {note.versions.length > 1 && (
-        <details className="text-sm">
-          <summary className="cursor-pointer font-medium text-indigo-600 hover:text-indigo-800">
-            View older versions ({note.versions.length - 1})
-          </summary>
-          <div className="mt-3 space-y-4 pl-4 border-l-2 border-indigo-100">
-            {note.versions.slice(1).map((v) => (
-              <div key={v._id || v.versionNo} className="relative pl-6">
-                <div className="absolute -left-[13px] top-1.5 h-3 w-3 rounded-full bg-indigo-200 border-2 border-white" />
-                <div className="rounded-xl border bg-white p-4 shadow-sm">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span className="font-semibold">Version {v.versionNo}</span>
-                    <span>{v.author} · {formatDate(v.createdAt)}</span>
-                  </div>
-                  <div className="whitespace-pre-wrap text-sm text-slate-700">{v.content}</div>
-                </div>
+      {/* ========== VIEW DIALOG ========== */}
+      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <DialogTitle className="text-base">{viewing?.noteNo} — {viewing?.title}</DialogTitle>
+                <DialogDescription className="mt-0.5 text-[11px]">
+                  {viewing?.statement} · FY {viewing?.year} · {viewing?.isDraft ? "Draft" : "Final"}
+                  {viewing?.finalisedAt ? ` · Finalised ${fmtDate(viewing.finalisedAt)}` : ""}
+                </DialogDescription>
               </div>
-            ))}
-          </div>
-        </details>
-      )}
+              {viewing && (
+                <GlobalPrintButton
+                  contentHtml={printHtml(viewing)}
+                  headerRightHtml={`<div style="text-align:right"><div style="font-size:18px;font-weight:800">${viewing.noteNo}</div></div>`}
+                  label="Print" title="Financial Note" orientation="portrait"
+                  company={{ name: "Antab Agro LTD", address: "123 Agro Street, Dhaka", phone: "+880 1711-111111", email: "info@antabagro.com" }}
+                  showHeader={false} showFooter={false}
+                />
+              )}
+            </div>
+          </DialogHeader>
+          {viewLoading ? (
+            <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Loading…
+            </div>
+          ) : viewing ? (
+            <div className="space-y-3">
+              <NotePreview note={viewing} />
+              {viewing.relatedAccounts.some((ra) => ra.rolledUpLeaves?.length) && (
+                <details className="text-[11px]">
+                  <summary className="cursor-pointer font-medium text-[#2f8a2f] hover:underline">See leaf breakdown</summary>
+                  <div className="mt-2 space-y-2 border-l-2 border-[#3aa838]/30 pl-3">
+                    {viewing.relatedAccounts.map((ra) => (
+                      <div key={ra.account}>
+                        <div className="text-[10px] font-semibold text-slate-700">
+                          {ra.accountName} → {ra.rolledUpLeaves?.length || 0} leaf
+                          {(ra.rolledUpLeaves?.length || 0) === 1 ? "" : "ves"}
+                        </div>
+                        {(ra.rolledUpLeaves || []).map((leaf) => (
+                          <div key={leaf.account} className="flex justify-between text-[10px] text-slate-600">
+                            <span>{leaf.code} — {leaf.name}</span>
+                            <span className="tabular-nums">{drCr(leaf.snapshotBalance)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              <DialogFooter className="flex-wrap gap-2">
+                <Button variant="ghost" onClick={() => setViewing(null)} className="text-xs">Close</Button>
+                <Button variant="outline" onClick={() => { if (viewing) { setViewing(null); openEdit(viewing); } }} className="text-xs"><Edit3 className="mr-1.5 h-3.5 w-3.5" /> Edit</Button>
+                {viewing.isDraft ? (
+                  <Button onClick={() => finaliseNote(viewing)} disabled={actionLoading === viewing._id} className="bg-[#3aa838] text-white hover:bg-[#2f8a2f] text-xs">
+                    <Lock className="mr-1.5 h-3.5 w-3.5" />Finalise
+                  </Button>
+                ) : (
+                  <Button onClick={() => reopenNote(viewing)} disabled={actionLoading === viewing._id} className="bg-amber-600 text-white hover:bg-amber-700 text-xs">
+                    <Unlock className="mr-1.5 h-3.5 w-3.5" />Reopen
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => deleteNote(viewing)} disabled={!viewing.isDraft || actionLoading === viewing._id} className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 text-xs">
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />Delete
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

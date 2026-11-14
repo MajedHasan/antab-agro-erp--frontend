@@ -1,14 +1,18 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { toast, Toaster } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -27,9 +31,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Plus,
   Search,
-  FileText,
   Banknote,
   Wallet,
   TrendingUp,
@@ -37,16 +53,22 @@ import {
   ChevronRight,
   Loader2,
   Eye,
-  Edit,
   CheckCircle2,
   AlertCircle,
   Clock,
   XCircle,
   HelpCircle,
   Receipt,
+  RefreshCw,
+  Filter as FilterIcon,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 
-/* ────────────── Types ────────────── */
+/* ---------- Types ---------- */
 type CollectionItem = {
   _id: string;
   voucherNo: string;
@@ -70,7 +92,13 @@ type CollectionItem = {
   createdAt: string;
 };
 
-/* ────────────── Helpers ────────────── */
+type SearchOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
+/* ---------- Helpers ---------- */
 const moneyFmt = (v: any) =>
   Number.isFinite(Number(v ?? 0))
     ? Number(v ?? 0).toLocaleString("en-BD", {
@@ -90,18 +118,38 @@ const formatDate = (dateStr: string) =>
 
 const statusConfig: Record<
   string,
-  {
-    label: string;
-    variant: "outline" | "default" | "secondary" | "destructive";
-    icon: any;
-  }
+  { label: string; cls: string; icon: any }
 > = {
-  SUBMITTED: { label: "Submitted", variant: "secondary", icon: Clock },
-  UNDER_REVIEW: { label: "Review", variant: "default", icon: HelpCircle },
-  APPROVED: { label: "Approved", variant: "outline", icon: CheckCircle2 },
-  HOLD: { label: "Hold", variant: "destructive", icon: AlertCircle },
-  DISPUTED: { label: "Disputed", variant: "destructive", icon: XCircle },
-  CANCELLED: { label: "Cancelled", variant: "destructive", icon: XCircle },
+  SUBMITTED: {
+    label: "Submitted",
+    cls: "bg-slate-100 text-slate-700 border-slate-200",
+    icon: Clock,
+  },
+  UNDER_REVIEW: {
+    label: "Review",
+    cls: "bg-amber-50 text-amber-700 border-amber-200",
+    icon: HelpCircle,
+  },
+  APPROVED: {
+    label: "Approved",
+    cls: "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30",
+    icon: CheckCircle2,
+  },
+  HOLD: {
+    label: "Hold",
+    cls: "bg-rose-50 text-rose-700 border-rose-200",
+    icon: AlertCircle,
+  },
+  DISPUTED: {
+    label: "Disputed",
+    cls: "bg-rose-50 text-rose-700 border-rose-200",
+    icon: XCircle,
+  },
+  CANCELLED: {
+    label: "Cancelled",
+    cls: "bg-rose-50 text-rose-700 border-rose-200",
+    icon: XCircle,
+  },
 };
 
 const statusEndpoint: Record<string, string> = {
@@ -122,6 +170,274 @@ const allowedTransitions: Record<string, string[]> = {
   CANCELLED: [],
 };
 
+/* ---------- Dealer searchable combobox ---------- */
+function DealerFilterSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<SearchOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const cache = useRef<Record<string, SearchOption[]>>({});
+  const [selected, setSelected] = useState<SearchOption | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const key = query.trim().toLowerCase();
+    const t = setTimeout(async () => {
+      if (cache.current[key]) {
+        setOptions(cache.current[key]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await api.get("/dealers", {
+          params: { q: query || undefined, page: 1, limit: 30 },
+        });
+        const list = ((res.data?.data || []) as any[]).map<SearchOption>(
+          (d) => ({
+            value: String(d._id || d.id),
+            label: d.name || d.proprietor || String(d._id || d.id),
+            description: [d.phoneNumber || d.phone, d.code, d.status]
+              .filter(Boolean)
+              .join(" · "),
+          }),
+        );
+        cache.current[key] = list;
+        setOptions(list);
+      } catch {
+        setOptions([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [open, query]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 w-full justify-between bg-white text-xs"
+        >
+          <span className="truncate">
+            {selected?.label || (value ? value : "All dealers")}
+          </span>
+          <ChevronsUpDown className="ml-1.5 h-3.5 w-3.5 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[340px] p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder="Search dealer..."
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            <CommandEmpty>
+              {loading ? "Loading..." : "No dealer found."}
+            </CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__all__"
+                onSelect={() => {
+                  setSelected(null);
+                  onChange("");
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={`mr-2 h-3.5 w-3.5 ${
+                    !value ? "opacity-100 text-[#3aa838]" : "opacity-0"
+                  }`}
+                />
+                <span className="text-xs font-medium">All dealers</span>
+              </CommandItem>
+              {options.map((opt) => (
+                <CommandItem
+                  key={opt.value}
+                  value={`${opt.label} ${opt.description || ""}`}
+                  onSelect={() => {
+                    setSelected(opt);
+                    onChange(opt.value);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                >
+                  <Check
+                    className={`mr-2 h-3.5 w-3.5 ${
+                      opt.value === value
+                        ? "opacity-100 text-[#3aa838]"
+                        : "opacity-0"
+                    }`}
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-medium">
+                      {opt.label}
+                    </div>
+                    {opt.description && (
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        {opt.description}
+                      </div>
+                    )}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/* ---------- Invoice searchable combobox ---------- */
+function InvoiceFilterSelect({
+  dealerId,
+  value,
+  onChange,
+}: {
+  dealerId?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<SearchOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const cache = useRef<Record<string, SearchOption[]>>({});
+  const [selected, setSelected] = useState<SearchOption | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const key = `${dealerId || ""}|${query.trim().toLowerCase()}`;
+    const t = setTimeout(async () => {
+      if (cache.current[key]) {
+        setOptions(cache.current[key]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await api.get("/sales-invoices", {
+          params: {
+            q: query || undefined,
+            customerId: dealerId || undefined,
+            page: 1,
+            limit: 30,
+          },
+        });
+        const list = ((res.data?.data || []) as any[]).map<SearchOption>(
+          (inv) => ({
+            value: String(inv._id || inv.id),
+            label: inv.invoiceNo || String(inv._id || inv.id),
+            description: [
+              inv.orderId?.orderNo ? `Order ${inv.orderId.orderNo}` : "",
+              inv.paymentStatus,
+              inv.balanceAmount != null
+                ? `Due ৳${Number(inv.balanceAmount || 0).toFixed(2)}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          }),
+        );
+        cache.current[key] = list;
+        setOptions(list);
+      } catch {
+        setOptions([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [open, query, dealerId]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 w-full justify-between bg-white text-xs"
+        >
+          <span className="truncate">
+            {selected?.label || (value ? value : "All invoices")}
+          </span>
+          <ChevronsUpDown className="ml-1.5 h-3.5 w-3.5 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[340px] p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder="Search invoice..."
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            <CommandEmpty>
+              {loading ? "Loading..." : "No invoice found."}
+            </CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__all__"
+                onSelect={() => {
+                  setSelected(null);
+                  onChange("");
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={`mr-2 h-3.5 w-3.5 ${
+                    !value ? "opacity-100 text-[#3aa838]" : "opacity-0"
+                  }`}
+                />
+                <span className="text-xs font-medium">All invoices</span>
+              </CommandItem>
+              {options.map((opt) => (
+                <CommandItem
+                  key={opt.value}
+                  value={`${opt.label} ${opt.description || ""}`}
+                  onSelect={() => {
+                    setSelected(opt);
+                    onChange(opt.value);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                >
+                  <Check
+                    className={`mr-2 h-3.5 w-3.5 ${
+                      opt.value === value
+                        ? "opacity-100 text-[#3aa838]"
+                        : "opacity-0"
+                    }`}
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate font-mono text-xs font-medium">
+                      {opt.label}
+                    </div>
+                    {opt.description && (
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        {opt.description}
+                      </div>
+                    )}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/* ---------- Main ---------- */
 export default function CollectionsListPage() {
   const router = useRouter();
 
@@ -131,6 +447,7 @@ export default function CollectionsListPage() {
   const [limit] = useState(15);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [filters, setFilters] = useState({
     q: "",
@@ -147,7 +464,6 @@ export default function CollectionsListPage() {
     try {
       const params: any = { page, limit, sort: "-createdAt" };
       if (filters.q) params.q = filters.q;
-      // status "all" means no filter
       if (filters.status && filters.status !== "all")
         params.status = filters.status;
       if (filters.dealerId) params.dealerId = filters.dealerId;
@@ -195,6 +511,29 @@ export default function CollectionsListPage() {
     return stats;
   }, [collections]);
 
+  const activeFilterCount =
+    (filters.status ? 1 : 0) +
+    (filters.date ? 1 : 0) +
+    (filters.dealerId ? 1 : 0) +
+    (filters.invoiceId ? 1 : 0) +
+    (filters.mrNo ? 1 : 0) +
+    (filters.onlineCopyNo ? 1 : 0);
+
+  const hasAnyFilter = activeFilterCount > 0 || Boolean(filters.q);
+
+  const clearFilters = () => {
+    setFilters({
+      q: "",
+      status: "",
+      dealerId: "",
+      invoiceId: "",
+      mrNo: "",
+      onlineCopyNo: "",
+      date: "",
+    });
+    setPage(1);
+  };
+
   const goToPage = (p: number) => {
     if (p >= 1 && p <= totalPages) setPage(p);
   };
@@ -214,206 +553,376 @@ export default function CollectionsListPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-white">
-      <Toaster position="top-right" richColors />
-      <div className="max-w-[1600px] mx-auto px-4 py-8 sm:px-6 lg:px-10">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-8"
-        >
-          <div>
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-indigo-500/10 to-blue-500/10 border border-indigo-200 text-indigo-700 text-xs font-bold uppercase tracking-wider mb-3">
-              <Banknote size={14} /> Collections
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* ============ HERO ============ */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <Banknote className="h-4 w-4 text-[#3aa838]" />
             </div>
-            <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">
-              All Collections
-            </h1>
-            <p className="mt-2 text-slate-500 max-w-2xl text-lg">
-              Manage dealer collections, money receipts, and bank deposits.
-            </p>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-semibold leading-tight">
+                Collections
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Visible</span>
+                  <b className="tabular-nums text-slate-900">
+                    {collections.length}
+                  </b>
+                </div>
+                <span className="text-slate-300">·</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Cash</span>
+                  <b className="tabular-nums text-slate-900">
+                    ৳ {moneyFmt(summaryStats.totalCash)}
+                  </b>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Commission</span>
+                  <b className="tabular-nums text-amber-700">
+                    ৳ {moneyFmt(summaryStats.totalCommission)}
+                  </b>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Bank</span>
+                  <b className="tabular-nums text-slate-700">
+                    ৳ {moneyFmt(summaryStats.totalBankCharge)}
+                  </b>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Net</span>
+                  <b className="tabular-nums text-[#2f8a2f]">
+                    ৳ {moneyFmt(summaryStats.totalNetDeposit)}
+                  </b>
+                </div>
+              </div>
+            </div>
           </div>
-          <Button
-            onClick={() => router.push("/accounts/collections/new")}
-            size="lg"
-            className="rounded-full px-8 py-3 font-bold shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700"
-          >
-            <Plus size={18} className="mr-2" /> New Collection
-          </Button>
-        </motion.div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatCard
-            label="Cash Collected"
-            value={moneyFmt(summaryStats.totalCash)}
-            icon={Wallet}
-          />
-          <StatCard
-            label="Commission"
-            value={moneyFmt(summaryStats.totalCommission)}
-            icon={TrendingUp}
-          />
-          <StatCard
-            label="Bank Charges"
-            value={moneyFmt(summaryStats.totalBankCharge)}
-            icon={Receipt}
-          />
-          <StatCard
-            label="Net Deposits"
-            value={moneyFmt(summaryStats.totalNetDeposit)}
-            accent
-            icon={Banknote}
-          />
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchCollections()}
+              disabled={loading}
+              className="h-8"
+              title="Refresh"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              />
+            </Button>
+            <Button
+              onClick={() => router.push("/accounts/collections/new")}
+              size="sm"
+              className="h-8 bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              New collection
+            </Button>
+          </div>
         </div>
 
-        {/* Filters */}
-        <Card className="mb-6 border-0 shadow-2xl rounded-3xl overflow-hidden bg-white/90 backdrop-blur-sm">
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              <div>
-                <Label className="text-sm font-medium">Search</Label>
-                <Input
-                  placeholder="Voucher, MR, Dealer..."
-                  value={filters.q}
-                  onChange={(e) =>
-                    setFilters((f) => ({ ...f, q: e.target.value }))
-                  }
-                  className="rounded-xl"
-                />
-              </div>
-              <div>
-                <Label className="text-sm font-medium">Status</Label>
-                <Select
-                  value={filters.status || "all"}
-                  onValueChange={(val) =>
+        {/* ============ 4 SUMMARY CARDS (Restored Bank Charges) ============ */}
+        <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {[
+            {
+              label: "Cash collected",
+              value: moneyFmt(summaryStats.totalCash),
+              icon: Wallet,
+              tone: "green" as const,
+            },
+            {
+              label: "Commission",
+              value: moneyFmt(summaryStats.totalCommission),
+              icon: TrendingUp,
+              tone: "amber" as const,
+            },
+            {
+              label: "Bank charges",
+              value: moneyFmt(summaryStats.totalBankCharge),
+              icon: Receipt,
+              tone: "slate" as const,
+            },
+            {
+              label: "Net deposits",
+              value: moneyFmt(summaryStats.totalNetDeposit),
+              icon: Banknote,
+              tone: "green" as const,
+            },
+          ].map((s) => {
+            const toneMap = {
+              green: {
+                chip: "bg-[#3aa838]/10 text-[#3aa838]",
+                num: "text-[#2f8a2f]",
+              },
+              amber: {
+                chip: "bg-amber-50 text-amber-600",
+                num: "text-amber-700",
+              },
+              slate: {
+                chip: "bg-slate-100 text-slate-600",
+                num: "text-slate-900",
+              },
+            } as const;
+            const t = toneMap[s.tone];
+            const Icon = s.icon;
+            return (
+              <Card
+                key={s.label}
+                className="overflow-hidden border-slate-200 shadow-sm"
+              >
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {s.label}
+                      </div>
+                      <div
+                        className={`mt-1 truncate text-lg font-bold tabular-nums ${t.num}`}
+                      >
+                        ৳ {s.value}
+                      </div>
+                    </div>
+                    <div className={`shrink-0 rounded-lg p-1.5 ${t.chip}`}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* ============ FILTER BAR ============ */}
+        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <div className="relative w-full max-w-[240px]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Voucher, MR, dealer..."
+                value={filters.q}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, q: e.target.value }))
+                }
+                className="h-9 pl-8 text-sm focus-visible:ring-[#3aa838]"
+              />
+            </div>
+
+            <Select
+              value={filters.status || "all"}
+              onValueChange={(val) =>
+                setFilters((f) => ({
+                  ...f,
+                  status: val === "all" ? "" : val,
+                }))
+              }
+            >
+              <SelectTrigger className="h-9 w-[140px] text-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                {Object.keys(statusConfig).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {statusConfig[s].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Input
+              type="date"
+              value={filters.date}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, date: e.target.value }))
+              }
+              className="h-9 w-[140px] text-xs focus-visible:ring-[#3aa838]"
+            />
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={`h-9 ${
+                activeFilterCount > 0
+                  ? "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]"
+                  : ""
+              }`}
+            >
+              <FilterIcon className="mr-1.5 h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
+                  {activeFilterCount}
+                </span>
+              )}
+              {filtersOpen ? (
+                <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+              )}
+            </Button>
+
+            {hasAnyFilter && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-9 text-slate-500"
+              >
+                <X className="mr-1 h-3.5 w-3.5" />
+                Clear
+              </Button>
+            )}
+
+            <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {total} records
+            </div>
+          </div>
+
+          {filtersOpen && (
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-4">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600">
+                  Dealer
+                </label>
+                <DealerFilterSelect
+                  value={filters.dealerId}
+                  onChange={(v) => {
                     setFilters((f) => ({
                       ...f,
-                      status: val === "all" ? "" : val,
-                    }))
-                  }
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {Object.keys(statusConfig).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {statusConfig[s].label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm font-medium">Date</Label>
-                <Input
-                  type="date"
-                  value={filters.date}
-                  onChange={(e) =>
-                    setFilters((f) => ({ ...f, date: e.target.value }))
-                  }
-                  className="rounded-xl"
+                      dealerId: v,
+                      invoiceId: "",
+                    }));
+                    setPage(1);
+                  }}
                 />
               </div>
-              <div>
-                <Label className="text-sm font-medium">Online Copy</Label>
-                <Input
-                  placeholder="OC No"
-                  value={filters.onlineCopyNo}
-                  onChange={(e) =>
-                    setFilters((f) => ({ ...f, onlineCopyNo: e.target.value }))
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600">
+                  Invoice
+                </label>
+                <InvoiceFilterSelect
+                  dealerId={filters.dealerId || undefined}
+                  value={filters.invoiceId}
+                  onChange={(v) =>
+                    setFilters((f) => ({ ...f, invoiceId: v }))
                   }
-                  className="rounded-xl"
                 />
               </div>
-              <div>
-                <Label className="text-sm font-medium">MR No</Label>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600">
+                  MR No
+                </label>
                 <Input
-                  placeholder="MR No"
                   value={filters.mrNo}
                   onChange={(e) =>
                     setFilters((f) => ({ ...f, mrNo: e.target.value }))
                   }
-                  className="rounded-xl"
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                  placeholder="MR No"
                 />
               </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={() => {
-                    setPage(1);
-                    fetchCollections();
-                  }}
-                  variant="outline"
-                  className="w-full rounded-xl"
-                >
-                  <Search size={16} className="mr-2" /> Apply
-                </Button>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600">
+                  Online copy
+                </label>
+                <Input
+                  value={filters.onlineCopyNo}
+                  onChange={(e) =>
+                    setFilters((f) => ({ ...f, onlineCopyNo: e.target.value }))
+                  }
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                  placeholder="OC No"
+                />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
-        {/* Data Table */}
-        <Card className="border-0 shadow-2xl rounded-3xl overflow-hidden bg-white/90 backdrop-blur-sm">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-slate-200">
-                  <TableHead className="font-semibold text-slate-800">
-                    Voucher No
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800">
-                    Date
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800">
-                    Dealers
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800">
-                    Online Copy
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800 text-right">
-                    Cash
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800 text-right">
-                    Commission
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800 text-right">
-                    Net Deposit
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800">
-                    Status
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-800 text-center">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <AnimatePresence>
+        {/* ============ TABLE ============ */}
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 hover:bg-slate-50">
+                    {[
+                      "Voucher",
+                      "Date",
+                      "Dealers",
+                      "Online copy",
+                      "Cash",
+                      "Commission",
+                      "Net deposit",
+                      "Status",
+                    ].map((h) => (
+                      <TableHead
+                        key={h}
+                        className={`border-b border-slate-200 px-3 py-2.5 text-[10px] font-medium uppercase tracking-wide text-slate-600 ${
+                          ["Cash", "Commission", "Net deposit"].includes(h)
+                            ? "text-right"
+                            : ""
+                        }`}
+                      >
+                        {h}
+                      </TableHead>
+                    ))}
+                    <TableHead className="border-b border-slate-200 px-3 py-2.5 text-right text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-16">
-                        <Loader2
-                          className="animate-spin inline mr-2"
-                          size={24}
-                        />
-                        Loading...
+                      <TableCell colSpan={9} className="py-12 text-center">
+                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading collections...
+                        </div>
                       </TableCell>
                     </TableRow>
                   ) : collections.length === 0 ? (
                     <TableRow>
-                      <TableCell
-                        colSpan={9}
-                        className="text-center py-16 text-slate-400"
-                      >
-                        <FileText
-                          size={40}
-                          className="mx-auto mb-3 opacity-50"
-                        />
-                        <p className="font-medium">No collections found</p>
+                      <TableCell colSpan={9} className="py-16 text-center">
+                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
+                          <div className="rounded-full bg-slate-100 p-3">
+                            <Banknote className="h-6 w-6" />
+                          </div>
+                          <div className="text-sm font-medium text-slate-700">
+                            No collections found
+                          </div>
+                          <div className="text-xs">
+                            {hasAnyFilter
+                              ? "Try adjusting your filters."
+                              : "Create your first collection to get started."}
+                          </div>
+                          {hasAnyFilter ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={clearFilters}
+                            >
+                              <X className="mr-1.5 h-3.5 w-3.5" />
+                              Clear filters
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                router.push("/accounts/collections/new")
+                              }
+                              className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                            >
+                              <Plus className="mr-1.5 h-3.5 w-3.5" />
+                              New collection
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -426,9 +935,10 @@ export default function CollectionsListPage() {
                           summary.bankDepositCharge;
                       const stat = statusConfig[coll.status] || {
                         label: coll.status,
-                        variant: "outline",
+                        cls: "bg-slate-100 text-slate-700 border-slate-200",
                         icon: Clock,
                       };
+                      const StatIcon = stat.icon;
                       const dealerNames =
                         coll.dealers?.map((d) => d.dealerName).join(", ") ||
                         "-";
@@ -436,56 +946,53 @@ export default function CollectionsListPage() {
                         allowedTransitions[coll.status]?.length > 0;
 
                       return (
-                        <motion.tr
+                        <TableRow
                           key={coll._id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors"
+                          className="border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70"
                         >
-                          <TableCell className="font-medium text-slate-900">
+                          <TableCell className="px-3 py-2 font-mono text-xs font-semibold text-slate-900">
                             {coll.voucherNo}
                           </TableCell>
-                          <TableCell className="text-slate-600">
+                          <TableCell className="px-3 py-2 text-xs text-slate-600 tabular-nums">
                             {formatDate(coll.date)}
                           </TableCell>
-                          <TableCell className="text-slate-600 max-w-[200px] truncate">
+                          <TableCell className="max-w-[200px] truncate px-3 py-2 text-xs text-slate-700">
                             {dealerNames}
                           </TableCell>
-                          <TableCell className="text-slate-600">
+                          <TableCell className="px-3 py-2 text-xs text-slate-600">
                             {coll.onlineCopy?.onlineCopyNo || "-"}
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-slate-800">
-                            {moneyFmt(summary.totalMRAmount || 0)}
+                          <TableCell className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
+                            ৳ {moneyFmt(summary.totalMRAmount || 0)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-amber-600">
-                            {moneyFmt(summary.totalCommission || 0)}
+                          <TableCell className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-amber-700">
+                            ৳ {moneyFmt(summary.totalCommission || 0)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-emerald-600">
-                            {moneyFmt(netDeposit)}
+                          <TableCell className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-[#2f8a2f]">
+                            ৳ {moneyFmt(netDeposit)}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="px-3 py-2">
                             <Badge
-                              variant={stat.variant}
-                              className="flex w-fit items-center gap-1"
+                              className={`inline-flex items-center gap-1 border text-[10px] font-semibold ${stat.cls}`}
                             >
-                              <stat.icon size={14} />
+                              <StatIcon className="h-2.5 w-2.5" />
                               {stat.label}
                             </Badge>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex justify-center gap-2">
+                          <TableCell className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-0.5">
                               <Button
-                                size="sm"
+                                size="icon"
                                 variant="ghost"
                                 onClick={() =>
                                   router.push(
                                     `/accounts/collections/${coll._id}`,
                                   )
                                 }
-                                className="text-indigo-600 hover:bg-indigo-50 rounded-xl"
+                                className="h-7 w-7"
+                                title="View"
                               >
-                                <Eye size={16} />
+                                <Eye className="h-3.5 w-3.5" />
                               </Button>
                               {canChange &&
                                 coll.status !== "APPROVED" &&
@@ -495,11 +1002,10 @@ export default function CollectionsListPage() {
                                       handleStatusChange(coll._id, val)
                                     }
                                   >
-                                    <SelectTrigger className="h-8 w-8 p-0 border-0 hover:bg-slate-100 rounded-xl [&>svg]:hidden">
-                                      <Edit
-                                        size={14}
-                                        className="text-slate-500"
-                                      />
+                                    <SelectTrigger className="h-7 w-7 border-0 p-0 hover:bg-slate-100 [&>svg]:hidden">
+                                      <span className="flex items-center justify-center">
+                                        <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+                                      </span>
                                     </SelectTrigger>
                                     <SelectContent>
                                       {allowedTransitions[coll.status]?.map(
@@ -512,82 +1018,58 @@ export default function CollectionsListPage() {
                                     </SelectContent>
                                   </Select>
                                 )}
-                              {coll.status === "APPROVED" && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-emerald-600 border-emerald-300"
-                                >
-                                  Approved
-                                </Badge>
-                              )}
                             </div>
                           </TableCell>
-                        </motion.tr>
+                        </TableRow>
                       );
                     })
                   )}
-                </AnimatePresence>
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          {!loading && total > 0 && (
-            <div className="p-4 flex items-center justify-between border-t border-slate-200">
-              <div className="text-sm text-slate-600">
-                Showing {Math.min((page - 1) * limit + 1, total)} -{" "}
-                {Math.min(page * limit, total)} of {total}
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => goToPage(page - 1)}
-                  className="rounded-xl"
-                >
-                  <ChevronLeft size={16} />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => goToPage(page + 1)}
-                  className="rounded-xl"
-                >
-                  <ChevronRight size={16} />
-                </Button>
-              </div>
+                </TableBody>
+              </Table>
             </div>
-          )}
+
+            {!loading && total > 0 && (
+              <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                <div className="text-xs text-muted-foreground">
+                  Showing{" "}
+                  <strong className="text-slate-900 tabular-nums">
+                    {Math.min((page - 1) * limit + 1, total)}
+                  </strong>{" "}
+                  –{" "}
+                  <strong className="text-slate-900 tabular-nums">
+                    {Math.min(page * limit, total)}
+                  </strong>{" "}
+                  of <strong className="text-slate-900">{total}</strong>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Page <strong className="text-slate-900">{page}</strong> /{" "}
+                    {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    disabled={page <= 1}
+                    onClick={() => goToPage(page - 1)}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    disabled={page >= totalPages}
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
         </Card>
       </div>
     </div>
   );
 }
-
-/* ────────────── Reusable Stat Card ────────────── */
-const StatCard = ({ label, value, accent, icon: Icon }: any) => (
-  <motion.div
-    whileHover={{ y: -2 }}
-    className={`rounded-2xl border p-5 flex items-center justify-between backdrop-blur-sm ${
-      accent
-        ? "bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 text-white shadow-lg shadow-slate-900/20"
-        : "bg-white/70 border-slate-200 shadow-sm"
-    }`}
-  >
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
-    </div>
-    {Icon && (
-      <div
-        className={`p-3 rounded-xl ${accent ? "bg-white/10" : "bg-slate-100"}`}
-      >
-        <Icon size={22} className={accent ? "text-white" : "text-slate-600"} />
-      </div>
-    )}
-  </motion.div>
-);

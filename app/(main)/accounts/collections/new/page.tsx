@@ -3,11 +3,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { toast, Toaster } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -27,9 +26,10 @@ import {
   Receipt,
   Wallet,
   TrendingUp,
+  RefreshCw,
 } from "lucide-react";
 
-/* ────────────── Types (unchanged) ────────────── */
+/* ───────── Types ───────── */
 type CommissionMode = "FIXED" | "PERCENT";
 type CommissionRow = { mode: CommissionMode; value: number; amount: number };
 
@@ -83,7 +83,7 @@ type DealerRow = {
 
 type BankOption = { id: string; label: string; raw: any };
 
-/* ────────────── Helpers (unchanged) ────────────── */
+/* ───────── Helpers ───────── */
 const uid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 const today = () => new Date().toISOString().slice(0, 10);
 const cleanText = (v: any) => String(v ?? "").trim();
@@ -176,61 +176,69 @@ const normalizeBankOption = (item: any): BankOption => {
   return { id: resolveId(item), label, raw: item };
 };
 
-/* ────────────── Enhanced Sub‑components ────────── */
-const StatCard = ({ label, value, accent, icon: Icon }: any) => (
-  <motion.div
-    whileHover={{ y: -2 }}
-    className={`rounded-2xl border p-5 flex items-center justify-between backdrop-blur-sm ${
-      accent
-        ? "bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 text-white shadow-lg shadow-slate-900/20"
-        : "bg-white/70 border-slate-200 shadow-sm"
-    }`}
-  >
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-        {label}
+/* ───────── SectionHeader ───────── */
+function SectionHeader({
+  icon: Icon,
+  title,
+  subtitle,
+  right,
+}: {
+  icon: React.ElementType;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5">
+      <div className="flex items-center gap-2">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#3aa838]/10">
+          <Icon className="h-3.5 w-3.5 text-[#3aa838]" />
+        </div>
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle && (
+            <div className="text-[11px] text-muted-foreground">{subtitle}</div>
+          )}
+        </div>
       </div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
+      {right}
     </div>
-    {Icon && (
-      <div
-        className={`p-3 rounded-xl ${accent ? "bg-white/10" : "bg-slate-100"}`}
-      >
-        <Icon size={22} className={accent ? "text-white" : "text-slate-600"} />
+  );
+}
+
+/* ───────── FileUpload ───────── */
+function FileUpload({ label, fileName, fileUrl, onUpload }: any) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium text-slate-600">{label}</Label>
+      <div className="flex items-center gap-2">
+        <label className="flex-1 cursor-pointer rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500 hover:border-[#3aa838] hover:bg-[#3aa838]/5 transition">
+          <input
+            type="file"
+            onChange={(e) => onUpload(e.target.files?.[0])}
+            className="hidden"
+          />
+          <span className="flex items-center gap-1.5">
+            <Upload className="h-3.5 w-3.5" />{" "}
+            {fileName ? "Change file" : "Upload file"}
+          </span>
+        </label>
+        {fileName && (
+          <a
+            href={`${process.env.NEXT_PUBLIC_MEDIA_URL || ""}${fileUrl}`}
+            target="_blank"
+            rel="noreferrer"
+            className="max-w-[120px] truncate text-xs font-medium text-[#2f8a2f] underline hover:text-[#3aa838]"
+          >
+            {fileName}
+          </a>
+        )}
       </div>
-    )}
-  </motion.div>
-);
-
-const FileUpload = ({ label, fileName, fileUrl, onUpload }: any) => (
-  <div className="space-y-2">
-    <Label className="text-sm font-medium">{label}</Label>
-    <div className="flex items-center gap-3">
-      <label className="flex-1 cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500 hover:border-indigo-400 hover:bg-indigo-50 transition">
-        <input
-          type="file"
-          onChange={(e) => onUpload(e.target.files?.[0])}
-          className="hidden"
-        />
-        <span className="flex items-center gap-2">
-          <Upload size={16} /> {fileName ? "Change file" : "Upload file"}
-        </span>
-      </label>
-      {fileName && (
-        <a
-          href={`${process.env.NEXT_PUBLIC_MEDIA_URL || ""}${fileUrl}`}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm font-medium text-indigo-600 underline truncate max-w-[120px] hover:text-indigo-800"
-        >
-          {fileName}
-        </a>
-      )}
     </div>
-  </div>
-);
+  );
+}
 
-/* ────────────── Main Page ─────────────── */
+/* ───────── Main ───────── */
 export default function CollectionCreatePage() {
   const router = useRouter();
   const searchTimers = useRef<Record<string, number>>({});
@@ -271,7 +279,7 @@ export default function CollectionCreatePage() {
     };
   }, []);
 
-  // ── State mutations (unchanged) ────────────────
+  /* ───── Mutations ───── */
   const patchDealer = (id: string, updater: (d: DealerRow) => DealerRow) =>
     setDealers((prev) => prev.map((d) => (d.id === id ? updater(d) : d)));
 
@@ -344,7 +352,7 @@ export default function CollectionCreatePage() {
       };
     });
 
-  // ── Dealer search & invoice loading (unchanged) ──
+  /* ───── Search ───── */
   const searchDealers = (id: string, q: string) => {
     patchDealer(id, (d) => ({ ...d, query: q }));
     clearTimeout(searchTimers.current[id]);
@@ -390,7 +398,7 @@ export default function CollectionCreatePage() {
     }
   };
 
-  // ── File uploads (unchanged) ───────────────────
+  /* ───── Uploads ───── */
   const uploadFile = async (
     file: File | null,
     folder: "mr" | "onlineCopy" = "mr",
@@ -407,14 +415,8 @@ export default function CollectionCreatePage() {
     if (!mediaId) throw new Error("Upload failed");
     return {
       mediaId,
-      mediaUrl:
-        data?.url ||
-        data?.path ||
-        data?.fileUrl ||
-        data?.location ||
-        data?.src ||
-        "",
-      mediaName: data?.originalName || data?.originalname || file.name || "",
+      mediaUrl: data?.url || data?.path || "",
+      mediaName: data?.originalName || file.name || "",
     };
   };
 
@@ -456,7 +458,7 @@ export default function CollectionCreatePage() {
     }
   };
 
-  // ── Validation Helpers (unchanged) ──────────────
+  /* ───── Validation ───── */
   const globalMrNos = useMemo(() => {
     const map = new Map<string, string>();
     dealers.forEach((d) => {
@@ -479,23 +481,20 @@ export default function CollectionCreatePage() {
       if (!dealer.dealerId) continue;
       for (const inv of dealer.invoices) {
         if (!inv.invoiceId) continue;
-
         const seen = new Set<string>();
         for (const mr of inv.mrs) {
           const no = cleanText(mr.mrNo);
           if (!no) continue;
           if (seen.has(no)) {
-            errors.push(`MR No "${no}" duplicated in invoice ${inv.invoiceNo}`);
+            errors.push(`MR "${no}" duplicated in invoice ${inv.invoiceNo}`);
           }
           seen.add(no);
-
           if (globalSet.has(no) && globalSet.get(no) !== dealer.dealerId) {
-            errors.push(`MR No "${no}" already used by another dealer`);
+            errors.push(`MR "${no}" used by another dealer`);
           } else {
             globalSet.set(no, dealer.dealerId);
           }
         }
-
         const totalReduction = roundMoney(
           inv.mrs.reduce((sum, mr) => {
             const comm = calcCommission(mr.taka, mr.commission);
@@ -506,18 +505,19 @@ export default function CollectionCreatePage() {
         );
         if (totalReduction > roundMoney(inv.balanceAmount) + 0.005) {
           errors.push(
-            `Invoice ${inv.invoiceNo}: reduction ${moneyFmt(totalReduction)} exceeds due ${moneyFmt(inv.balanceAmount)}`,
+            `Invoice ${inv.invoiceNo}: reduction exceeds due (${moneyFmt(
+              totalReduction,
+            )} / ${moneyFmt(inv.balanceAmount)})`,
           );
         }
-
         for (const mr of inv.mrs) {
-          if (mr.deductCommission) {
-            const comm = calcCommission(mr.taka, mr.commission);
-            if (comm > roundMoney(mr.taka) + 0.005) {
-              errors.push(
-                `MR ${cleanText(mr.mrNo)}: commission cannot exceed cash in deduct mode`,
-              );
-            }
+          if (
+            mr.deductCommission &&
+            calcCommission(mr.taka, mr.commission) > roundMoney(mr.taka) + 0.005
+          ) {
+            errors.push(
+              `MR ${cleanText(mr.mrNo)}: commission > cash in deduct mode`,
+            );
           }
         }
       }
@@ -525,7 +525,7 @@ export default function CollectionCreatePage() {
     return errors;
   }, [dealers]);
 
-  // ── Totals (unchanged) ─────────────────────────
+  /* ───── Totals ───── */
   const allMRs = useMemo(() => {
     const list: MrRow[] = [];
     dealers.forEach((d) =>
@@ -577,7 +577,7 @@ export default function CollectionCreatePage() {
     };
   }, [dealers, allMRs, onlineCopy, validationErrors]);
 
-  // ── Submit (unchanged) ─────────────────────────
+  /* ───── Submit ───── */
   const validate = () => {
     if (!totals.totalDealers) return "Select at least one dealer.";
     if (!totals.totalInvoices) return "Select at least one invoice.";
@@ -656,1048 +656,1044 @@ export default function CollectionCreatePage() {
     }
   };
 
-  /* ────────────── STUNNING UI ──────────────────── */
+  /* ───── Render ───── */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-blue-50">
-      <Toaster position="top-right" richColors />
-      <div className="max-w-[1440px] mx-auto px-4 py-8 sm:px-6 lg:px-10">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-8"
-        >
-          <div>
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-indigo-500/10 to-blue-500/10 border border-indigo-200 text-indigo-700 text-xs font-bold uppercase tracking-wider mb-3">
-              <Banknote size={14} /> Collection Entry
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+        {/* Hero */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
+              <Banknote className="h-4 w-4 text-[#3aa838]" />
             </div>
-            <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">
-              Create Collection
-            </h1>
-            <p className="mt-2 text-slate-500 max-w-2xl text-lg">
-              A powerful yet simple tool to record dealer payments, apply
-              flexible commissions, and manage bank deposits.
-            </p>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-semibold leading-tight">
+                Create Collection
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Dealers</span>
+                  <b className="tabular-nums text-slate-900">
+                    {totals.totalDealers}
+                  </b>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">MRs</span>
+                  <b className="tabular-nums text-slate-900">
+                    {totals.totalMRs}
+                  </b>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">Net</span>
+                  <b className="tabular-nums text-[#2f8a2f]">
+                    ৳ {moneyFmt(totals.netBankDeposit)}
+                  </b>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex shrink-0 gap-2">
             <Badge
-              variant={totals.ready ? "outline" : "destructive"}
-              className={`px-4 py-2 rounded-full text-sm font-medium ${
+              className={`border text-[10px] font-semibold ${
                 totals.ready
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : ""
+                  ? "border-[#3aa838]/30 bg-[#3aa838]/10 text-[#2f8a2f]"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
               }`}
             >
               {totals.ready ? (
-                <CheckCircle2 size={14} className="mr-1 inline" />
+                <CheckCircle2 className="mr-1 h-2.5 w-2.5" />
               ) : (
-                <AlertCircle size={14} className="mr-1 inline" />
+                <AlertCircle className="mr-1 h-2.5 w-2.5" />
               )}
-              {totals.ready ? "Ready to Submit" : "Incomplete"}
+              {totals.ready ? "Ready" : "Incomplete"}
             </Badge>
             <Button
               onClick={submit}
               disabled={saving}
-              size="lg"
-              className="rounded-full px-8 py-3 font-bold shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700"
+              className="h-8 bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
             >
-              {saving ? "Saving..." : "Submit Collection"}
+              {saving ? "Saving..." : "Submit"}
             </Button>
           </div>
-        </motion.div>
+        </div>
 
-        <div className="grid lg:grid-cols-[1fr_400px] gap-8">
-          {/* ── Left Column ── */}
-          <div className="space-y-6">
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard
-                label="Dealers"
-                value={totals.totalDealers}
-                icon={Users}
-              />
-              <StatCard
-                label="Invoices"
-                value={totals.totalInvoices}
-                icon={Receipt}
-              />
-              <StatCard label="MRs" value={totals.totalMRs} icon={FileText} />
-              <StatCard
-                label="Net to Bank"
-                value={moneyFmt(totals.netBankDeposit)}
-                accent
-                icon={Wallet}
-              />
-            </div>
-
-            {/* Dealers Section */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  Dealers & Invoices
-                </h2>
-                <p className="text-sm text-slate-500">
-                  Select a dealer, attach invoices, and add money receipts with
-                  commission preferences.
-                </p>
-              </div>
-              <Button
-                onClick={addDealer}
-                variant="outline"
-                className="rounded-full gap-2 font-semibold border-slate-300 hover:bg-slate-50"
+        {/* 4 quick stat cards (restored) */}
+        <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {[
+            {
+              label: "Dealers",
+              value: String(totals.totalDealers),
+              icon: Users,
+              tone: "slate" as const,
+            },
+            {
+              label: "Invoices",
+              value: String(totals.totalInvoices),
+              icon: Receipt,
+              tone: "slate" as const,
+            },
+            {
+              label: "Money receipts",
+              value: String(totals.totalMRs),
+              icon: FileText,
+              tone: "slate" as const,
+            },
+            {
+              label: "Net to bank",
+              value: `৳ ${moneyFmt(totals.netBankDeposit)}`,
+              icon: Wallet,
+              tone: "green" as const,
+            },
+          ].map((s) => {
+            const toneMap = {
+              green: {
+                chip: "bg-[#3aa838]/10 text-[#3aa838]",
+                num: "text-[#2f8a2f]",
+              },
+              slate: {
+                chip: "bg-slate-100 text-slate-600",
+                num: "text-slate-900",
+              },
+            } as const;
+            const t = toneMap[s.tone];
+            const Icon = s.icon;
+            return (
+              <Card
+                key={s.label}
+                className="overflow-hidden border-slate-200 shadow-sm"
               >
-                <Plus size={18} /> Add Dealer
-              </Button>
-            </div>
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {s.label}
+                      </div>
+                      <div
+                        className={`mt-1 truncate text-lg font-bold tabular-nums ${t.num}`}
+                      >
+                        {s.value}
+                      </div>
+                    </div>
+                    <div className={`shrink-0 rounded-lg p-1.5 ${t.chip}`}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
 
-            <AnimatePresence>
-              {dealers.map((dealer, idx) => {
-                // ── Per‑dealer computed totals ──
-                const dealerMRs = dealer.invoices.flatMap((inv) => inv.mrs);
-                const dealerCash = roundMoney(
-                  dealerMRs.reduce((s, m) => s + m.taka, 0),
-                );
-                const dealerCommission = roundMoney(
-                  dealerMRs.reduce(
-                    (s, m) => s + calcCommission(m.taka, m.commission),
-                    0,
-                  ),
-                );
-                const dealerReduction = roundMoney(
-                  dealerMRs.reduce(
-                    (s, m) =>
-                      s +
-                      (m.deductCommission
-                        ? m.taka
-                        : roundMoney(
-                            m.taka + calcCommission(m.taka, m.commission),
-                          )),
-                    0,
-                  ),
-                );
-
-                return (
-                  <motion.div
-                    key={dealer.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="rounded-3xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl shadow-slate-200/50"
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          {/* LEFT: Dealers */}
+          <div className="space-y-3">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader
+                icon={Users}
+                title="Dealers & invoices"
+                subtitle="Search dealers, attach invoices, add money receipts"
+                right={
+                  <Button
+                    onClick={addDealer}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
                   >
-                    {/* Dealer Header */}
-                    <div className="p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-t-3xl">
-                      <div className="flex-1 w-full relative">
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center text-base font-bold shadow-md">
-                            {idx + 1}
-                          </span>
+                    <Plus className="mr-1 h-3 w-3" /> Add dealer
+                  </Button>
+                }
+              />
+
+              <CardContent className="space-y-3 p-3">
+                {dealers.map((dealer, idx) => {
+                  const dealerMRs = dealer.invoices.flatMap((inv) => inv.mrs);
+                  const dealerCash = roundMoney(
+                    dealerMRs.reduce((s, m) => s + m.taka, 0),
+                  );
+                  const dealerCommission = roundMoney(
+                    dealerMRs.reduce(
+                      (s, m) => s + calcCommission(m.taka, m.commission),
+                      0,
+                    ),
+                  );
+                  const dealerReduction = roundMoney(
+                    dealerMRs.reduce(
+                      (s, m) =>
+                        s +
+                        (m.deductCommission
+                          ? m.taka
+                          : roundMoney(
+                              m.taka + calcCommission(m.taka, m.commission),
+                            )),
+                      0,
+                    ),
+                  );
+
+                  return (
+                    <div
+                      key={dealer.id}
+                      className="rounded-xl border border-slate-200 bg-white"
+                    >
+                      {/* Dealer header */}
+                      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-3 py-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">
+                          {idx + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
                           {dealer.dealerName ? (
-                            <span className="font-bold text-xl text-slate-800">
+                            <div className="truncate text-sm font-semibold text-slate-900">
                               {dealer.dealerName}
-                            </span>
+                            </div>
                           ) : (
-                            <span className="text-slate-400 text-lg">
-                              Search a dealer to begin
-                            </span>
-                          )}
-                          {dealer.dealerId && (
-                            <Badge
-                              variant="secondary"
-                              className="ml-auto px-3 py-1"
-                            >
-                              {dealer.invoices.length} invoice(s)
-                            </Badge>
+                            <div className="text-xs text-slate-500">
+                              Search a dealer
+                            </div>
                           )}
                         </div>
+                        {dealer.dealerId && dealer.invoices.length > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px]"
+                          >
+                            {dealer.invoices.length} invoice(s)
+                          </Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeDealer(dealer.id)}
+                          disabled={dealers.length === 1}
+                          className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
+                      {/* Dealer summary row (restored) */}
+                      {dealer.dealerId && dealer.invoices.length > 0 && (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px]">
+                          <div>
+                            <span className="text-muted-foreground">
+                              Cash collected:
+                            </span>{" "}
+                            <b className="text-slate-900 tabular-nums">
+                              ৳ {moneyFmt(dealerCash)}
+                            </b>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">
+                              Commission:
+                            </span>{" "}
+                            <b className="text-amber-700 tabular-nums">
+                              ৳ {moneyFmt(dealerCommission)}
+                            </b>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">
+                              Total reduction:
+                            </span>{" "}
+                            <b className="text-[#2f8a2f] tabular-nums">
+                              ৳ {moneyFmt(dealerReduction)}
+                            </b>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dealer body */}
+                      <div className="p-3 space-y-3">
+                        {/* Dealer search */}
                         <div className="relative">
-                          <Search
-                            className="absolute left-4 top-3.5 text-slate-400"
-                            size={20}
-                          />
+                          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                           <Input
                             placeholder="Type dealer name..."
                             value={dealer.query}
                             onChange={(e) =>
                               searchDealers(dealer.id, e.target.value)
                             }
-                            className="pl-12 py-6 rounded-2xl border-slate-200 bg-white text-base shadow-sm focus:ring-2 focus:ring-indigo-200"
+                            className="h-9 pl-8 text-sm focus-visible:ring-[#3aa838]"
                           />
-                        </div>
-                        {/* Dropdown rendered outside the card's overflow (just relative to this container) */}
-                        {dealer.options.length > 0 && (
-                          <div className="absolute z-30 mt-2 w-full rounded-2xl border bg-white shadow-2xl max-h-56 overflow-auto">
-                            {dealer.options.map((opt: any) => (
-                              <button
-                                key={resolveId(opt)}
-                                onClick={() => selectDealer(dealer.id, opt)}
-                                className="w-full text-left px-5 py-3 hover:bg-indigo-50 flex justify-between items-center transition"
-                              >
-                                <span className="font-medium text-slate-800">
-                                  {resolveLabel(opt)}
-                                </span>
-                                <Badge variant="outline">Select</Badge>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeDealer(dealer.id)}
-                        disabled={dealers.length === 1}
-                        className="text-rose-500 hover:bg-rose-50 rounded-xl"
-                      >
-                        <Trash2 size={22} />
-                      </Button>
-                    </div>
-
-                    {/* Dealer Summary (always visible if dealer selected) */}
-                    {dealer.dealerId && dealer.invoices.length > 0 && (
-                      <div className="px-6 py-3 bg-slate-50 border-b flex flex-wrap gap-4 text-sm">
-                        <div>
-                          <span className="text-slate-500">
-                            Cash Collected:
-                          </span>{" "}
-                          <strong>{moneyFmt(dealerCash)}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Commission:</span>{" "}
-                          <strong className="text-amber-600">
-                            {moneyFmt(dealerCommission)}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">
-                            Total Reduction:
-                          </span>{" "}
-                          <strong>{moneyFmt(dealerReduction)}</strong>
-                        </div>
-                      </div>
-                    )}
-
-                    {dealer.dealerId && (
-                      <div className="p-6 grid lg:grid-cols-2 gap-8">
-                        {/* Invoice Picker */}
-                        <div>
-                          <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-slate-800 text-lg">
-                              Available Invoices
-                            </h3>
-                            <div className="flex gap-1">
-                              {(["ALL", "UNPAID", "PARTIAL"] as const).map(
-                                (f) => (
+                          {dealer.options.length > 0 && (
+                            <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                              {dealer.options.map((opt: any) => (
+                                <button
+                                  key={resolveId(opt)}
+                                  onClick={() =>
+                                    selectDealer(dealer.id, opt)
+                                  }
+                                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-slate-50"
+                                >
+                                  <span className="truncate font-medium">
+                                    {resolveLabel(opt)}
+                                  </span>
                                   <Badge
-                                    key={f}
-                                    variant={
-                                      dealer.invoiceStatusFilter === f
-                                        ? "default"
-                                        : "outline"
-                                    }
-                                    className="cursor-pointer font-medium"
-                                    onClick={() =>
-                                      patchDealer(dealer.id, (d) => ({
-                                        ...d,
-                                        invoiceStatusFilter: f,
-                                      }))
-                                    }
+                                    variant="outline"
+                                    className="text-[10px]"
                                   >
-                                    {f === "ALL" ? "All" : f}
+                                    Select
                                   </Badge>
-                                ),
-                              )}
+                                </button>
+                              ))}
                             </div>
-                          </div>
-                          <Input
-                            placeholder="Filter invoices..."
-                            value={dealer.invoiceQuery}
-                            onChange={(e) =>
-                              patchDealer(dealer.id, (d) => ({
-                                ...d,
-                                invoiceQuery: e.target.value,
-                              }))
-                            }
-                            className="mb-4 rounded-2xl"
-                          />
-                          <div className="max-h-[480px] overflow-y-auto space-y-2 pr-1">
-                            {dealer.invoiceOptions
-                              .filter(isInvoiceSelectable)
-                              .filter((inv) =>
-                                `${inv.invoiceNo} ${inv.orderNo}`
-                                  .toLowerCase()
-                                  .includes(dealer.invoiceQuery.toLowerCase()),
-                              )
-                              .map((inv) => {
-                                const selected = dealer.invoices.some(
-                                  (i) => i.invoiceId === inv._id,
-                                );
-                                return (
-                                  <motion.button
-                                    key={inv._id}
-                                    whileTap={{ scale: 0.98 }}
-                                    onClick={() =>
-                                      toggleInvoice(dealer.id, inv)
-                                    }
-                                    className={`w-full text-left p-5 rounded-2xl border transition-all ${
-                                      selected
-                                        ? "bg-indigo-50 border-indigo-300 shadow-md"
-                                        : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
-                                    }`}
-                                  >
-                                    <div className="flex justify-between items-start">
-                                      <div>
-                                        <span className="font-bold text-slate-900">
-                                          {inv.invoiceNo}
-                                        </span>
-                                        <span className="text-xs text-slate-500 ml-2">
-                                          Order: {inv.orderNo || "-"}
-                                        </span>
-                                      </div>
-                                      <Badge
-                                        variant={
-                                          selected ? "default" : "outline"
-                                        }
-                                      >
-                                        {selected ? "Selected" : "Add"}
-                                      </Badge>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-3 mt-3 text-sm">
-                                      <div>
-                                        <span className="text-slate-500">
-                                          Due
-                                        </span>
-                                        <p className="font-semibold text-slate-800">
-                                          {moneyFmt(inv.balanceAmount)}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <span className="text-slate-500">
-                                          Total
-                                        </span>
-                                        <p className="font-semibold text-slate-800">
-                                          {moneyFmt(inv.grandTotal)}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <span className="text-slate-500">
-                                          Items
-                                        </span>
-                                        <p className="font-semibold text-slate-800">
-                                          {inv.itemsCount}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </motion.button>
-                                );
-                              })}
-                          </div>
+                          )}
                         </div>
 
-                        {/* Selected Invoices & MR Editor */}
-                        <div>
-                          <h3 className="font-bold text-slate-800 text-lg mb-4">
-                            Attached Invoices ({dealer.invoices.length})
-                          </h3>
-                          {dealer.invoices.length === 0 ? (
-                            <div className="text-center py-16 text-slate-400 border-2 border-dashed rounded-2xl">
-                              <FileText
-                                size={40}
-                                className="mx-auto mb-3 opacity-50"
+                        {/* Invoice picker + attached */}
+                        {dealer.dealerId && (
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            {/* Available invoices */}
+                            <div>
+                              <div className="mb-2 flex items-center justify-between">
+                                <div className="text-xs font-semibold text-slate-700">
+                                  Available invoices
+                                </div>
+                                <div className="flex gap-1">
+                                  {(
+                                    ["ALL", "UNPAID", "PARTIAL"] as const
+                                  ).map((f) => (
+                                    <Badge
+                                      key={f}
+                                      variant={
+                                        dealer.invoiceStatusFilter === f
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      className="cursor-pointer text-[10px]"
+                                      onClick={() =>
+                                        patchDealer(dealer.id, (d) => ({
+                                          ...d,
+                                          invoiceStatusFilter: f,
+                                        }))
+                                      }
+                                    >
+                                      {f === "ALL" ? "All" : f}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                              <Input
+                                placeholder="Filter invoices..."
+                                value={dealer.invoiceQuery}
+                                onChange={(e) =>
+                                  patchDealer(dealer.id, (d) => ({
+                                    ...d,
+                                    invoiceQuery: e.target.value,
+                                  }))
+                                }
+                                className="mb-2 h-8 text-xs focus-visible:ring-[#3aa838]"
                               />
-                              <p className="font-medium">
-                                Select an invoice to begin
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-5">
-                              {dealer.invoices.map((inv) => {
-                                const invTotalReduction = roundMoney(
-                                  inv.mrs.reduce((s, mr) => {
-                                    const comm = calcCommission(
-                                      mr.taka,
-                                      mr.commission,
+                              <div className="max-h-[420px] space-y-1.5 overflow-y-auto pr-1">
+                                {dealer.invoiceOptions
+                                  .filter(isInvoiceSelectable)
+                                  .filter((inv) =>
+                                    `${inv.invoiceNo} ${inv.orderNo}`
+                                      .toLowerCase()
+                                      .includes(
+                                        dealer.invoiceQuery.toLowerCase(),
+                                      ),
+                                  )
+                                  .map((inv) => {
+                                    const selected = dealer.invoices.some(
+                                      (i) => i.invoiceId === inv._id,
                                     );
                                     return (
-                                      s +
-                                      (mr.deductCommission
-                                        ? mr.taka
-                                        : roundMoney(mr.taka + comm))
-                                    );
-                                  }, 0),
-                                );
-                                const overDue =
-                                  invTotalReduction >
-                                  roundMoney(inv.balanceAmount) + 0.005;
-                                const usagePercent = inv.balanceAmount
-                                  ? Math.min(
-                                      100,
-                                      (invTotalReduction /
-                                        roundMoney(inv.balanceAmount)) *
-                                        100,
-                                    )
-                                  : 0;
-                                const invCash = roundMoney(
-                                  inv.mrs.reduce((s, m) => s + m.taka, 0),
-                                );
-                                const invCommission = roundMoney(
-                                  inv.mrs.reduce(
-                                    (s, m) =>
-                                      s + calcCommission(m.taka, m.commission),
-                                    0,
-                                  ),
-                                );
-
-                                return (
-                                  <Card
-                                    key={inv.id}
-                                    className={`border overflow-hidden rounded-2xl shadow-sm ${
-                                      overDue
-                                        ? "border-red-300 bg-red-50/30"
-                                        : "border-slate-200"
-                                    }`}
-                                  >
-                                    <div className="px-5 py-3 bg-white/50 flex items-center justify-between">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <FileText
-                                            size={18}
-                                            className="text-slate-400"
-                                          />
-                                          <span className="font-bold text-slate-900">
+                                      <button
+                                        key={inv._id}
+                                        onClick={() =>
+                                          toggleInvoice(dealer.id, inv)
+                                        }
+                                        className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
+                                          selected
+                                            ? "border-[#3aa838]/40 bg-[#3aa838]/5"
+                                            : "border-slate-200 bg-white hover:border-slate-300"
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-mono font-semibold text-slate-900">
                                             {inv.invoiceNo}
                                           </span>
                                           <Badge
-                                            variant="outline"
-                                            className="text-xs"
+                                            variant={
+                                              selected ? "default" : "outline"
+                                            }
+                                            className="text-[10px]"
                                           >
-                                            Due {moneyFmt(inv.balanceAmount)}
+                                            {selected ? "Selected" : "Add"}
                                           </Badge>
                                         </div>
-                                        <div className="mt-2 w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                                          <motion.div
-                                            className={`h-full rounded-full ${overDue ? "bg-red-500" : "bg-gradient-to-r from-indigo-500 to-blue-500"}`}
-                                            initial={{ width: 0 }}
-                                            animate={{
-                                              width: `${usagePercent}%`,
-                                            }}
-                                          />
-                                        </div>
-                                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                        <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
                                           <span>
-                                            Reduction:{" "}
-                                            <strong>
-                                              {moneyFmt(invTotalReduction)}
-                                            </strong>
+                                            Due:{" "}
+                                            <b className="text-slate-900 tabular-nums">
+                                              ৳ {moneyFmt(inv.balanceAmount)}
+                                            </b>
                                           </span>
                                           <span>
-                                            Cash:{" "}
-                                            <strong>{moneyFmt(invCash)}</strong>
-                                          </span>
-                                          <span>
-                                            Commission:{" "}
-                                            <strong>
-                                              {moneyFmt(invCommission)}
-                                            </strong>
+                                            Total:{" "}
+                                            <b className="text-slate-700 tabular-nums">
+                                              ৳ {moneyFmt(inv.grandTotal)}
+                                            </b>
                                           </span>
                                         </div>
-                                      </div>
-                                      <div className="flex gap-2 ml-4">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() =>
-                                            addMr(dealer.id, inv.id)
-                                          }
-                                        >
-                                          + MR
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() =>
-                                            removeInvoice(dealer.id, inv.id)
-                                          }
-                                        >
-                                          <Trash2
-                                            size={16}
-                                            className="text-rose-500"
-                                          />
-                                        </Button>
-                                      </div>
-                                    </div>
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+                            </div>
 
-                                    <div className="p-5 space-y-4">
-                                      {inv.mrs.map((mr, mrIdx) => {
-                                        const commission = calcCommission(
+                            {/* Attached invoices + MRs */}
+                            <div>
+                              <div className="mb-2 text-xs font-semibold text-slate-700">
+                                Attached ({dealer.invoices.length})
+                              </div>
+                              {dealer.invoices.length === 0 ? (
+                                <div className="rounded-lg border-2 border-dashed border-slate-200 p-6 text-center text-xs text-muted-foreground">
+                                  <FileText className="mx-auto mb-1 h-5 w-5 opacity-50" />
+                                  Pick an invoice to begin
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {dealer.invoices.map((inv) => {
+                                    const totalReduction = roundMoney(
+                                      inv.mrs.reduce((s, mr) => {
+                                        const comm = calcCommission(
                                           mr.taka,
                                           mr.commission,
                                         );
-                                        const reduction = mr.deductCommission
-                                          ? mr.taka
-                                          : roundMoney(mr.taka + commission);
-                                        const exceedsDue =
-                                          reduction >
-                                          roundMoney(inv.balanceAmount) + 0.005;
-                                        const duplicateInInvoice =
-                                          inv.mrs.filter(
-                                            (m) =>
-                                              cleanText(m.mrNo) ===
-                                              cleanText(mr.mrNo),
-                                          ).length > 1;
-                                        const usedElsewhere = [
-                                          ...globalMrNos.entries(),
-                                        ].some(
-                                          ([dId, no]) =>
-                                            dId !== dealer.dealerId &&
-                                            no === cleanText(mr.mrNo),
-                                        );
-
                                         return (
-                                          <div
-                                            key={mr.id}
-                                            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                                          >
-                                            <div className="flex items-center justify-between mb-3">
-                                              <div className="flex items-center gap-2">
-                                                <span className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                                                  {mrIdx + 1}
-                                                </span>
-                                                <span className="font-semibold text-slate-800">
-                                                  Money Receipt
-                                                </span>
-                                              </div>
-                                              <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={() =>
-                                                  removeMr(
-                                                    dealer.id,
-                                                    inv.id,
-                                                    mr.id,
-                                                  )
-                                                }
-                                                disabled={inv.mrs.length === 1}
-                                                className="text-rose-500 hover:bg-rose-50"
-                                              >
-                                                <Trash2 size={16} />
-                                              </Button>
+                                          s +
+                                          (mr.deductCommission
+                                            ? mr.taka
+                                            : roundMoney(mr.taka + comm))
+                                        );
+                                      }, 0),
+                                    );
+                                    const overDue =
+                                      totalReduction >
+                                      roundMoney(inv.balanceAmount) + 0.005;
+                                    const usagePercent = inv.balanceAmount
+                                      ? Math.min(
+                                          100,
+                                          (totalReduction /
+                                            roundMoney(inv.balanceAmount)) *
+                                            100,
+                                        )
+                                      : 0;
+
+                                    return (
+                                      <div
+                                        key={inv.id}
+                                        className={`rounded-lg border ${
+                                          overDue
+                                            ? "border-rose-300 bg-rose-50/40"
+                                            : "border-slate-200 bg-white"
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+                                          <div className="min-w-0 flex-1">
+                                            <div className="font-mono text-xs font-semibold text-slate-900">
+                                              {inv.invoiceNo}
                                             </div>
+                                            {/* Progress bar (restored) */}
+                                            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                                              <div
+                                                className={`h-full rounded-full transition-all ${
+                                                  overDue
+                                                    ? "bg-rose-500"
+                                                    : "bg-[#3aa838]"
+                                                }`}
+                                                style={{
+                                                  width: `${usagePercent}%`,
+                                                }}
+                                              />
+                                            </div>
+                                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+                                              <span>
+                                                Reduction:{" "}
+                                                <b className="text-slate-900 tabular-nums">
+                                                  ৳ {moneyFmt(totalReduction)}
+                                                </b>{" "}
+                                                / Due:{" "}
+                                                <b className="text-slate-700 tabular-nums">
+                                                  ৳ {moneyFmt(inv.balanceAmount)}
+                                                </b>
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <div className="flex gap-1">
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() =>
+                                                addMr(dealer.id, inv.id)
+                                              }
+                                              className="h-7 px-2 text-[10px]"
+                                            >
+                                              <Plus className="mr-0.5 h-3 w-3" />
+                                              MR
+                                            </Button>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              onClick={() =>
+                                                removeInvoice(
+                                                  dealer.id,
+                                                  inv.id,
+                                                )
+                                              }
+                                              className="h-7 w-7 text-rose-600 hover:bg-rose-50"
+                                            >
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                        </div>
 
-                                            <div className="grid sm:grid-cols-2 gap-4">
-                                              <div>
-                                                <Label className="text-xs font-medium text-slate-600">
-                                                  MR No
-                                                </Label>
-                                                <Input
-                                                  value={mr.mrNo}
-                                                  onChange={(e) =>
-                                                    updateMr(
-                                                      dealer.id,
-                                                      inv.id,
-                                                      mr.id,
-                                                      { mrNo: e.target.value },
-                                                    )
-                                                  }
-                                                  className={`mt-1 rounded-xl ${duplicateInInvoice || usedElsewhere ? "border-red-400 bg-red-50" : ""}`}
-                                                />
-                                                {duplicateInInvoice && (
-                                                  <p className="text-xs text-red-500 mt-1">
-                                                    Duplicate in invoice
-                                                  </p>
-                                                )}
-                                                {usedElsewhere &&
-                                                  !duplicateInInvoice && (
-                                                    <p className="text-xs text-red-500 mt-1">
-                                                      Used by another dealer
-                                                    </p>
-                                                  )}
-                                              </div>
-                                              <div>
-                                                <Label className="text-xs font-medium text-slate-600">
-                                                  Date
-                                                </Label>
-                                                <Input
-                                                  type="date"
-                                                  value={mr.mrDate}
-                                                  onChange={(e) =>
-                                                    updateMr(
-                                                      dealer.id,
-                                                      inv.id,
-                                                      mr.id,
-                                                      {
-                                                        mrDate: e.target.value,
-                                                      },
-                                                    )
-                                                  }
-                                                  className="mt-1 rounded-xl"
-                                                />
-                                              </div>
+                                        <div className="space-y-2 p-2">
+                                          {inv.mrs.map((mr, mIdx) => {
+                                            const commission = calcCommission(
+                                              mr.taka,
+                                              mr.commission,
+                                            );
+                                            const reduction =
+                                              mr.deductCommission
+                                                ? mr.taka
+                                                : roundMoney(
+                                                    mr.taka + commission,
+                                                  );
+                                            const exceedsDue =
+                                              reduction >
+                                              roundMoney(inv.balanceAmount) +
+                                                0.005;
+                                            const dup =
+                                              inv.mrs.filter(
+                                                (m) =>
+                                                  cleanText(m.mrNo) ===
+                                                  cleanText(mr.mrNo),
+                                              ).length > 1;
+                                            const usedElsewhere = [
+                                              ...globalMrNos.entries(),
+                                            ].some(
+                                              ([dId, no]) =>
+                                                dId !== dealer.dealerId &&
+                                                no === cleanText(mr.mrNo),
+                                            );
 
-                                              <div>
-                                                <Label className="text-xs font-medium text-slate-600">
-                                                  Cash Amount
-                                                </Label>
-                                                <Input
-                                                  type="number"
-                                                  value={mr.taka || ""}
-                                                  onChange={(e) => {
-                                                    const val = Number(
-                                                      e.target.value || 0,
-                                                    );
-                                                    updateMr(
-                                                      dealer.id,
-                                                      inv.id,
-                                                      mr.id,
-                                                      { taka: val },
-                                                    );
-                                                  }}
-                                                  className={`mt-1 rounded-xl ${exceedsDue ? "border-red-400 bg-red-50" : ""}`}
-                                                />
-                                              </div>
-                                              <div>
-                                                <Label className="text-xs font-medium text-slate-600">
-                                                  Reduction
-                                                </Label>
-                                                <div className="mt-1 h-10 rounded-xl bg-slate-100 border flex items-center px-4 font-semibold text-slate-800">
-                                                  {moneyFmt(reduction)}
-                                                </div>
-                                                {exceedsDue && (
-                                                  <p className="text-xs text-red-500 mt-1">
-                                                    Exceeds invoice due
-                                                  </p>
-                                                )}
-                                              </div>
-
-
-                                              {/* ------------ Checking (Testing) ------------ */}
-                                              {mr.deductCommission === true && (
-                                                <div>
-                                                  <Label className="text-[8px] font-medium text-slate-600">
-                                                    Actual Cash Amount (after commission) {String(mr.taka)} - {String(commission)} = {String(reduction)}
-                                                  </Label>
-                                                  <Input
-                                                    type="number"
-                                                    value={commission ? mr.taka - commission : mr.taka || ""}
-                                                    onChange={(e) => {
-                                                      const val = Number(
-                                                        e.target.value || 0,
-                                                      );
-                                                      updateMr(
-                                                        dealer.id,
-                                                        inv.id,
-                                                        mr.id,
-                                                        { taka: val },
-                                                      );
-                                                    }}
-                                                    className={`mt-1 rounded-xl ${exceedsDue ? "border-red-400 bg-red-50" : ""}`}
-                                                  />
-                                                </div>
-                                              )}
-                                              {/* --------xx-- Checking (Testing) --xx-------- */}
-
-
-                                              {/* Commission Mode Toggle */}
-                                              <div className="sm:col-span-2">
-                                                <Label className="text-xs font-medium text-slate-600 mb-2 block">
-                                                  Commission Mode
-                                                </Label>
-                                                <div className="flex gap-2">
-                                                  <Button
-                                                    size="sm"
-                                                    variant={
-                                                      !mr.deductCommission
-                                                        ? "default"
-                                                        : "outline"
-                                                    }
-                                                    className={`flex-1 rounded-xl font-medium ${
-                                                      !mr.deductCommission
-                                                        ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                                                        : ""
-                                                    }`}
-                                                    onClick={() =>
-                                                      updateMr(
-                                                        dealer.id,
-                                                        inv.id,
-                                                        mr.id,
-                                                        {
-                                                          deductCommission: false,
-                                                        },
-                                                      )
-                                                    }
-                                                  >
-                                                    <ArrowUpCircle
-                                                      size={16}
-                                                      className="mr-1"
-                                                    />{" "}
-                                                    Add
-                                                  </Button>
-                                                  <Button
-                                                    size="sm"
-                                                    variant={
-                                                      mr.deductCommission
-                                                        ? "default"
-                                                        : "outline"
-                                                    }
-                                                    className={`flex-1 rounded-xl font-medium ${
-                                                      mr.deductCommission
-                                                        ? "bg-amber-600 hover:bg-amber-700 text-white"
-                                                        : ""
-                                                    }`}
-                                                    onClick={() =>
-                                                      updateMr(
-                                                        dealer.id,
-                                                        inv.id,
-                                                        mr.id,
-                                                        {
-                                                          deductCommission: true,
-                                                        },
-                                                      )
-                                                    }
-                                                  >
-                                                    <ArrowDownCircle
-                                                      size={16}
-                                                      className="mr-1"
-                                                    />{" "}
-                                                    Deduct
-                                                  </Button>
-                                                </div>
-                                              </div>
-
-                                              {/* Commission Input */}
-                                              <div className="sm:col-span-2">
-                                                <div className="flex items-end gap-3">
-                                                  <div className="flex-1">
-                                                    <Label className="text-xs font-medium text-slate-600">
-                                                      Commission
-                                                    </Label>
-                                                    <div className="flex gap-1 mt-1">
-                                                      <Button
-                                                        size="sm"
-                                                        variant={
-                                                          mr.commission.mode ===
-                                                          "FIXED"
-                                                            ? "default"
-                                                            : "outline"
-                                                        }
-                                                        className={`rounded-xl font-medium ${
-                                                          mr.commission.mode ===
-                                                          "FIXED"
-                                                            ? "bg-slate-800 text-white"
-                                                            : "text-slate-600"
-                                                        }`}
-                                                        onClick={() =>
-                                                          updateMr(
-                                                            dealer.id,
-                                                            inv.id,
-                                                            mr.id,
-                                                            {
-                                                              commission: {
-                                                                ...mr.commission,
-                                                                mode: "FIXED",
-                                                                amount:
-                                                                  calcCommission(
-                                                                    mr.taka,
-                                                                    {
-                                                                      ...mr.commission,
-                                                                      mode: "FIXED",
-                                                                    },
-                                                                  ),
-                                                              },
-                                                            },
-                                                          )
-                                                        }
-                                                      >
-                                                        Fixed
-                                                      </Button>
-                                                      <Button
-                                                        size="sm"
-                                                        variant={
-                                                          mr.commission.mode ===
-                                                          "PERCENT"
-                                                            ? "default"
-                                                            : "outline"
-                                                        }
-                                                        className={`rounded-xl font-medium ${
-                                                          mr.commission.mode ===
-                                                          "PERCENT"
-                                                            ? "bg-slate-800 text-white"
-                                                            : "text-slate-600"
-                                                        }`}
-                                                        onClick={() =>
-                                                          updateMr(
-                                                            dealer.id,
-                                                            inv.id,
-                                                            mr.id,
-                                                            {
-                                                              commission: {
-                                                                ...mr.commission,
-                                                                mode: "PERCENT",
-                                                                amount:
-                                                                  calcCommission(
-                                                                    mr.taka,
-                                                                    {
-                                                                      ...mr.commission,
-                                                                      mode: "PERCENT",
-                                                                    },
-                                                                  ),
-                                                              },
-                                                            },
-                                                          )
-                                                        }
-                                                      >
-                                                        %
-                                                      </Button>
-                                                    </div>
+                                            return (
+                                              <div
+                                                key={mr.id}
+                                                className="rounded-md border border-slate-200 bg-slate-50/50 p-2"
+                                              >
+                                                <div className="mb-2 flex items-center justify-between">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3aa838]/10 text-[9px] font-bold text-[#2f8a2f]">
+                                                      {mIdx + 1}
+                                                    </span>
+                                                    <span className="text-[11px] font-semibold text-slate-700">
+                                                      MR
+                                                    </span>
                                                   </div>
-                                                  <div className="w-28">
+                                                  <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    onClick={() =>
+                                                      removeMr(
+                                                        dealer.id,
+                                                        inv.id,
+                                                        mr.id,
+                                                      )
+                                                    }
+                                                    disabled={
+                                                      inv.mrs.length === 1
+                                                    }
+                                                    className="h-6 w-6 text-rose-600 hover:bg-rose-50"
+                                                  >
+                                                    <Trash2 className="h-3 w-3" />
+                                                  </Button>
+                                                </div>
+
+                                                <div className="grid gap-2 sm:grid-cols-2">
+                                                  <div>
+                                                    <Label className="text-[10px] text-slate-600">
+                                                      MR No
+                                                    </Label>
                                                     <Input
-                                                      type="number"
-                                                      placeholder={
-                                                        mr.commission.mode ===
-                                                        "PERCENT"
-                                                          ? "Rate %"
-                                                          : "Amount"
-                                                      }
-                                                      value={
-                                                        mr.commission.value ||
-                                                        ""
-                                                      }
-                                                      onChange={(e) => {
-                                                        const val = Number(
-                                                          e.target.value || 0,
-                                                        );
+                                                      value={mr.mrNo}
+                                                      onChange={(e) =>
                                                         updateMr(
                                                           dealer.id,
                                                           inv.id,
                                                           mr.id,
                                                           {
-                                                            commission: {
-                                                              ...mr.commission,
-                                                              value: val,
-                                                              amount:
-                                                                calcCommission(
-                                                                  mr.taka,
-                                                                  {
-                                                                    ...mr.commission,
-                                                                    value: val,
-                                                                  },
-                                                                ),
-                                                            },
+                                                            mrNo: e.target
+                                                              .value,
                                                           },
-                                                        );
-                                                      }}
-                                                      className="rounded-xl"
+                                                        )
+                                                      }
+                                                      className={`h-8 text-xs focus-visible:ring-[#3aa838] ${
+                                                        dup || usedElsewhere
+                                                          ? "border-rose-400 bg-rose-50"
+                                                          : ""
+                                                      }`}
+                                                    />
+                                                    {(dup ||
+                                                      usedElsewhere) && (
+                                                      <p className="mt-0.5 text-[9px] text-rose-600">
+                                                        {dup
+                                                          ? "Duplicate"
+                                                          : "Used elsewhere"}
+                                                      </p>
+                                                    )}
+                                                  </div>
+                                                  <div>
+                                                    <Label className="text-[10px] text-slate-600">
+                                                      Date
+                                                    </Label>
+                                                    <Input
+                                                      type="date"
+                                                      value={mr.mrDate}
+                                                      onChange={(e) =>
+                                                        updateMr(
+                                                          dealer.id,
+                                                          inv.id,
+                                                          mr.id,
+                                                          {
+                                                            mrDate:
+                                                              e.target.value,
+                                                          },
+                                                        )
+                                                      }
+                                                      className="h-8 text-xs focus-visible:ring-[#3aa838]"
+                                                    />
+                                                  </div>
+                                                  <div>
+                                                    <Label className="text-[10px] text-slate-600">
+                                                      Cash
+                                                    </Label>
+                                                    <Input
+                                                      type="number"
+                                                      value={mr.taka || ""}
+                                                      onChange={(e) =>
+                                                        updateMr(
+                                                          dealer.id,
+                                                          inv.id,
+                                                          mr.id,
+                                                          {
+                                                            taka: Number(
+                                                              e.target.value ||
+                                                                0,
+                                                            ),
+                                                          },
+                                                        )
+                                                      }
+                                                      className={`h-8 text-xs focus-visible:ring-[#3aa838] ${
+                                                        exceedsDue
+                                                          ? "border-rose-400 bg-rose-50"
+                                                          : ""
+                                                      }`}
+                                                    />
+                                                  </div>
+                                                  <div>
+                                                    <Label className="text-[10px] text-slate-600">
+                                                      Reduction
+                                                    </Label>
+                                                    <div className="flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold tabular-nums text-slate-900">
+                                                      ৳ {moneyFmt(reduction)}
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Commission mode */}
+                                                  <div className="sm:col-span-2">
+                                                    <Label className="text-[10px] text-slate-600">
+                                                      Commission mode
+                                                    </Label>
+                                                    <div className="mt-1 flex gap-1">
+                                                      <Button
+                                                        size="sm"
+                                                        variant={
+                                                          !mr.deductCommission
+                                                            ? "default"
+                                                            : "outline"
+                                                        }
+                                                        className={`h-7 flex-1 text-[10px] ${
+                                                          !mr.deductCommission
+                                                            ? "bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                                                            : ""
+                                                        }`}
+                                                        onClick={() =>
+                                                          updateMr(
+                                                            dealer.id,
+                                                            inv.id,
+                                                            mr.id,
+                                                            {
+                                                              deductCommission: false,
+                                                            },
+                                                          )
+                                                        }
+                                                      >
+                                                        <ArrowUpCircle className="mr-1 h-3 w-3" />
+                                                        Add
+                                                      </Button>
+                                                      <Button
+                                                        size="sm"
+                                                        variant={
+                                                          mr.deductCommission
+                                                            ? "default"
+                                                            : "outline"
+                                                        }
+                                                        className={`h-7 flex-1 text-[10px] ${
+                                                          mr.deductCommission
+                                                            ? "bg-amber-600 text-white hover:bg-amber-700"
+                                                            : ""
+                                                        }`}
+                                                        onClick={() =>
+                                                          updateMr(
+                                                            dealer.id,
+                                                            inv.id,
+                                                            mr.id,
+                                                            {
+                                                              deductCommission: true,
+                                                            },
+                                                          )
+                                                        }
+                                                      >
+                                                        <ArrowDownCircle className="mr-1 h-3 w-3" />
+                                                        Deduct
+                                                      </Button>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Commission input */}
+                                                  <div className="sm:col-span-2">
+                                                    <div className="flex items-end gap-2">
+                                                      <div className="flex-1">
+                                                        <Label className="text-[10px] text-slate-600">
+                                                          Commission
+                                                        </Label>
+                                                        <div className="mt-1 flex gap-1">
+                                                          <Button
+                                                            size="sm"
+                                                            variant={
+                                                              mr.commission
+                                                                .mode ===
+                                                              "FIXED"
+                                                                ? "default"
+                                                                : "outline"
+                                                            }
+                                                            className={`h-7 text-[10px] ${
+                                                              mr.commission
+                                                                .mode ===
+                                                              "FIXED"
+                                                                ? "bg-slate-800 text-white"
+                                                                : ""
+                                                            }`}
+                                                            onClick={() =>
+                                                              updateMr(
+                                                                dealer.id,
+                                                                inv.id,
+                                                                mr.id,
+                                                                {
+                                                                  commission: {
+                                                                    ...mr.commission,
+                                                                    mode: "FIXED",
+                                                                    amount:
+                                                                      calcCommission(
+                                                                        mr.taka,
+                                                                        {
+                                                                          ...mr.commission,
+                                                                          mode: "FIXED",
+                                                                        },
+                                                                      ),
+                                                                  },
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            Fixed
+                                                          </Button>
+                                                          <Button
+                                                            size="sm"
+                                                            variant={
+                                                              mr.commission
+                                                                .mode ===
+                                                              "PERCENT"
+                                                                ? "default"
+                                                                : "outline"
+                                                            }
+                                                            className={`h-7 text-[10px] ${
+                                                              mr.commission
+                                                                .mode ===
+                                                              "PERCENT"
+                                                                ? "bg-slate-800 text-white"
+                                                                : ""
+                                                            }`}
+                                                            onClick={() =>
+                                                              updateMr(
+                                                                dealer.id,
+                                                                inv.id,
+                                                                mr.id,
+                                                                {
+                                                                  commission: {
+                                                                    ...mr.commission,
+                                                                    mode: "PERCENT",
+                                                                    amount:
+                                                                      calcCommission(
+                                                                        mr.taka,
+                                                                        {
+                                                                          ...mr.commission,
+                                                                          mode: "PERCENT",
+                                                                        },
+                                                                      ),
+                                                                  },
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            %
+                                                          </Button>
+                                                        </div>
+                                                      </div>
+                                                      <div className="w-24">
+                                                        <Input
+                                                          type="number"
+                                                          placeholder={
+                                                            mr.commission
+                                                              .mode ===
+                                                            "PERCENT"
+                                                              ? "Rate %"
+                                                              : "Amount"
+                                                          }
+                                                          value={
+                                                            mr.commission
+                                                              .value || ""
+                                                          }
+                                                          onChange={(e) => {
+                                                            const val = Number(
+                                                              e.target.value ||
+                                                                0,
+                                                            );
+                                                            updateMr(
+                                                              dealer.id,
+                                                              inv.id,
+                                                              mr.id,
+                                                              {
+                                                                commission: {
+                                                                  ...mr.commission,
+                                                                  value: val,
+                                                                  amount:
+                                                                    calcCommission(
+                                                                      mr.taka,
+                                                                      {
+                                                                        ...mr.commission,
+                                                                        value:
+                                                                          val,
+                                                                      },
+                                                                    ),
+                                                                },
+                                                              },
+                                                            );
+                                                          }}
+                                                          className="h-8 text-xs focus-visible:ring-[#3aa838]"
+                                                        />
+                                                      </div>
+                                                    </div>
+                                                    <p className="mt-1 text-[10px] text-muted-foreground">
+                                                      Commission:{" "}
+                                                      <b className="text-amber-700">
+                                                        ৳ {moneyFmt(commission)}
+                                                      </b>
+                                                      {mr.deductCommission &&
+                                                        " (deducted from cash)"}
+                                                    </p>
+                                                  </div>
+
+                                                  <div className="sm:col-span-2">
+                                                    <FileUpload
+                                                      label="MR file"
+                                                      fileName={mr.mediaName}
+                                                      fileUrl={mr.mediaUrl}
+                                                      onUpload={(file: File) =>
+                                                        uploadMrFile(
+                                                          dealer.id,
+                                                          inv.id,
+                                                          mr.id,
+                                                          file,
+                                                        )
+                                                      }
                                                     />
                                                   </div>
                                                 </div>
-                                                <p className="text-xs text-slate-500 mt-2">
-                                                  Commission amount:{" "}
-                                                  <strong>
-                                                    {moneyFmt(commission)}
-                                                  </strong>
-                                                  {mr.deductCommission &&
-                                                    " (deducted from cash)"}
-                                                </p>
                                               </div>
-
-                                              <div className="sm:col-span-2">
-                                                <FileUpload
-                                                  label="Supporting Document (Money Receipt File)"
-                                                  fileName={mr.mediaName}
-                                                  fileUrl={mr.mediaUrl}
-                                                  onUpload={(file: File) =>
-                                                    uploadMrFile(
-                                                      dealer.id,
-                                                      inv.id,
-                                                      mr.id,
-                                                      file,
-                                                    )
-                                                  }
-                                                />
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </Card>
-                                );
-                              })}
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
           </div>
 
-          {/* ── Right Sidebar ── */}
-          <div className="space-y-6">
-            <div className="sticky top-8">
-              <Card className="border-0 shadow-2xl rounded-3xl overflow-hidden bg-white/90 backdrop-blur-sm">
-                <div className="bg-gradient-to-r from-indigo-500 to-blue-600 px-6 py-5">
-                  <h2 className="text-xl font-bold text-white">Online Copy</h2>
-                  <p className="text-indigo-100 text-sm">
-                    Bank deposit details
-                  </p>
-                </div>
-                <CardContent className="p-6 space-y-5">
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">
-                      Online Copy No
-                    </Label>
-                    <Input
-                      value={onlineCopy.onlineCopyNo}
-                      onChange={(e) =>
-                        setOnlineCopy((p) => ({
-                          ...p,
-                          onlineCopyNo: e.target.value,
-                        }))
-                      }
-                      className="mt-1 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">
-                      Date
-                    </Label>
-                    <Input
-                      type="date"
-                      value={onlineCopy.onlineCopyDate}
-                      onChange={(e) =>
-                        setOnlineCopy((p) => ({
-                          ...p,
-                          onlineCopyDate: e.target.value,
-                        }))
-                      }
-                      className="mt-1 rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">
-                      Bank Account
-                    </Label>
-                    <select
-                      className="w-full mt-1 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-                      value={onlineCopy.bankAccountId}
-                      onChange={(e) =>
-                        setOnlineCopy((p) => ({
-                          ...p,
-                          bankAccountId: e.target.value,
-                        }))
-                      }
-                      disabled={bankLoading}
-                    >
-                      <option value="">
-                        {bankLoading ? "Loading..." : "Select bank"}
-                      </option>
-                      {bankOptions.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-700">
-                      Bank Charge
-                    </Label>
-                    <Input
-                      type="number"
-                      value={onlineCopy.bankDepositCharge || ""}
-                      onChange={(e) =>
-                        setOnlineCopy((p) => ({
-                          ...p,
-                          bankDepositCharge: Number(e.target.value || 0),
-                        }))
-                      }
-                      className="mt-1 rounded-xl"
-                    />
-                  </div>
-                  <FileUpload
-                    label="Online Copy File"
-                    fileName={onlineCopy.mediaName}
-                    fileUrl={onlineCopy.mediaUrl}
-                    onUpload={uploadOnlineCopyFile}
+          {/* RIGHT: Sidebar */}
+          <div className="h-fit space-y-3 lg:sticky lg:top-4">
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={Banknote} title="Online copy" />
+              <CardContent className="space-y-3 p-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-slate-600">
+                    Online Copy No
+                  </Label>
+                  <Input
+                    value={onlineCopy.onlineCopyNo}
+                    onChange={(e) =>
+                      setOnlineCopy((p) => ({
+                        ...p,
+                        onlineCopyNo: e.target.value,
+                      }))
+                    }
+                    className="h-8 text-xs focus-visible:ring-[#3aa838]"
                   />
-                </CardContent>
-              </Card>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-slate-600">Date</Label>
+                  <Input
+                    type="date"
+                    value={onlineCopy.onlineCopyDate}
+                    onChange={(e) =>
+                      setOnlineCopy((p) => ({
+                        ...p,
+                        onlineCopyDate: e.target.value,
+                      }))
+                    }
+                    className="h-8 text-xs focus-visible:ring-[#3aa838]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-slate-600">
+                    Bank account
+                  </Label>
+                  <select
+                    value={onlineCopy.bankAccountId}
+                    onChange={(e) =>
+                      setOnlineCopy((p) => ({
+                        ...p,
+                        bankAccountId: e.target.value,
+                      }))
+                    }
+                    disabled={bankLoading}
+                    className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+                  >
+                    <option value="">
+                      {bankLoading ? "Loading..." : "Select bank"}
+                    </option>
+                    {bankOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-slate-600">
+                    Bank charge
+                  </Label>
+                  <Input
+                    type="number"
+                    value={onlineCopy.bankDepositCharge || ""}
+                    onChange={(e) =>
+                      setOnlineCopy((p) => ({
+                        ...p,
+                        bankDepositCharge: Number(e.target.value || 0),
+                      }))
+                    }
+                    className="h-8 text-xs focus-visible:ring-[#3aa838]"
+                  />
+                </div>
+                <FileUpload
+                  label="Online copy file"
+                  fileName={onlineCopy.mediaName}
+                  fileUrl={onlineCopy.mediaUrl}
+                  onUpload={uploadOnlineCopyFile}
+                />
+              </CardContent>
+            </Card>
 
-              <Card className="mt-6 border-0 shadow-2xl rounded-3xl overflow-hidden">
-                <CardContent className="p-6">
-                  <h3 className="text-xl font-bold text-slate-900 mb-5">
-                    Summary
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Collected (Cash)</span>
-                      <span className="font-bold text-slate-900 text-lg">
-                        {moneyFmt(totals.totalMRAmount)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Commission</span>
-                      <span className="font-bold text-amber-600 text-lg">
-                        {moneyFmt(totals.totalCommission)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-600">Bank Charge</span>
-                      <span className="font-bold text-slate-900">
-                        {moneyFmt(totals.bankCharge)}
-                      </span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between items-center pt-1">
-                      <span className="text-base font-bold text-slate-800">
-                        Net Bank Deposit
-                      </span>
-                      <span className="text-2xl font-extrabold text-emerald-600">
-                        {moneyFmt(totals.netBankDeposit)}
-                      </span>
-                    </div>
-                    {validationErrors.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
-                      >
-                        <AlertCircle size={16} className="inline mr-2" />
-                        {validationErrors[0]}
-                      </motion.div>
-                    )}
-                    <Button
-                      className="w-full mt-4 rounded-xl py-6 text-base font-bold shadow-lg shadow-indigo-200"
-                      onClick={submit}
-                      disabled={saving}
-                    >
-                      {saving ? "Processing..." : "Submit Collection"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full rounded-xl"
-                      onClick={() => router.push("/accounts/collections")}
-                    >
-                      Cancel
-                    </Button>
+            <Card className="overflow-hidden border-slate-200 shadow-sm">
+              <SectionHeader icon={Wallet} title="Summary" />
+              <CardContent className="space-y-2 p-3 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cash</span>
+                  <b className="tabular-nums text-slate-900">
+                    ৳ {moneyFmt(totals.totalMRAmount)}
+                  </b>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Commission</span>
+                  <b className="tabular-nums text-amber-700">
+                    ৳ {moneyFmt(totals.totalCommission)}
+                  </b>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Bank charge</span>
+                  <b className="tabular-nums text-slate-900">
+                    ৳ {moneyFmt(totals.bankCharge)}
+                  </b>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-sm font-semibold text-slate-800">
+                    Net bank deposit
+                  </span>
+                  <b className="text-lg font-extrabold tabular-nums text-[#2f8a2f]">
+                    ৳ {moneyFmt(totals.netBankDeposit)}
+                  </b>
+                </div>
+                {validationErrors.length > 0 && (
+                  <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-[11px] text-rose-700">
+                    <AlertCircle className="mr-1 inline h-3 w-3" />
+                    {validationErrors[0]}
                   </div>
-                </CardContent>
-              </Card>
+                )}
+                <Button
+                  onClick={submit}
+                  disabled={saving}
+                  className="mt-1 h-9 w-full bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                >
+                  {saving ? "Processing..." : "Submit collection"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push("/accounts/collections")}
+                  className="h-8 w-full text-xs"
+                >
+                  Cancel
+                </Button>
+              </CardContent>
+            </Card>
 
-              <div className="mt-6 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-5 border border-indigo-100">
-                <h4 className="font-semibold text-slate-800 mb-2">
-                  How it works
-                </h4>
-                <p className="text-sm text-slate-600 space-y-2">
-                  <strong>Add mode:</strong> Dealer pays cash + commission on
-                  top. Reduction = cash + commission.
-                  <br />
-                  <strong>Deduct mode:</strong> Commission taken from cash.
-                  Reduction = cash (≤ due). Bank receives cash − commission.
-                </p>
+            {/* How it works (restored) */}
+            <div className="rounded-lg border border-[#3aa838]/30 bg-gradient-to-br from-[#3aa838]/5 to-white p-3">
+              <div className="mb-1.5 text-xs font-semibold text-[#2f8a2f]">
+                How it works
+              </div>
+              <div className="space-y-1 text-[11px] text-slate-600">
+                <div>
+                  <b className="text-slate-900">Add mode:</b> Dealer pays cash
+                  + commission on top. Reduction = cash + commission.
+                </div>
+                <div>
+                  <b className="text-slate-900">Deduct mode:</b> Commission
+                  taken from cash. Reduction = cash (≤ due). Bank receives
+                  cash − commission.
+                </div>
               </div>
             </div>
           </div>
