@@ -1,3 +1,4 @@
+// app/inventory/product-transfer/[id]/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -6,7 +7,6 @@ import api from "@/lib/api";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import GlobalPrintButton from "@/components/common/print/GlobalPrintButton";
@@ -14,13 +14,25 @@ import {
   ArrowLeft,
   Check,
   RefreshCw,
-  XCircle,
   FileText,
   Loader2,
   ExternalLink,
+  ArrowRightLeft,
+  Factory,
+  Building2,
+  Inbox,
+  Package,
+  DollarSign,
+  Clock3,
+  AlertCircle,
+  CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
 
-/* ---------- updated types ---------- */
+import Protected from "@/components/auth/Protected";
+import usePermissionCheck from "@/hooks/usePermissionCheck";
+
+/* =========================== Types =========================== */
 type TransferStatus =
   | "REQUESTED"
   | "RECEIVER_NSM_APPROVED"
@@ -57,6 +69,7 @@ type TransferDoc = {
   transferMode: TransferMode;
   status: TransferStatus;
   locked?: boolean;
+  voucherId?: string;
 
   sender?: any;
   receiver?: any;
@@ -79,12 +92,12 @@ type TransferDoc = {
   printSnapshot?: any;
   documents?: {
     signed?: {
-      mediaId?: string;
+      mediaId?: any;
       uploadedBy?: any;
       uploadedAt?: string;
     };
     damage?: {
-      mediaId?: string;
+      mediaId?: any;
       uploadedBy?: any;
       uploadedByName?: string;
       uploadedAt?: string;
@@ -104,34 +117,52 @@ type TransferDoc = {
   updatedAt?: string;
 };
 
-/* ---------- helpers ---------- */
+/* =========================== Config =========================== */
 const STATUS_TONE: Record<TransferStatus, string> = {
-  REQUESTED: "bg-slate-100 text-slate-800 border-slate-200",
-  RECEIVER_NSM_APPROVED: "bg-sky-100 text-sky-800 border-sky-200",
-  SENDER_REVIEWED: "bg-violet-100 text-violet-800 border-violet-200",
-  SENDER_NSM_APPROVED: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  SENT: "bg-amber-100 text-amber-800 border-amber-200",
-  HOLD: "bg-orange-100 text-orange-800 border-orange-200",
-  AWAITING_REMAINING: "bg-purple-100 text-purple-800 border-purple-200",
-  COMPLETED: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  REQUESTED:
+    "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700",
+  RECEIVER_NSM_APPROVED:
+    "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-900/60",
+  SENDER_REVIEWED:
+    "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900/60",
+  SENDER_NSM_APPROVED:
+    "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/60",
+  SENT:
+    "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
+  HOLD:
+    "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900/60",
+  AWAITING_REMAINING:
+    "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-900/60",
+  COMPLETED:
+    "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60",
 };
 
+/* =========================== Helpers =========================== */
 function getName(loc: any) {
-  return loc?.name || loc?.warehouseName || loc?.factoryName || loc?.code || "-";
+  return (
+    loc?.name || loc?.warehouseName || loc?.factoryName || loc?.code || "-"
+  );
 }
+
 function getKind(loc: any) {
   const t = String(loc?.type || loc?.kind || loc?.entityType || "").toLowerCase();
   if (t.includes("factory")) return "Factory";
   if (t.includes("warehouse")) return "Warehouse";
   return "Location";
 }
+
 function currency(n: number) {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
-/* ---------- workflow helpers (dynamic) ---------- */
 function hasPartialReceipt(transfer: TransferDoc): boolean {
-  return transfer.items.some(item => (item.receivedQty || 0) > 0 && (item.receivedQty || 0) < item.finalQty);
+  return transfer.items.some(
+    (item) =>
+      (item.receivedQty || 0) > 0 && (item.receivedQty || 0) < item.finalQty,
+  );
 }
 
 function getWorkflowLabels(transfer: TransferDoc): string[] {
@@ -148,15 +179,16 @@ function getWorkflowLabels(transfer: TransferDoc): string[] {
     return base;
   }
 
-  // REQUEST mode (warehouse → factory)
-  if (t.transferType === "FACTORY_TO_WAREHOUSE" && t.transferMode === "REQUEST") {
+  if (
+    t.transferType === "FACTORY_TO_WAREHOUSE" &&
+    t.transferMode === "REQUEST"
+  ) {
     const base = ["Requested", "Receiver NSM", "Sent"];
     if (includeHoldSteps) base.push("Hold", "Awaiting Remaining");
     base.push("Completed");
     return base;
   }
 
-  // fallback (should not happen on factory page)
   const base = ["Requested", "Sent"];
   if (includeHoldSteps) base.push("Hold", "Awaiting Remaining");
   base.push("Completed");
@@ -176,23 +208,40 @@ function getWorkflowStatuses(transfer: TransferDoc): TransferStatus[] {
     "Awaiting Remaining": "AWAITING_REMAINING",
     Completed: "COMPLETED",
   };
-  return labels.map(l => map[l] || "REQUESTED");
+  return labels.map((l) => map[l] || "REQUESTED");
 }
 
 function getStatusMeta(transfer: TransferDoc | null) {
-  if (!transfer) return { label: "-", tone: "bg-slate-100 text-slate-800 border-slate-200", hint: "" };
+  if (!transfer)
+    return {
+      label: "-",
+      tone: "bg-slate-100 text-slate-800 border-slate-200",
+      hint: "",
+    };
   const tone = STATUS_TONE[transfer.status] || STATUS_TONE.REQUESTED;
   const map: Record<TransferStatus, { label: string; hint: string }> = {
     REQUESTED: { label: "Requested", hint: "Transfer created" },
     RECEIVER_NSM_APPROVED: {
       label: "Receiver NSM Approved",
-      hint: transfer.transferType === "WAREHOUSE_TO_WAREHOUSE" ? "Waiting for sender review" : "Waiting for dispatch",
+      hint:
+        transfer.transferType === "WAREHOUSE_TO_WAREHOUSE"
+          ? "Waiting for sender review"
+          : "Waiting for dispatch",
     },
-    SENDER_REVIEWED: { label: "Sender Reviewed", hint: "Waiting for sender NSM approval" },
-    SENDER_NSM_APPROVED: { label: "Sender NSM Approved", hint: "Ready to print and send" },
+    SENDER_REVIEWED: {
+      label: "Sender Reviewed",
+      hint: "Waiting for sender NSM approval",
+    },
+    SENDER_NSM_APPROVED: {
+      label: "Sender NSM Approved",
+      hint: "Ready to print and send",
+    },
     SENT: { label: "Sent", hint: "Waiting for receiver to receive" },
     HOLD: { label: "Hold", hint: "Received quantities don't match final qty" },
-    AWAITING_REMAINING: { label: "Awaiting Remaining", hint: "Received qty processed, awaiting remaining resolution" },
+    AWAITING_REMAINING: {
+      label: "Awaiting Remaining",
+      hint: "Received qty processed, awaiting remaining resolution",
+    },
     COMPLETED: { label: "Completed", hint: "Transfer completed" },
   };
   return { ...map[transfer.status], tone };
@@ -204,7 +253,6 @@ function currentWorkflowStep(transfer: TransferDoc): number {
   return idx >= 0 ? idx + 1 : 0;
 }
 
-/* ---------- action helpers (factory‑side) ---------- */
 function canEditQty(transfer: TransferDoc | null) {
   return (
     transfer?.transferType === "FACTORY_TO_WAREHOUSE" &&
@@ -212,16 +260,26 @@ function canEditQty(transfer: TransferDoc | null) {
     transfer?.status === "REQUESTED"
   );
 }
+
 function canDispatch(transfer: TransferDoc | null) {
   if (!transfer) return false;
-  if (transfer.transferType === "WAREHOUSE_TO_WAREHOUSE") return transfer.status === "SENDER_NSM_APPROVED";
-  if (transfer.transferMode === "REQUEST") return transfer.status === "RECEIVER_NSM_APPROVED";
+  if (transfer.transferType === "WAREHOUSE_TO_WAREHOUSE")
+    return transfer.status === "SENDER_NSM_APPROVED";
+  if (transfer.transferMode === "REQUEST")
+    return transfer.status === "RECEIVER_NSM_APPROVED";
   return transfer.status === "REQUESTED";
 }
+
 function canPrint(transfer: TransferDoc | null) {
   if (!transfer) return false;
-  if (transfer.transferType === "WAREHOUSE_TO_WAREHOUSE") return ["SENDER_NSM_APPROVED", "SENT", "COMPLETED"].includes(transfer.status);
-  if (transfer.transferMode === "REQUEST") return ["RECEIVER_NSM_APPROVED", "SENT", "COMPLETED"].includes(transfer.status);
+  if (transfer.transferType === "WAREHOUSE_TO_WAREHOUSE")
+    return ["SENDER_NSM_APPROVED", "SENT", "COMPLETED"].includes(
+      transfer.status,
+    );
+  if (transfer.transferMode === "REQUEST")
+    return ["RECEIVER_NSM_APPROVED", "SENT", "COMPLETED"].includes(
+      transfer.status,
+    );
   return ["REQUESTED", "SENT", "COMPLETED"].includes(transfer.status);
 }
 
@@ -229,7 +287,8 @@ function canPrint(transfer: TransferDoc | null) {
 function getMediaPreviewUrl(mediaId?: any) {
   if (!mediaId) return "";
   const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
-  return `${base}${mediaId?.url}`;
+  const url = typeof mediaId === "string" ? "" : mediaId?.url || "";
+  return url ? `${base}${url}` : "";
 }
 
 function buildTransferPrintHeaderRight(transfer: TransferDoc): string {
@@ -258,7 +317,14 @@ function buildTransferPrintHtml(transfer: TransferDoc): string {
   const receiverKind = getKind(transfer.receiver);
   const senderCode = transfer.sender?.code || "";
   const receiverCode = transfer.receiver?.code || "";
-  const dateFmt = (d: any) => d ? new Date(d).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "—";
+  const dateFmt = (d: any) =>
+    d
+      ? new Date(d).toLocaleDateString("en-IN", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "—";
 
   const statuses = getWorkflowStatuses(transfer);
   const labels = getWorkflowLabels(transfer);
@@ -283,10 +349,9 @@ function buildTransferPrintHtml(transfer: TransferDoc): string {
     .join("");
 
   const rowsHtml = items
-    .map((item: any, idx: number) => {
+    .map((item: any) => {
       const prod = item.productId || {};
       const name = prod.name || "-";
-      const sku = prod.sku || "-";
       const requestedQty = Number(item.requestedQty || 0);
       const finalQty = Number(item.finalQty || 0);
       const unit = item.unit || "-";
@@ -309,9 +374,19 @@ function buildTransferPrintHtml(transfer: TransferDoc): string {
 
   const totals = {
     items: items.length,
-    requested: items.reduce((s: number, i: any) => s + Number(i.requestedQty || 0), 0),
-    final: items.reduce((s: number, i: any) => s + Number(i.finalQty || 0), 0),
-    cost: items.reduce((s: number, i: any) => s + Number(i.finalQty || 0) * Number(i.costPrice || 0), 0),
+    requested: items.reduce(
+      (s: number, i: any) => s + Number(i.requestedQty || 0),
+      0,
+    ),
+    final: items.reduce(
+      (s: number, i: any) => s + Number(i.finalQty || 0),
+      0,
+    ),
+    cost: items.reduce(
+      (s: number, i: any) =>
+        s + Number(i.finalQty || 0) * Number(i.costPrice || 0),
+      0,
+    ),
   };
 
   const createdDate = transfer.createdAt;
@@ -390,11 +465,81 @@ function buildTransferPrintHtml(transfer: TransferDoc): string {
 </div>`;
 }
 
-/* =============================================================== */
+/* =========================== StatCard =========================== */
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone = "slate",
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  tone?: "slate" | "sky" | "green" | "amber";
+}) {
+  const map = {
+    slate: {
+      bg: "bg-slate-100 dark:bg-slate-800",
+      fg: "text-slate-600 dark:text-slate-300",
+    },
+    sky: {
+      bg: "bg-sky-100 dark:bg-sky-950/40",
+      fg: "text-sky-600 dark:text-sky-300",
+    },
+    green: {
+      bg: "bg-[#3aa838]/10 dark:bg-[#3aa838]/15",
+      fg: "text-[#2f8a2f] dark:text-[#9bdd91]",
+    },
+    amber: {
+      bg: "bg-amber-100 dark:bg-amber-950/40",
+      fg: "text-amber-600 dark:text-amber-300",
+    },
+  } as const;
+  const t = map[tone];
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+        <div
+          className={`flex h-7 w-7 items-center justify-center rounded-lg ${t.bg} ${t.fg}`}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+      </div>
+      <div className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+        {value}
+      </div>
+      {hint && (
+        <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* =========================== Page (Protected) =========================== */
 export default function FactoryTransferActionPage() {
+  return (
+    <Protected permissions="factorytransfer.view">
+      <FactoryTransferActionPageInner />
+    </Protected>
+  );
+}
+
+/* =========================== Inner =========================== */
+function FactoryTransferActionPageInner() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params?.id;
+
+  const hasAccess = usePermissionCheck();
+  const canEdit = hasAccess({ permissions: "factorytransfer.edit" });
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -402,7 +547,11 @@ export default function FactoryTransferActionPage() {
   const [transfer, setTransfer] = useState<TransferDoc | null>(null);
   const [remarks, setRemarks] = useState("");
 
-  useEffect(() => { if (!id) return; loadTransfer(); }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    loadTransfer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   async function loadTransfer() {
     try {
@@ -412,18 +561,29 @@ export default function FactoryTransferActionPage() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to load transfer");
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const workflowLabels = useMemo(() => (transfer ? getWorkflowLabels(transfer) : []), [transfer]);
-  const stepIndex = useMemo(() => (transfer ? currentWorkflowStep(transfer) : 0), [transfer]);
+  const workflowLabels = useMemo(
+    () => (transfer ? getWorkflowLabels(transfer) : []),
+    [transfer],
+  );
+  const stepIndex = useMemo(
+    () => (transfer ? currentWorkflowStep(transfer) : 0),
+    [transfer],
+  );
   const statusMeta = getStatusMeta(transfer);
 
   const totals = useMemo(() => {
     const items = transfer?.items || [];
     const totalLines = items.length;
     const totalQty = items.reduce((s, i) => s + Number(i.finalQty || 0), 0);
-    const totalValue = items.reduce((s, i) => s + Number(i.finalQty || 0) * Number(i.costPrice || 0), 0);
+    const totalValue = items.reduce(
+      (s, i) => s + Number(i.finalQty || 0) * Number(i.costPrice || 0),
+      0,
+    );
     return { totalLines, totalQty, totalValue };
   }, [transfer]);
 
@@ -434,7 +594,15 @@ export default function FactoryTransferActionPage() {
     item[key] = value;
     if (key === "finalQty") {
       item.qtyHistory = item.qtyHistory || [];
-      item.qtyHistory = [...(item.qtyHistory || []), { stage: "DRAFT_UPDATED", qty: Number(value), changedAt: new Date().toISOString(), note: "Edited before dispatch" }];
+      item.qtyHistory = [
+        ...(item.qtyHistory || []),
+        {
+          stage: "DRAFT_UPDATED",
+          qty: Number(value),
+          changedAt: new Date().toISOString(),
+          note: "Edited before dispatch",
+        },
+      ];
     }
     copy[index] = item;
     setTransfer({ ...transfer, items: copy });
@@ -442,8 +610,9 @@ export default function FactoryTransferActionPage() {
 
   function actionPayload() {
     if (!transfer) return [];
-    return transfer.items.map(i => ({
-      productId: typeof i.productId === "object" ? i.productId?._id : i.productId,
+    return transfer.items.map((i) => ({
+      productId:
+        typeof i.productId === "object" ? i.productId?._id : i.productId,
       requestedQty: i.requestedQty,
       finalQty: i.finalQty,
       unit: i.unit,
@@ -453,6 +622,10 @@ export default function FactoryTransferActionPage() {
 
   async function saveDraft() {
     if (!transfer) return;
+    if (!canEdit) {
+      toast.error("You don't have permission to edit this transfer");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.put(`/transfers/${id}`, {
@@ -468,11 +641,17 @@ export default function FactoryTransferActionPage() {
       setTransfer(res.data?.data || transfer);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to save draft");
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function dispatchTransfer() {
     if (!transfer) return;
+    if (!canEdit) {
+      toast.error("You don't have permission to dispatch this transfer");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.post(`/transfers/${id}/dispatch`);
@@ -480,7 +659,9 @@ export default function FactoryTransferActionPage() {
       setTransfer(res.data?.data || transfer);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Dispatch failed");
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function itemName(item: TransferItem) {
@@ -488,243 +669,739 @@ export default function FactoryTransferActionPage() {
     return p?.name || p?.sku || (typeof p === "string" ? p : "Product");
   }
 
-  if (loading) return <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
-  if (!transfer) return <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center">Transfer not found</div>;
+  /* =========================== Loading / empty states =========================== */
+  if (loading)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50/60 p-6 dark:bg-slate-950">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin text-[#3aa838]" />
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Loading transfer…
+          </span>
+        </div>
+      </div>
+    );
+
+  if (!transfer)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50/60 p-6 dark:bg-slate-950">
+        <div className="max-w-sm text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+            <Inbox className="h-6 w-6 text-slate-400" />
+          </div>
+          <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">
+            Transfer not found
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/inventory/product-transfer")}
+            className="mt-4 h-8 gap-1.5 text-xs"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            Back to list
+          </Button>
+        </div>
+      </div>
+    );
 
   const senderName = getName(transfer.sender);
   const receiverName = getName(transfer.receiver);
-  const editable = canEditQty(transfer);
 
+  const editableByState = canEditQty(transfer);
+  const editable = editableByState && canEdit;
+  const dispatchAllowed = canDispatch(transfer) && canEdit;
+
+  /* =========================== Render =========================== */
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6 space-y-6">
-        {/* Hero Header */}
-        <div className="rounded-3xl border bg-gradient-to-br from-slate-950 via-slate-900 to-slate-700 p-6 text-white shadow-xl">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+    <div className="min-h-screen bg-slate-50/60 p-4 dark:bg-slate-950 md:p-6">
+      <div className="mx-auto max-w-[1600px] space-y-5">
+        {/* ============ HERO ============ */}
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:p-6">
+          <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-[#3aa838]/5 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-emerald-500/5 blur-3xl" />
+
+          <div className="relative flex flex-col gap-4">
             <div>
-              <Button variant="ghost" className="mb-4 -ml-3 text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => router.push("/inventory/product-transfer")}><ArrowLeft className="mr-2 h-4 w-4" />Back to list</Button>
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-3xl font-bold tracking-tight">{transfer.transferNo}</h1>
-                <Badge variant="outline" className={statusMeta.tone}>{statusMeta.label}</Badge>
-                {transfer.locked && <Badge variant="outline" className="bg-white/10 text-white border-white/20">Locked</Badge>}
-                {transfer.status === "COMPLETED" && <Badge variant="outline" className="bg-emerald-500/20 text-emerald-100 border-emerald-400/30">Finished</Badge>}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/inventory/product-transfer")}
+                className="h-8 gap-1.5 text-xs"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to list
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    <ArrowRightLeft className="h-2.5 w-2.5" />
+                    Operations
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.tone}`}
+                  >
+                    {statusMeta.label}
+                  </span>
+                  {transfer.locked && (
+                    <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                      Locked
+                    </span>
+                  )}
+                  {transfer.status === "COMPLETED" && (
+                    <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      Finished
+                    </span>
+                  )}
+                </div>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">
+                  {transfer.transferNo}
+                </h1>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {transfer.transferMode === "DIRECT"
+                    ? "Direct factory transfer"
+                    : "Factory request transfer"}{" "}
+                  · {senderName} → {receiverName}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    {transfer.transferType}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    {transfer.transferMode}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    Step {Math.min(stepIndex + 1, workflowLabels.length)} /{" "}
+                    {workflowLabels.length}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-[#3aa838]/30 bg-[#3aa838]/5 px-2 py-0.5 text-[10px] font-semibold text-[#2f8a2f] dark:border-[#3aa838]/30 dark:bg-[#3aa838]/10 dark:text-[#9bdd91]">
+                    {statusMeta.hint}
+                  </span>
+                </div>
               </div>
-              <p className="mt-2 max-w-2xl text-sm text-slate-300">{transfer.transferMode === "DIRECT" ? "Direct factory transfer" : "Factory request transfer"} • {senderName} → {receiverName}</p>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{transfer.transferType}</span>
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{transfer.transferMode}</span>
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Step {Math.min(stepIndex + 1, workflowLabels.length)} / {workflowLabels.length}</span>
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{statusMeta.hint}</span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadTransfer}
+                  className="h-9 gap-1.5"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Reload
+                </Button>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[380px]">
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="text-xs uppercase tracking-wide text-slate-300">Total lines</div><div className="mt-1 text-2xl font-bold">{totals.totalLines}</div></div>
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="text-xs uppercase tracking-wide text-slate-300">Total qty</div><div className="mt-1 text-2xl font-bold">{totals.totalQty}</div></div>
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="text-xs uppercase tracking-wide text-slate-300">Estimated value</div><div className="mt-1 text-2xl font-bold">{currency(totals.totalValue)}</div></div>
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="text-xs uppercase tracking-wide text-slate-300">Print status</div><div className="mt-1 text-2xl font-bold">{transfer.printSnapshot ? "Ready" : "Pending"}</div></div>
+
+            {/* Stat cards */}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                icon={Package}
+                label="Total Lines"
+                value={totals.totalLines}
+                hint="Items in transfer"
+                tone="slate"
+              />
+              <StatCard
+                icon={Factory}
+                label="Total Qty"
+                value={totals.totalQty}
+                hint="Across all items"
+                tone="sky"
+              />
+              <StatCard
+                icon={DollarSign}
+                label="Estimated Value"
+                value={`৳ ${currency(totals.totalValue)}`}
+                hint="Final qty × cost"
+                tone="green"
+              />
+              <StatCard
+                icon={FileText}
+                label="Print Status"
+                value={transfer.printSnapshot ? "Ready" : "Pending"}
+                hint={
+                  transfer.printSnapshot
+                    ? "Snapshot generated"
+                    : "Not generated yet"
+                }
+                tone={transfer.printSnapshot ? "green" : "amber"}
+              />
             </div>
           </div>
         </div>
 
-        {/* Workflow */}
-        <Card className="shadow-sm">
-          <CardHeader className="pb-3"><CardTitle>Workflow progress</CardTitle></CardHeader>
-          <CardContent>
-            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${workflowLabels.length}, minmax(0, 1fr))` }}>
+        {/* ============ WORKFLOW ============ */}
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Workflow Progress
+            </h2>
+          </div>
+          <div className="p-4">
+            <div
+              className="grid gap-2"
+              style={{
+                gridTemplateColumns: `repeat(${workflowLabels.length}, minmax(0, 1fr))`,
+              }}
+            >
               {workflowLabels.map((label, idx) => {
-                const active = idx === stepIndex - 1 && transfer.status !== "COMPLETED";
-                const done = idx < stepIndex - 1 || transfer.status === "COMPLETED";
+                const active =
+                  idx === stepIndex - 1 && transfer.status !== "COMPLETED";
+                const done =
+                  idx < stepIndex - 1 || transfer.status === "COMPLETED";
                 return (
-                  <div key={label} className={`rounded-2xl border p-4 ${active ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900" : done ? "border-emerald-200 bg-emerald-50" : "bg-white"}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium">{label}</div>
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${active ? "bg-slate-900 text-white" : done ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-                        {done ? <Check className="h-3.5 w-3.5" /> : idx + 1}
+                  <div
+                    key={label}
+                    className={`rounded-xl border p-3 transition-all ${
+                      active
+                        ? "border-[#3aa838] bg-[#3aa838]/5 shadow-sm"
+                        : done
+                          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30"
+                          : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className={`truncate text-xs font-medium ${
+                          active
+                            ? "text-[#2f8a2f] dark:text-[#9bdd91]"
+                            : done
+                              ? "text-emerald-700 dark:text-emerald-300"
+                              : "text-slate-600 dark:text-slate-400"
+                        }`}
+                      >
+                        {label}
+                      </div>
+                      <div
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                          active
+                            ? "bg-[#3aa838] text-white"
+                            : done
+                              ? "bg-emerald-500 text-white"
+                              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                        }`}
+                      >
+                        {done ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          idx + 1
+                        )}
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Main content */}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+        {/* ============ MAIN CONTENT ============ */}
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           {/* Left column */}
-          <div className="space-y-6">
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between gap-3">
-                <CardTitle>Transfer summary</CardTitle>
-                <Button variant="outline" onClick={loadTransfer}><RefreshCw className="mr-2 h-4 w-4" />Reload</Button>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl border bg-white p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Sender</div><div className="mt-1 font-semibold">{senderName}</div><div className="text-xs text-muted-foreground">{getKind(transfer.sender)}</div></div>
-                  <div className="rounded-2xl border bg-white p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Receiver</div><div className="mt-1 font-semibold">{receiverName}</div><div className="text-xs text-muted-foreground">{getKind(transfer.receiver)}</div></div>
-                  <div className="rounded-2xl border bg-white p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Created by</div><div className="mt-1 font-semibold">{transfer.createdBy?.name || transfer.createdBy?.email || "-"}</div><div className="text-xs text-muted-foreground">{transfer.createdAt ? new Date(transfer.createdAt).toLocaleString() : "-"}</div></div>
-                  <div className="rounded-2xl border bg-white p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Current stage</div><div className="mt-1 font-semibold">{statusMeta.label}</div><div className="text-xs text-muted-foreground">{statusMeta.hint}</div></div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader><CardTitle>Items</CardTitle></CardHeader>
-              <CardContent>
-                <div className="overflow-hidden rounded-2xl border bg-white">
-                  <div className="max-h-[560px] overflow-auto">
-                    <table className="min-w-full table-auto">
-                      <thead className="sticky top-0 z-10 bg-slate-50 text-left text-sm shadow-sm">
-                        <tr>
-                          <th className="px-4 py-3">Product</th>
-                          <th className="px-4 py-3">Requested</th>
-                          <th className="px-4 py-3">Final</th>
-                          <th className="px-4 py-3">Unit</th>
-                          <th className="px-4 py-3">Cost</th>
-                          <th className="px-4 py-3">Value</th>
-                          <th className="px-4 py-3">Received</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transfer.items.map((item, idx) => (
-                          <tr key={idx} className="border-t align-top hover:bg-slate-50">
-                            <td className="px-4 py-4">
-                              <div className="space-y-2">
-                                <div className="font-medium">{itemName(item)}</div>
-                                <div className="text-xs text-muted-foreground">SKU: {item.productId?.sku || "-"}</div>
-                                <div className="flex flex-wrap gap-2">
-                                  {(item.qtyHistory || []).slice(-3).map((h, hIdx) => (
-                                    <span key={hIdx} className="inline-flex items-center gap-2 rounded-full border bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
-                                      <strong>{h.stage}</strong> <span>→</span> <span>{h.qty}</span>
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-4 text-sm font-medium">{item.requestedQty}</td>
-                            <td className="px-4 py-4">
-                              {editable ? (
-                                <Input type="number" min={1} value={item.finalQty} onChange={e => updateItem(idx, "finalQty", Number(e.target.value))} className="h-11 w-28" />
-                              ) : (
-                                <span className="text-sm font-medium">{item.finalQty}</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-4 text-sm">{item.unit || "-"}</td>
-                            <td className="px-4 py-4 text-sm">{currency(Number(item.costPrice || 0))}</td>
-                            <td className="px-4 py-4 text-sm font-semibold">{currency(Number(item.finalQty || 0) * Number(item.costPrice || 0))}</td>
-                            <td className="px-4 py-4 text-sm">{item.receivedQty ?? 0}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+          <div className="space-y-5">
+            {/* Transfer summary */}
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Transfer Summary
+                </h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadTransfer}
+                  className="h-8 gap-1.5 text-xs"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Reload
+                </Button>
+              </div>
+              <div className="p-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Sender
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {senderName}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {getKind(transfer.sender)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Receiver
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {receiverName}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {getKind(transfer.receiver)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Created By
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {transfer.createdBy?.name ||
+                        transfer.createdBy?.email ||
+                        "-"}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {transfer.createdAt
+                        ? new Date(transfer.createdAt).toLocaleString()
+                        : "-"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Current Stage
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {statusMeta.label}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                      {statusMeta.hint}
+                    </div>
                   </div>
                 </div>
-                {editable ? <div className="mt-4 rounded-2xl border bg-slate-50 p-4 text-sm text-muted-foreground">Direct factory transfer is still editable at draft stage.</div> : <div className="mt-4 rounded-2xl border bg-slate-50 p-4 text-sm text-muted-foreground">Quantities are locked for this stage.</div>}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
-            <Card className="shadow-sm">
-              <CardHeader><CardTitle>Activity log</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {(transfer.approvalLogs || []).length === 0 ? <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-muted-foreground">No activity yet.</div> :
-                    transfer.approvalLogs.map((log, idx) => (
-                      <div key={idx} className="rounded-2xl border bg-white p-4">
-                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                          <div className="font-medium">{log.status} <span className="ml-2 text-xs text-muted-foreground">by {log.role || "-"}</span></div>
-                          <div className="text-xs text-muted-foreground">{log.actionAt ? new Date(log.actionAt).toLocaleString() : "-"}</div>
-                        </div>
-                        {log.remarks && <div className="mt-2 text-sm text-muted-foreground">{log.remarks}</div>}
-                      </div>
-                    ))
-                  }
+            {/* Items */}
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Items ({transfer.items.length})
+                </h2>
+              </div>
+              <div className="p-3">
+                <div className="max-h-[560px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full min-w-full table-auto">
+                    <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+                      <tr>
+                        {[
+                          "Product",
+                          "Requested",
+                          "Final",
+                          "Unit",
+                          "Cost",
+                          "Value",
+                          "Received",
+                        ].map((h, i) => (
+                          <th
+                            key={h}
+                            className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 ${
+                              i === 0
+                                ? "text-left"
+                                : i >= 1 && i <= 4
+                                  ? "text-center"
+                                  : i === 5
+                                    ? "text-right"
+                                    : "text-center"
+                            }`}
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transfer.items.map((item, idx) => (
+                        <tr
+                          key={idx}
+                          className="border-b border-slate-100 align-top transition-colors last:border-b-0 hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-800/30"
+                        >
+                          <td className="min-w-[220px] px-3 py-3">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">
+                              {itemName(item)}
+                            </div>
+                            <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                              SKU: {item.productId?.sku || "-"}
+                            </div>
+                            {(item.qtyHistory || []).length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {(item.qtyHistory || [])
+                                  .slice(-3)
+                                  .map((h, hIdx) => (
+                                    <span
+                                      key={hIdx}
+                                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
+                                    >
+                                      <strong>{h.stage}</strong>
+                                      <span>→</span>
+                                      <span>{h.qty}</span>
+                                    </span>
+                                  ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center text-sm font-medium tabular-nums text-slate-900 dark:text-white">
+                            {item.requestedQty}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            {editable ? (
+                              <Input
+                                type="number"
+                                min={1}
+                                value={item.finalQty}
+                                onChange={(e) =>
+                                  updateItem(
+                                    idx,
+                                    "finalQty",
+                                    Number(e.target.value),
+                                  )
+                                }
+                                className="h-8 w-24 text-center text-sm font-semibold"
+                              />
+                            ) : (
+                              <span className="text-sm font-medium tabular-nums text-slate-900 dark:text-white">
+                                {item.finalQty}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center text-sm text-slate-700 dark:text-slate-300">
+                            {item.unit || "-"}
+                          </td>
+                          <td className="px-3 py-3 text-center text-sm tabular-nums text-slate-700 dark:text-slate-300">
+                            {currency(Number(item.costPrice || 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
+                            {currency(
+                              Number(item.finalQty || 0) *
+                                Number(item.costPrice || 0),
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center text-sm tabular-nums text-slate-700 dark:text-slate-300">
+                            {item.receivedQty ?? 0}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </CardContent>
-            </Card>
+
+                {editable ? (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-[#3aa838]/20 bg-[#3aa838]/5 p-3 text-xs text-slate-600 dark:border-[#3aa838]/30 dark:bg-[#3aa838]/10 dark:text-slate-300">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#3aa838]" />
+                    <div>
+                      <strong className="text-slate-900 dark:text-white">
+                        Direct factory transfer
+                      </strong>{" "}
+                      is still editable at draft stage.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <div>Quantities are locked for this stage.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Activity log */}
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Activity Log
+                </h2>
+              </div>
+              <div className="space-y-2 p-4">
+                {(transfer.approvalLogs || []).length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400">
+                    <Clock3 className="mx-auto mb-2 h-5 w-5 text-slate-300" />
+                    No activity yet.
+                  </div>
+                ) : (
+                  transfer.approvalLogs!.map((log, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/40"
+                    >
+                      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                        <div className="text-sm font-medium text-slate-900 dark:text-white">
+                          {log.status}{" "}
+                          <span className="ml-1 text-[10px] font-normal text-slate-500 dark:text-slate-400">
+                            by {log.role || "-"}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                          {log.actionAt
+                            ? new Date(log.actionAt).toLocaleString()
+                            : "-"}
+                        </div>
+                      </div>
+                      {log.remarks && (
+                        <div className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                          {log.remarks}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Right sidebar */}
-          <div className="space-y-6">
-            <div className="sticky top-6 space-y-6">
-              <Card className="shadow-sm">
-                <CardHeader><CardTitle>Status & next action</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <Badge variant="outline" className={statusMeta.tone}>{statusMeta.label}</Badge>
-                  <div className="rounded-2xl border bg-slate-50 p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Next step</div><div className="mt-1 font-semibold">{statusMeta.hint}</div></div>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex items-center justify-between"><span>Lines</span><span className="font-medium text-slate-900">{totals.totalLines}</span></div>
-                    <div className="flex items-center justify-between"><span>Total qty</span><span className="font-medium text-slate-900">{totals.totalQty}</span></div>
-                    <div className="flex items-center justify-between"><span>Estimated value</span><span className="font-medium text-slate-900">{currency(totals.totalValue)}</span></div>
-                    <div className="flex items-center justify-between"><span>Print snapshot</span><span className="font-medium text-slate-900">{transfer.printSnapshot ? "Ready" : "Pending"}</span></div>
-                    <div className="flex items-center justify-between"><span>Signed copy</span><div className="flex items-center gap-2"><span className="font-medium text-slate-900">{transfer.documents?.signed?.mediaId ? "Uploaded" : "Pending"}</span>{transfer.documents?.signed?.mediaId && <a href={getMediaPreviewUrl(transfer.documents.signed.mediaId)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">Preview<ExternalLink className="h-3.5 w-3.5"/></a>}</div></div>
+          <aside className="space-y-5">
+            <div className="sticky top-6 space-y-5">
+              {/* Status & next action */}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Status & Next Action
+                  </h2>
+                </div>
+                <div className="space-y-3 p-4">
+                  <span
+                    className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold ${statusMeta.tone}`}
+                  >
+                    {statusMeta.label}
+                  </span>
+                  <div className="rounded-lg border border-[#3aa838]/20 bg-[#3aa838]/5 p-3 dark:border-[#3aa838]/30 dark:bg-[#3aa838]/10">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f8a2f] dark:text-[#9bdd91]">
+                      Next step
+                    </div>
+                    <div className="mt-0.5 text-xs font-semibold text-slate-900 dark:text-white">
+                      {statusMeta.hint}
+                    </div>
                   </div>
-                  {transfer.status === "COMPLETED" && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">✅ This transfer is fully completed.</div>}
-                </CardContent>
-              </Card>
 
-              <Card className="shadow-sm">
-                <CardHeader><CardTitle>Remarks</CardTitle></CardHeader>
-                <CardContent className="space-y-3">
-                  <textarea className="min-h-[110px] w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Optional remarks" />
-                  <div className="text-xs text-muted-foreground">Remarks are attached to workflow actions and logs.</div>
-                </CardContent>
-              </Card>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Lines
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {totals.totalLines}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Total qty
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {totals.totalQty}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Estimated value
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        ৳ {currency(totals.totalValue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Print snapshot
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {transfer.printSnapshot ? "Ready" : "Pending"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Signed copy
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {transfer.documents?.signed?.mediaId
+                            ? "Uploaded"
+                            : "Pending"}
+                        </span>
+                        {transfer.documents?.signed?.mediaId &&
+                          getMediaPreviewUrl(
+                            transfer.documents.signed.mediaId,
+                          ) && (
+                            <a
+                              href={getMediaPreviewUrl(
+                                transfer.documents.signed.mediaId,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[#2f8a2f] hover:underline dark:text-[#9bdd91]"
+                            >
+                              <ExternalLink className="h-2.5 w-2.5" />
+                              Preview
+                            </a>
+                          )}
+                      </div>
+                    </div>
+                  </div>
 
-              <Card className="shadow-sm">
-                <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
-                <CardContent className="space-y-3">
-                  {editable && <Button className="w-full" variant="outline" onClick={saveDraft} disabled={submitting}>Save draft</Button>}
+                  {transfer.status === "COMPLETED" && (
+                    <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      This transfer is fully completed.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Remarks
+                  </h2>
+                </div>
+                <div className="space-y-2 p-4">
+                  <textarea
+                    className="min-h-[90px] w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs outline-none transition focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="Optional remarks"
+                  />
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Remarks are attached to workflow actions and logs.
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Actions
+                  </h2>
+                </div>
+                <div className="space-y-2 p-4">
+                  {editable && (
+                    <Button
+                      className="h-9 w-full text-xs"
+                      variant="outline"
+                      onClick={saveDraft}
+                      disabled={submitting}
+                    >
+                      {submitting ? "Saving…" : "Save Draft"}
+                    </Button>
+                  )}
 
                   {canPrint(transfer) && (
                     <GlobalPrintButton
                       contentHtml={buildTransferPrintHtml(transfer)}
-                      headerRightHtml={buildTransferPrintHeaderRight(transfer)}
+                      headerRightHtml={buildTransferPrintHeaderRight(
+                        transfer,
+                      )}
                       label="Print Transfer Sheet"
                       title="Transfer Sheet"
                       orientation="portrait"
-                      company={{ name: "Antab Agro LTD", address: "123 Agro Street, Dhaka", phone: "+880 1711-111111", email: "info@antabagro.com" }}
+                      company={{
+                        name: "Antab Agro LTD",
+                        address: "123 Agro Street, Dhaka",
+                        phone: "+880 1711-111111",
+                        email: "info@antabagro.com",
+                      }}
                       showHeader={false}
                       showFooter={false}
                     />
                   )}
 
-                  {canDispatch(transfer) && (
-                    <Button className="w-full" onClick={dispatchTransfer} disabled={submitting}>
-                      <FileText className="mr-2 h-4 w-4" />Dispatch now
+                  {dispatchAllowed && (
+                    <Button
+                      className="h-9 w-full gap-1.5 bg-[#3aa838] text-xs text-white shadow-sm shadow-[#3aa838]/20 hover:bg-[#2f8a2f]"
+                      onClick={dispatchTransfer}
+                      disabled={submitting}
+                    >
+                      <ArrowRight className="h-3.5 w-3.5" />
+                      Dispatch Now
                     </Button>
                   )}
 
                   {transfer.status === "SENT" && (
-                    <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-900">
-                      The receiver warehouse will receive the transfer and then complete it from their action page.
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                      <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      The receiver warehouse will receive the transfer and then
+                      complete it from their action page.
                     </div>
                   )}
+                </div>
+              </div>
 
-                  {transfer.status === "COMPLETED" && (
-                    <div className="rounded-2xl border bg-emerald-50 p-4 text-sm text-emerald-900">
-                      This transfer is completed.
+              {/* Documents */}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Document Status
+                  </h2>
+                </div>
+                <div className="space-y-2 p-4 text-xs">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Print snapshot
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                    <div className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                      {transfer.printSnapshot ? "Ready" : "Not generated"}
+                    </div>
+                  </div>
 
-              <Card className="shadow-sm">
-                <CardHeader><CardTitle>Document status</CardTitle></CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div className="rounded-2xl border bg-white p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Print snapshot</div><div className="mt-1 font-semibold">{transfer.printSnapshot ? "Ready" : "Not generated"}</div></div>
-                  <div className="rounded-2xl border bg-white p-4"><div className="text-xs uppercase tracking-wide text-muted-foreground">Signed copy</div><div className="mt-1 font-semibold">{transfer.documents?.signed?.mediaId ? "Uploaded" : "Not uploaded"}</div>{transfer.documents?.signed?.mediaId && <a href={getMediaPreviewUrl(transfer.documents.signed.mediaId)} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">Preview uploaded document<ExternalLink className="h-3.5 w-3.5"/></a>}</div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Signed copy
+                    </div>
+                    <div className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                      {transfer.documents?.signed?.mediaId
+                        ? "Uploaded"
+                        : "Not uploaded"}
+                    </div>
+                    {transfer.documents?.signed?.mediaId &&
+                      getMediaPreviewUrl(transfer.documents.signed.mediaId) && (
+                        <a
+                          href={getMediaPreviewUrl(
+                            transfer.documents.signed.mediaId,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#2f8a2f] hover:underline dark:text-[#9bdd91]"
+                        >
+                          Preview uploaded document
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      )}
+                  </div>
+
                   {transfer.documents?.damage?.mediaId && (
-                    <div className="rounded-2xl border bg-white p-4">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Damage document</div>
-                      <div className="mt-1 font-semibold">Uploaded</div>
-                      <a href={getMediaPreviewUrl(transfer.documents.damage.mediaId)} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">Preview damage document<ExternalLink className="h-3.5 w-3.5"/></a>
-                      {transfer.documents.damage.reason && <div className="mt-2 text-xs text-muted-foreground">Reason: {transfer.documents.damage.reason}</div>}
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-900/60 dark:bg-rose-950/40">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-300">
+                        Damage document
+                      </div>
+                      <div className="mt-0.5 font-semibold text-rose-800 dark:text-rose-200">
+                        Uploaded
+                      </div>
+                      {getMediaPreviewUrl(
+                        transfer.documents.damage.mediaId,
+                      ) && (
+                        <a
+                          href={getMediaPreviewUrl(
+                            transfer.documents.damage.mediaId,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-rose-700 hover:underline dark:text-rose-300"
+                        >
+                          Preview damage document
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      )}
+                      {transfer.documents.damage.reason && (
+                        <div className="mt-1 text-[10px] text-rose-700 dark:text-rose-300">
+                          Reason: {transfer.documents.damage.reason}
+                        </div>
+                      )}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
-          </div>
+          </aside>
         </div>
       </div>
     </div>

@@ -655,18 +655,6 @@ const menuItems: MenuItem[] = [
       },
 
       {
-        key: "Sales Ledger",
-        href: "/sales/ledger",
-        icon: <BookOpen size={17} />,
-        permissions: [
-          "salesledger.view",
-          "salesledger.edit",
-          "salesledger.delete",
-          "salesledger.create",
-        ],
-      },
-
-      {
         key: "Dealer",
         icon: <Contact size={17} />,
         permissions: [

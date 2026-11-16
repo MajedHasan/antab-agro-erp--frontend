@@ -39,9 +39,14 @@ import {
   ArrowUpIcon,
   Layers,
   ArrowRight,
+  Building2,
+  Inbox,
 } from "lucide-react";
 
-/* ---------- types ---------- */
+import Protected from "@/components/auth/Protected";
+import usePermissionCheck from "@/hooks/usePermissionCheck";
+
+/* =========================== Types =========================== */
 type Warehouse = {
   _id: string;
   name?: string;
@@ -136,7 +141,7 @@ type ReportRow = {
   grandTotal: number;
 };
 
-/* ---------- helpers ---------- */
+/* =========================== Helpers =========================== */
 function idOf(maybe: any): string {
   if (!maybe) return "";
   if (typeof maybe === "string") return maybe;
@@ -232,7 +237,7 @@ function getPresetDates(preset: string): { start: Date; end: Date } | null {
   return { start, end };
 }
 
-/* ---------- MultiSelect (with portal) ---------- */
+/* =========================== MultiSelect =========================== */
 function MultiSelect({
   items,
   selected,
@@ -253,38 +258,37 @@ function MultiSelect({
   return (
     <div className="relative" ref={containerRef}>
       <div
-        className="flex min-h-[2.5rem] items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors"
+        className="flex min-h-[2.25rem] cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm transition-colors hover:border-[#3aa838]/40 dark:border-slate-800 dark:bg-slate-900"
         onClick={() => setOpen(!open)}
       >
         {selected.length === 0 ? (
-          <span className="px-2 text-sm text-slate-400">Select items…</span>
+          <span className="px-1 text-xs text-slate-400">Select items…</span>
         ) : (
           <div className="flex flex-wrap gap-1">
             {selected.slice(0, 3).map((val) => {
               const item = items.find((i) => i.value === val);
               return (
-                <Badge
+                <span
                   key={val}
-                  variant="secondary"
-                  className="cursor-pointer py-0.5"
+                  className="inline-flex items-center gap-1 rounded-md bg-[#3aa838]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#2f8a2f] dark:bg-[#3aa838]/15 dark:text-[#9bdd91]"
                   onClick={(e) => {
                     e.stopPropagation();
                     onChange(selected.filter((s) => s !== val));
                   }}
                 >
                   {item?.label || val}
-                  <X className="ml-1 h-3 w-3" />
-                </Badge>
+                  <X className="h-2.5 w-2.5" />
+                </span>
               );
             })}
             {selected.length > 3 && (
-              <span className="text-xs text-slate-500">
+              <span className="text-[10px] text-slate-500">
                 +{selected.length - 3} more
               </span>
             )}
           </div>
         )}
-        <ChevronDown className="ml-auto h-4 w-4 text-slate-400" />
+        <ChevronDown className="ml-auto h-3.5 w-3.5 text-slate-400" />
       </div>
 
       {open &&
@@ -295,7 +299,7 @@ function MultiSelect({
             onClick={() => setOpen(false)}
           >
             <div
-              className="absolute mt-1 w-80 max-h-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+              className="absolute mt-1 max-h-64 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
               style={{
                 top:
                   containerRef.current.getBoundingClientRect().bottom +
@@ -312,21 +316,23 @@ function MultiSelect({
                   placeholder="Search items…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 text-sm"
+                  className="h-8 text-xs"
                   autoFocus
                 />
               </div>
               <div className="max-h-48 overflow-y-auto">
                 {filtered.length === 0 ? (
-                  <p className="p-2 text-sm text-slate-500">No items found</p>
+                  <p className="p-2 text-xs text-slate-500">No items found</p>
                 ) : (
                   filtered.map((item) => {
                     const isSelected = selected.includes(item.value);
                     return (
                       <div
                         key={item.value}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 ${
-                          isSelected ? "bg-indigo-50 text-indigo-700" : ""
+                        className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                          isSelected
+                            ? "bg-[#3aa838]/5 font-medium text-[#2f8a2f] dark:bg-[#3aa838]/10 dark:text-[#9bdd91]"
+                            : ""
                         }`}
                         onClick={() => {
                           if (isSelected) {
@@ -337,15 +343,15 @@ function MultiSelect({
                         }}
                       >
                         <div
-                          className={`h-4 w-4 rounded border ${
+                          className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
                             isSelected
-                              ? "border-indigo-500 bg-indigo-500"
-                              : "border-slate-300"
-                          } flex items-center justify-center`}
+                              ? "border-[#3aa838] bg-[#3aa838]"
+                              : "border-slate-300 dark:border-slate-600"
+                          }`}
                         >
                           {isSelected && (
                             <svg
-                              className="h-3 w-3 text-white"
+                              className="h-2.5 w-2.5 text-white"
                               fill="none"
                               viewBox="0 0 24 24"
                               stroke="currentColor"
@@ -365,11 +371,11 @@ function MultiSelect({
                   })
                 )}
               </div>
-              <div className="border-t p-2">
+              <div className="border-t border-slate-200 p-2 dark:border-slate-800">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full"
+                  className="w-full text-xs"
                   onClick={() => setOpen(false)}
                 >
                   Done
@@ -383,8 +389,109 @@ function MultiSelect({
   );
 }
 
-/* ================================================================== */
+/* =========================== StatCard =========================== */
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone = "slate",
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: React.ReactNode;
+  hint: string;
+  tone?: "slate" | "amber" | "green" | "sky";
+}) {
+  const map = {
+    slate: {
+      bg: "bg-slate-100 dark:bg-slate-800",
+      fg: "text-slate-600 dark:text-slate-300",
+    },
+    amber: {
+      bg: "bg-amber-100 dark:bg-amber-950/40",
+      fg: "text-amber-600 dark:text-amber-300",
+    },
+    green: {
+      bg: "bg-[#3aa838]/10 dark:bg-[#3aa838]/15",
+      fg: "text-[#2f8a2f] dark:text-[#9bdd91]",
+    },
+    sky: {
+      bg: "bg-sky-100 dark:bg-sky-950/40",
+      fg: "text-sky-600 dark:text-sky-300",
+    },
+  } as const;
+  const t = map[tone];
+
+  return (
+    <div className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+        <div
+          className={`flex h-7 w-7 items-center justify-center rounded-lg ${t.bg} ${t.fg}`}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+      </div>
+      <div className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+        {value}
+      </div>
+      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+        {hint}
+      </p>
+    </div>
+  );
+}
+
+/* =========================== KindBadge =========================== */
+function KindBadge({ kind }: { kind: ReportKind }) {
+  const map: Record<ReportKind, string> = {
+    RAW:
+      "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/60",
+    PACK:
+      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900/60",
+    FINISHED:
+      "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30 dark:bg-[#3aa838]/15 dark:text-[#9bdd91] dark:border-[#3aa838]/40",
+    OTHER:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
+  };
+  const label =
+    kind === "RAW"
+      ? "Raw Material"
+      : kind === "PACK"
+        ? "Packing"
+        : kind === "FINISHED"
+          ? "Finished Goods"
+          : "Other Product";
+  return (
+    <span
+      className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${map[kind]}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/* =========================== Page (Protected) =========================== */
 export default function InventoryReportPage() {
+  return (
+    <Protected permissions="inventoryreport.view">
+      <InventoryReportPageInner />
+    </Protected>
+  );
+}
+
+/* =========================== Inner =========================== */
+function InventoryReportPageInner() {
+  const hasAccess = usePermissionCheck();
+  const canView = hasAccess({ permissions: "inventoryreport.view" });
+  /* Exports are read-only, gated by same view permission. Kept as a
+     separate variable so a dedicated `.export` permission can be added
+     later without touching the JSX. */
+  const canExport = canView;
+
   /* ---------- base data ---------- */
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [factories, setFactories] = useState<Warehouse[]>([]);
@@ -532,8 +639,11 @@ export default function InventoryReportPage() {
 
   /* ---------- location columns ---------- */
   const locations = useMemo(() => {
-    const cols: { id: string; label: string; kind: "Factory" | "Warehouse" }[] =
-      [];
+    const cols: {
+      id: string;
+      label: string;
+      kind: "Factory" | "Warehouse";
+    }[] = [];
     if (showFactories) {
       for (const f of factories) {
         cols.push({
@@ -752,21 +862,6 @@ export default function InventoryReportPage() {
     return groups.map((g) => ({ label: g.label, rows: g.rows }));
   }, [activeTab, visibleRows]);
 
-  function kindLabel(k: ReportKind) {
-    if (k === "RAW") return "Raw Material";
-    if (k === "PACK") return "Packing";
-    if (k === "FINISHED") return "Finished Goods";
-    return "Other Product";
-  }
-  function kindBadgeVariant(
-    k: ReportKind,
-  ): React.ComponentProps<typeof Badge>["variant"] {
-    if (k === "FINISHED") return "default";
-    if (k === "RAW") return "secondary";
-    if (k === "PACK") return "outline";
-    return "secondary";
-  }
-
   function exportCsv() {
     if (!visibleRows.length) return toast.error("No rows to export");
     const headers = [
@@ -830,13 +925,11 @@ export default function InventoryReportPage() {
         },
       });
       let txs: StockTransaction[] = res.data?.data || [];
-      // client-side end date filter
       if (activeDateRange.end) {
         txs = txs.filter(
           (tx) => new Date(tx.transactionDate) <= activeDateRange.end!,
         );
       }
-      // item filter
       if (selectedItems.length > 0) {
         txs = txs.filter((tx) => selectedItems.includes(idOf(tx.itemId)));
       }
@@ -857,7 +950,6 @@ export default function InventoryReportPage() {
   /* ---------- movement data ---------- */
   const movementData = useMemo(() => {
     if (viewTab !== "movement" || transactions.length === 0) return [];
-    // current stock map across all stocks
     const stockMap = new Map<string, number>();
     const allStocks: any[] = [
       ...rawStocks,
@@ -1063,817 +1155,868 @@ export default function InventoryReportPage() {
     URL.revokeObjectURL(url);
   }
 
-  /* ================================================================== */
+  /* =========================== Render =========================== */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-blue-50 p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-800 flex items-center gap-2">
-            <BarChart3 className="h-8 w-8 text-indigo-600" />
-            Inventory Report
-          </h1>
-          <p className="text-sm text-slate-600">
-            Complete stock matrix, transactions, and movement analysis.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={() => loadRefsAndData()}
-            disabled={loading}
-            className="gap-2 border-slate-200 bg-white/70 backdrop-blur-sm hover:bg-white"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </Button>
-          <Button
-            onClick={exportCsv}
-            disabled={loading || visibleRows.length === 0}
-            className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </Button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-50/60 p-4 dark:bg-slate-950 md:p-6">
+      <div className="mx-auto max-w-[1600px] space-y-5">
+        {/* ============ HERO ============ */}
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:p-6">
+          <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-[#3aa838]/5 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-emerald-500/5 blur-3xl" />
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-indigo-100 p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="p-3 rounded-xl bg-indigo-100">
-            <Box className="h-6 w-6 text-indigo-600" />
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-slate-800">
-              {rows.length}
+          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                  <BarChart3 className="h-2.5 w-2.5" />
+                  Reports
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/5 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#2f8a2f] dark:border-[#3aa838]/30 dark:bg-[#3aa838]/10 dark:text-[#9bdd91]">
+                  <PackageOpen className="h-2.5 w-2.5" />
+                  Inventory
+                </span>
+              </div>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">
+                Inventory Report
+              </h1>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                Complete stock matrix, transactions, and movement analysis
+                across factories and warehouses.
+              </p>
             </div>
-            <div className="text-xs text-slate-500">Total Items</div>
-          </div>
-        </div>
-        <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-emerald-100 p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="p-3 rounded-xl bg-emerald-100">
-            <TrendingUp className="h-6 w-6 text-emerald-600" />
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-slate-800">
-              {totalsByColumn.totalFactory + totalsByColumn.totalWarehouse}
-            </div>
-            <div className="text-xs text-slate-500">Total Stock</div>
-          </div>
-        </div>
-        <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-amber-100 p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="p-3 rounded-xl bg-amber-100">
-            <DollarSign className="h-6 w-6 text-amber-600" />
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-slate-800">-</div>
-            <div className="text-xs text-slate-500">Stock Value</div>
-          </div>
-        </div>
-        <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-purple-100 p-4 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="p-3 rounded-xl bg-purple-100">
-            <FactoryIcon className="h-6 w-6 text-purple-600" />
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-slate-800">
-              {factories.length + warehouses.length}
-            </div>
-            <div className="text-xs text-slate-500">Locations</div>
-          </div>
-        </div>
-      </div>
 
-      {/* Filter Bar (no overflow-hidden on outer) */}
-      <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200 shadow-sm">
-        <div
-          className="flex items-center justify-between p-4 cursor-pointer"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <h2 className="font-semibold text-slate-700 flex items-center gap-2">
-            <Filter className="h-5 w-5 text-indigo-500" />
-            Filters & Date Range
-          </h2>
-          {showFilters ? (
-            <ChevronUp className="h-5 w-5 text-slate-400" />
-          ) : (
-            <ChevronDown className="h-5 w-5 text-slate-400" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => loadRefsAndData()}
+                disabled={loading}
+                className="h-9 gap-1.5"
+              >
+                <RefreshCcw
+                  className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+              {canExport && (
+                <Button
+                  size="sm"
+                  onClick={exportCsv}
+                  disabled={loading || visibleRows.length === 0}
+                  className="h-9 gap-1.5 bg-[#3aa838] text-white shadow-sm shadow-[#3aa838]/20 hover:bg-[#2f8a2f]"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Summary cards */}
+          <div className="relative mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={Box}
+              label="Total Items"
+              value={rows.length}
+              hint="Across all categories"
+              tone="slate"
+            />
+            <StatCard
+              icon={TrendingUp}
+              label="Total Stock"
+              value={
+                totalsByColumn.totalFactory + totalsByColumn.totalWarehouse
+              }
+              hint="Factory + Warehouse"
+              tone="green"
+            />
+            <StatCard
+              icon={DollarSign}
+              label="Stock Value"
+              value="-"
+              hint="Awaiting valuation"
+              tone="amber"
+            />
+            <StatCard
+              icon={Building2}
+              label="Locations"
+              value={factories.length + warehouses.length}
+              hint={`${factories.length} factories · ${warehouses.length} warehouses`}
+              tone="sky"
+            />
+          </div>
+        </div>
+
+        {/* ============ FILTERS ============ */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div
+            className="flex cursor-pointer items-center justify-between p-4"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+              <Filter className="h-3.5 w-3.5 text-[#3aa838]" />
+              Filters & Date Range
+            </h2>
+            {showFilters ? (
+              <ChevronUp className="h-4 w-4 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            )}
+          </div>
+          {showFilters && (
+            <div className="grid grid-cols-1 gap-3 p-4 pt-0 md:grid-cols-4">
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Period
+                </label>
+                <select
+                  value={datePreset}
+                  onChange={(e) => {
+                    setDatePreset(e.target.value);
+                    if (e.target.value !== "custom") {
+                      setCustomStart("");
+                      setCustomEnd("");
+                    }
+                  }}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <option value="this_week">This Week</option>
+                  <option value="last_week">Last Week</option>
+                  <option value="this_month">This Month</option>
+                  <option value="last_month">Last Month</option>
+                  <option value="last_3_months">Last 3 Months</option>
+                  <option value="this_year">This Year</option>
+                  <option value="last_year">Last Year</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              {datePreset === "custom" && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      From
+                    </label>
+                    <Input
+                      type="date"
+                      value={customStart}
+                      onChange={(e) => setCustomStart(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      To
+                    </label>
+                    <Input
+                      type="date"
+                      value={customEnd}
+                      onChange={(e) => setCustomEnd(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </>
+              )}
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Items (optional)
+                </label>
+                <MultiSelect
+                  items={allItemsForFilter}
+                  selected={selectedItems}
+                  onChange={setSelectedItems}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={loadTransactions}
+                  size="sm"
+                  className="h-9 gap-1.5 bg-[#3aa838] text-white shadow-sm shadow-[#3aa838]/20 hover:bg-[#2f8a2f]"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Apply Filters
+                </Button>
+              </div>
+            </div>
           )}
         </div>
-        {showFilters && (
-          <div className="p-4 pt-0 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">
-                Period
-              </label>
-              <select
-                value={datePreset}
-                onChange={(e) => {
-                  setDatePreset(e.target.value);
-                  if (e.target.value !== "custom") {
-                    setCustomStart("");
-                    setCustomEnd("");
-                  }
-                }}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
+
+        {/* ============ MAIN TABS ============ */}
+        <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as ViewTab)}>
+          <div className="mb-4 flex justify-center">
+            <TabsList className="border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+              <TabsTrigger
+                value="overview"
+                className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
               >
-                <option value="this_week">This Week</option>
-                <option value="last_week">Last Week</option>
-                <option value="this_month">This Month</option>
-                <option value="last_month">Last Month</option>
-                <option value="last_3_months">Last 3 Months</option>
-                <option value="this_year">This Year</option>
-                <option value="last_year">Last Year</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            {datePreset === "custom" && (
-              <>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">
-                    From
-                  </label>
-                  <Input
-                    type="date"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    className="bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">
-                    To
-                  </label>
-                  <Input
-                    type="date"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    className="bg-white"
-                  />
-                </div>
-              </>
-            )}
-            <div className="md:col-span-2">
-              <label className="text-xs font-medium text-slate-500 mb-1 block">
-                Items (optional)
-              </label>
-              <MultiSelect
-                items={allItemsForFilter}
-                selected={selectedItems}
-                onChange={setSelectedItems}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button
-                onClick={loadTransactions}
-                className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                <PackageOpen className="h-3.5 w-3.5" />
+                Stock Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="transactions"
+                className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
               >
-                <Calendar className="h-4 w-4" />
-                Apply
-              </Button>
-            </div>
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+                Transactions
+              </TabsTrigger>
+              <TabsTrigger
+                value="movement"
+                className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                Stock Movement
+              </TabsTrigger>
+            </TabsList>
           </div>
-        )}
-      </div>
 
-      {/* View tabs */}
-      <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as ViewTab)}>
-        <div className="flex justify-center mb-4">
-          <TabsList className="bg-white/60 backdrop-blur-sm border border-slate-200 p-1 rounded-xl">
-            <TabsTrigger
-              value="overview"
-              className="data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-700 rounded-lg px-4 py-2 font-medium transition-all"
+          {/* ---------- Stock Overview ---------- */}
+          <TabsContent value="overview" className="mt-0 space-y-4">
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as ReportTab)}
             >
-              <PackageOpen className="mr-2 h-4 w-4" />
-              Stock Overview
-            </TabsTrigger>
-            <TabsTrigger
-              value="transactions"
-              className="data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700 rounded-lg px-4 py-2 font-medium transition-all"
-            >
-              <ArrowRightLeft className="mr-2 h-4 w-4" />
-              Transactions
-            </TabsTrigger>
-            <TabsTrigger
-              value="movement"
-              className="data-[state=active]:bg-amber-100 data-[state=active]:text-amber-700 rounded-lg px-4 py-2 font-medium transition-all"
-            >
-              <TrendingUp className="mr-2 h-4 w-4" />
-              Stock Movement
-            </TabsTrigger>
-          </TabsList>
-        </div>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <TabsList className="w-full border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900 md:w-auto">
+                    <TabsTrigger
+                      value="ALL"
+                      className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
+                    >
+                      <PackageOpen className="h-3.5 w-3.5" /> All
+                      <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
+                        {rows.length}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="RAW"
+                      className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
+                    >
+                      <Package className="h-3.5 w-3.5" /> Raw
+                      <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
+                        {countsByKind.RAW}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="PACK"
+                      className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
+                    >
+                      <Package className="h-3.5 w-3.5" /> Packing
+                      <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
+                        {countsByKind.PACK}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="FINISHED"
+                      className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
+                    >
+                      <PackageOpen className="h-3.5 w-3.5" /> Finished
+                      <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
+                        {countsByKind.FINISHED}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="OTHER"
+                      className="gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#3aa838] data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-[#3aa838] dark:data-[state=active]:text-white"
+                    >
+                      <PackageOpen className="h-3.5 w-3.5" /> Other
+                      <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
+                        {countsByKind.OTHER}
+                      </span>
+                    </TabsTrigger>
+                  </TabsList>
 
-        {/* ---------- Stock Overview ---------- */}
-        <TabsContent value="overview" className="mt-0 space-y-4">
-          <Tabs
-            value={activeTab}
-            onValueChange={(v) => setActiveTab(v as ReportTab)}
-          >
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <TabsList className="bg-white/60 backdrop-blur-sm border border-slate-200 p-1 rounded-xl w-full md:w-auto">
-                  <TabsTrigger
-                    value="ALL"
-                    className="gap-2 rounded-lg data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-700"
-                  >
-                    <PackageOpen className="h-4 w-4" /> All
-                    <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-medium">
-                      {rows.length}
-                    </span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="RAW"
-                    className="gap-2 rounded-lg data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-700"
-                  >
-                    <Package className="h-4 w-4" /> Raw
-                    <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-medium">
-                      {countsByKind.RAW}
-                    </span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="PACK"
-                    className="gap-2 rounded-lg data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-700"
-                  >
-                    <Package className="h-4 w-4" /> Packing
-                    <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-medium">
-                      {countsByKind.PACK}
-                    </span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="FINISHED"
-                    className="gap-2 rounded-lg data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-700"
-                  >
-                    <PackageOpen className="h-4 w-4" /> Finished
-                    <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-medium">
-                      {countsByKind.FINISHED}
-                    </span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="OTHER"
-                    className="gap-2 rounded-lg data-[state=active]:bg-indigo-100 data-[state=active]:text-indigo-700"
-                  >
-                    <PackageOpen className="h-4 w-4" /> Other
-                    <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-medium">
-                      {countsByKind.OTHER}
-                    </span>
-                  </TabsTrigger>
-                </TabsList>
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input
-                      value={q}
-                      placeholder="Search name / SKU…"
-                      onChange={(e) => setQ(e.target.value)}
-                      className="pl-9 w-64 rounded-xl border-slate-200 bg-white"
-                    />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={q}
+                        placeholder="Search name / SKU…"
+                        onChange={(e) => setQ(e.target.value)}
+                        className="h-9 w-56 pl-9 text-sm"
+                      />
+                    </div>
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={onlyNonZero}
+                        onChange={(e) => setOnlyNonZero(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-[#3aa838] focus:ring-[#3aa838]/30"
+                      />
+                      Non-zero
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={showFactories}
+                        onChange={(e) => setShowFactories(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-[#3aa838] focus:ring-[#3aa838]/30"
+                      />
+                      Factories
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={showWarehouses}
+                        onChange={(e) => setShowWarehouses(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-[#3aa838] focus:ring-[#3aa838]/30"
+                      />
+                      Warehouses
+                    </label>
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={onlyNonZero}
-                      onChange={(e) => setOnlyNonZero(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
-                    />
-                    Non-zero only
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={showFactories}
-                      onChange={(e) => setShowFactories(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
-                    />
-                    Factories
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={showWarehouses}
-                      onChange={(e) => setShowWarehouses(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
-                    />
-                    Warehouses
-                  </label>
                 </div>
               </div>
-            </div>
 
-            <TabsContent value={activeTab} className="mt-4">
-              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
-                <div className="max-h-[65vh] overflow-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 z-20 bg-gradient-to-r from-indigo-50/90 to-blue-50/90 backdrop-blur-md">
-                      <TableRow>
-                        <TableHead className="w-10">#</TableHead>
-                        <TableHead className="min-w-64">Item</TableHead>
-                        <TableHead className="min-w-32">Type</TableHead>
-                        <TableHead className="min-w-28">SKU</TableHead>
-                        <TableHead className="min-w-20">Unit</TableHead>
-                        {factoryCols.length > 0 && (
-                          <TableHead
-                            colSpan={factoryCols.length}
-                            className="text-center"
-                          >
-                            <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
-                              <FactoryIcon className="h-4 w-4" /> Factories
-                            </span>
+              <TabsContent value={activeTab} className="mt-4">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  <div className="max-h-[65vh] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-950">
+                        <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                          <TableHead className="w-10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            #
                           </TableHead>
-                        )}
-                        {warehouseCols.length > 0 && (
-                          <TableHead
-                            colSpan={warehouseCols.length}
-                            className="text-center"
-                          >
-                            <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
-                              <WarehouseIcon className="h-4 w-4" /> Warehouses
-                            </span>
+                          <TableHead className="min-w-64 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Item
                           </TableHead>
-                        )}
-                        <TableHead className="min-w-28 text-right">
-                          Factory
-                        </TableHead>
-                        <TableHead className="min-w-28 text-right">
-                          Warehouse
-                        </TableHead>
-                        <TableHead className="min-w-28 text-right">
-                          Total
-                        </TableHead>
-                      </TableRow>
-                      <TableRow>
-                        <TableHead />
-                        <TableHead />
-                        <TableHead />
-                        <TableHead />
-                        <TableHead />
-                        {factoryCols.map((c) => (
-                          <TableHead
-                            key={c.id}
-                            className="min-w-44 text-xs font-medium text-slate-600"
-                          >
-                            {c.label}
+                          <TableHead className="min-w-32 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Type
                           </TableHead>
-                        ))}
-                        {warehouseCols.map((c) => (
-                          <TableHead
-                            key={c.id}
-                            className="min-w-44 text-xs font-medium text-slate-600"
-                          >
-                            {c.label}
+                          <TableHead className="min-w-28 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            SKU
                           </TableHead>
-                        ))}
-                        <TableHead />
-                        <TableHead />
-                        <TableHead />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loading && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={
-                              8 + factoryCols.length + warehouseCols.length
-                            }
-                            className="py-10 text-center text-slate-400"
-                          >
-                            Loading…
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {!loading &&
-                        groupedRows.map((g) => (
-                          <React.Fragment key={g.label || "rows"}>
-                            {g.label && (
-                              <TableRow className="bg-slate-50/80">
-                                <TableCell
-                                  colSpan={
-                                    8 +
-                                    factoryCols.length +
-                                    warehouseCols.length
-                                  }
-                                  className="py-3 font-semibold text-slate-700"
-                                >
-                                  {g.label}
-                                  <span className="ml-2 text-xs font-normal text-slate-500">
-                                    ({g.rows.length})
-                                  </span>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                            {g.rows.map((r, idx) => (
-                              <TableRow
-                                key={r.key}
-                                className="hover:bg-indigo-50/50 transition-colors"
-                              >
-                                <TableCell className="text-sm text-slate-500">
-                                  {idx + 1}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium text-slate-800">
-                                    {r.name}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant={kindBadgeVariant(r.kind)}
-                                    className="font-normal"
-                                  >
-                                    {kindLabel(r.kind)}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm text-slate-600">
-                                  {r.sku}
-                                </TableCell>
-                                <TableCell className="text-sm">
-                                  {r.unit}
-                                </TableCell>
-                                {factoryCols.map((c) => (
-                                  <TableCell
-                                    key={c.id}
-                                    className="text-sm tabular-nums"
-                                  >
-                                    {r.totals[c.id] ?? 0}
-                                  </TableCell>
-                                ))}
-                                {warehouseCols.map((c) => (
-                                  <TableCell
-                                    key={c.id}
-                                    className="text-sm tabular-nums"
-                                  >
-                                    {r.totals[c.id] ?? 0}
-                                  </TableCell>
-                                ))}
-                                <TableCell className="text-right font-medium tabular-nums">
-                                  {r.totalFactory}
-                                </TableCell>
-                                <TableCell className="text-right font-medium tabular-nums">
-                                  {r.totalWarehouse}
-                                </TableCell>
-                                <TableCell className="text-right font-bold tabular-nums text-indigo-600">
-                                  {r.grandTotal}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </React.Fragment>
-                        ))}
-                      {!loading && visibleRows.length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={
-                              8 + factoryCols.length + warehouseCols.length
-                            }
-                            className="py-10 text-center text-slate-400"
-                          >
-                            No rows found
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {!loading && visibleRows.length > 0 && (
-                        <TableRow className="sticky bottom-0 z-20 bg-gradient-to-r from-indigo-50/95 to-blue-50/95 backdrop-blur-md border-t-2 border-slate-200">
-                          <TableCell />
-                          <TableCell className="font-semibold text-slate-800">
-                            Totals
-                          </TableCell>
-                          <TableCell />
-                          <TableCell />
-                          <TableCell />
-                          {factoryCols.map((c) => (
-                            <TableCell
-                              key={c.id}
-                              className="font-semibold tabular-nums"
+                          <TableHead className="min-w-20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Unit
+                          </TableHead>
+                          {factoryCols.length > 0 && (
+                            <TableHead
+                              colSpan={factoryCols.length}
+                              className="border-l border-slate-200 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400"
                             >
-                              {totalsByColumn.colTotals[c.id] ?? 0}
-                            </TableCell>
+                              <span className="inline-flex items-center gap-1">
+                                <FactoryIcon className="h-3 w-3 text-[#3aa838]" />
+                                Factories
+                              </span>
+                            </TableHead>
+                          )}
+                          {warehouseCols.length > 0 && (
+                            <TableHead
+                              colSpan={warehouseCols.length}
+                              className="border-l border-slate-200 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400"
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                <WarehouseIcon className="h-3 w-3 text-[#3aa838]" />
+                                Warehouses
+                              </span>
+                            </TableHead>
+                          )}
+                          <TableHead className="min-w-24 border-l border-slate-200 px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            Factory
+                          </TableHead>
+                          <TableHead className="min-w-24 px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Warehouse
+                          </TableHead>
+                          <TableHead className="min-w-24 px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Total
+                          </TableHead>
+                        </TableRow>
+                        <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                          <TableHead />
+                          <TableHead />
+                          <TableHead />
+                          <TableHead />
+                          <TableHead />
+                          {factoryCols.map((c) => (
+                            <TableHead
+                              key={c.id}
+                              className="min-w-32 px-3 py-2 text-[10px] font-medium text-slate-600 dark:text-slate-400"
+                            >
+                              {c.label}
+                            </TableHead>
                           ))}
                           {warehouseCols.map((c) => (
-                            <TableCell
+                            <TableHead
                               key={c.id}
-                              className="font-semibold tabular-nums"
+                              className="min-w-32 px-3 py-2 text-[10px] font-medium text-slate-600 dark:text-slate-400"
                             >
-                              {totalsByColumn.colTotals[c.id] ?? 0}
-                            </TableCell>
+                              {c.label}
+                            </TableHead>
                           ))}
-                          <TableCell className="text-right font-semibold tabular-nums">
-                            {totalsByColumn.totalFactory}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums">
-                            {totalsByColumn.totalWarehouse}
-                          </TableCell>
-                          <TableCell className="text-right font-bold tabular-nums text-indigo-600">
-                            {totalsByColumn.grandTotal}
-                          </TableCell>
+                          <TableHead />
+                          <TableHead />
+                          <TableHead />
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </TabsContent>
-
-        {/* ---------- Transactions ---------- */}
-        <TabsContent value="transactions" className="mt-0">
-          <div className="space-y-4">
-            {transactions.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-emerald-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-emerald-100">
-                    <ArrowDownIcon className="h-5 w-5 text-emerald-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Total Inward</div>
-                    <div className="text-xl font-bold text-emerald-700">
-                      {txSummary.totalIn}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-rose-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-rose-100">
-                    <ArrowUpIcon className="h-5 w-5 text-rose-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Total Outward</div>
-                    <div className="text-xl font-bold text-rose-700">
-                      {txSummary.totalOut}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-blue-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-blue-100">
-                    <Layers className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Transactions</div>
-                    <div className="text-xl font-bold">{txSummary.count}</div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-purple-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-purple-100">
-                    <Package className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Unique Items</div>
-                    <div className="text-xl font-bold">
-                      {txSummary.uniqueItems}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {Object.keys(txSummary.typeCounts).length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                {Object.entries(txSummary.typeCounts).map(([type, count]) => (
-                  <span
-                    key={type}
-                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700"
-                  >
-                    {type} <span className="font-bold">{count}</span>
-                  </span>
-                ))}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={exportTransactionsCSV}
-                  className="ml-auto gap-1"
-                >
-                  <Download className="h-4 w-4" /> Export CSV
-                </Button>
-              </div>
-            )}
-
-            <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
-              {txLoading ? (
-                <div className="p-10 text-center text-slate-400">
-                  Loading transactions…
-                </div>
-              ) : (
-                <div className="max-h-[60vh] overflow-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-white/90 backdrop-blur-sm">
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Unit Cost</TableHead>
-                        <TableHead className="text-right">Total Cost</TableHead>
-                        <TableHead>Batch</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.map((tx) => {
-                        const itemName =
-                          rawMaterials.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          packagingItems.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          products.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          otherProducts.find((i) => i._id === idOf(tx.itemId))
-                            ?.name ||
-                          idOf(tx.itemId);
-                        const locName =
-                          factories.find((f) => f._id === idOf(tx.locationId))
-                            ?.name ||
-                          warehouses.find((w) => w._id === idOf(tx.locationId))
-                            ?.name ||
-                          idOf(tx.locationId);
-                        return (
-                          <TableRow
-                            key={tx._id}
-                            className="hover:bg-emerald-50/20 transition-colors"
-                          >
-                            <TableCell className="text-sm">
-                              {new Date(
-                                tx.transactionDate,
-                              ).toLocaleDateString()}
+                      </TableHeader>
+                      <TableBody>
+                        {loading && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={
+                                8 + factoryCols.length + warehouseCols.length
+                              }
+                              className="py-10 text-center text-xs text-slate-400"
+                            >
+                              <RefreshCcw className="mx-auto mb-2 h-5 w-5 animate-spin" />
+                              Loading…
                             </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`capitalize ${
-                                  tx.transactionType === "purchase"
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : tx.transactionType === "sale"
-                                      ? "bg-rose-50 text-rose-700 border-rose-200"
-                                      : tx.transactionType === "transfer_in"
-                                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                                        : "bg-slate-50 text-slate-600 border-slate-200"
+                          </TableRow>
+                        )}
+                        {!loading &&
+                          groupedRows.map((g) => (
+                            <React.Fragment key={g.label || "rows"}>
+                              {g.label && g.rows.length > 0 && (
+                                <TableRow className="bg-slate-50/80 dark:bg-slate-950/40">
+                                  <TableCell
+                                    colSpan={
+                                      8 +
+                                      factoryCols.length +
+                                      warehouseCols.length
+                                    }
+                                    className="py-2 font-semibold text-slate-900 dark:text-white"
+                                  >
+                                    <span className="text-xs font-bold uppercase tracking-wider">
+                                      {g.label}
+                                    </span>
+                                    <span className="ml-2 rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                      {g.rows.length}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                              {g.rows.map((r, idx) => (
+                                <TableRow
+                                  key={r.key}
+                                  className="border-b border-slate-100 transition-colors hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-800/30"
+                                >
+                                  <TableCell className="px-3 py-2 text-xs text-slate-400">
+                                    {idx + 1}
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                      {r.name}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2">
+                                    <KindBadge kind={r.kind} />
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2 font-mono text-xs text-slate-600 dark:text-slate-400">
+                                    {r.sku}
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+                                    {r.unit}
+                                  </TableCell>
+                                  {factoryCols.map((c) => (
+                                    <TableCell
+                                      key={c.id}
+                                      className="px-3 py-2 text-xs tabular-nums text-slate-700 dark:text-slate-300"
+                                    >
+                                      {r.totals[c.id] ?? 0}
+                                    </TableCell>
+                                  ))}
+                                  {warehouseCols.map((c) => (
+                                    <TableCell
+                                      key={c.id}
+                                      className="px-3 py-2 text-xs tabular-nums text-slate-700 dark:text-slate-300"
+                                    >
+                                      {r.totals[c.id] ?? 0}
+                                    </TableCell>
+                                  ))}
+                                  <TableCell className="border-l border-slate-200 px-3 py-2 text-right text-xs font-medium tabular-nums text-slate-900 dark:border-slate-800 dark:text-white">
+                                    {r.totalFactory}
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2 text-right text-xs font-medium tabular-nums text-slate-900 dark:text-white">
+                                    {r.totalWarehouse}
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2 text-right text-xs font-bold tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
+                                    {r.grandTotal}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                        {!loading && visibleRows.length === 0 && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={
+                                8 + factoryCols.length + warehouseCols.length
+                              }
+                              className="py-14 text-center"
+                            >
+                              <div className="mx-auto max-w-sm">
+                                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                                  <Inbox className="h-6 w-6 text-slate-400" />
+                                </div>
+                                <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">
+                                  No rows to display
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  Adjust filters or search to see items.
+                                </p>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {!loading && visibleRows.length > 0 && (
+                          <TableRow className="sticky bottom-0 z-20 border-t-2 border-[#3aa838] bg-slate-50 dark:border-[#3aa838] dark:bg-slate-950">
+                            <TableCell />
+                            <TableCell className="text-xs font-bold text-slate-900 dark:text-white">
+                              Totals
+                            </TableCell>
+                            <TableCell />
+                            <TableCell />
+                            <TableCell />
+                            {factoryCols.map((c) => (
+                              <TableCell
+                                key={c.id}
+                                className="text-xs font-bold tabular-nums text-slate-900 dark:text-white"
+                              >
+                                {totalsByColumn.colTotals[c.id] ?? 0}
+                              </TableCell>
+                            ))}
+                            {warehouseCols.map((c) => (
+                              <TableCell
+                                key={c.id}
+                                className="text-xs font-bold tabular-nums text-slate-900 dark:text-white"
+                              >
+                                {totalsByColumn.colTotals[c.id] ?? 0}
+                              </TableCell>
+                            ))}
+                            <TableCell className="border-l border-slate-200 text-right text-xs font-bold tabular-nums text-slate-900 dark:border-slate-800 dark:text-white">
+                              {totalsByColumn.totalFactory}
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-bold tabular-nums text-slate-900 dark:text-white">
+                              {totalsByColumn.totalWarehouse}
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-bold tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
+                              {totalsByColumn.grandTotal}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+
+          {/* ---------- Transactions ---------- */}
+          <TabsContent value="transactions" className="mt-0">
+            <div className="space-y-4">
+              {transactions.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <StatCard
+                    icon={ArrowDownIcon}
+                    label="Total Inward"
+                    value={txSummary.totalIn}
+                    hint="Items received"
+                    tone="green"
+                  />
+                  <StatCard
+                    icon={ArrowUpIcon}
+                    label="Total Outward"
+                    value={txSummary.totalOut}
+                    hint="Items dispatched"
+                    tone="amber"
+                  />
+                  <StatCard
+                    icon={Layers}
+                    label="Transactions"
+                    value={txSummary.count}
+                    hint="In selected period"
+                    tone="slate"
+                  />
+                  <StatCard
+                    icon={Package}
+                    label="Unique Items"
+                    value={txSummary.uniqueItems}
+                    hint="Distinct SKUs"
+                    tone="sky"
+                  />
+                </div>
+              )}
+
+              {Object.keys(txSummary.typeCounts).length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                  {Object.entries(txSummary.typeCounts).map(([type, count]) => (
+                    <span
+                      key={type}
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      {type}
+                      <span className="font-bold">{count}</span>
+                    </span>
+                  ))}
+                  {canExport && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportTransactionsCSV}
+                      className="ml-auto h-8 gap-1.5 text-xs"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                {txLoading ? (
+                  <div className="flex flex-col items-center gap-2 p-10 text-slate-500 dark:text-slate-400">
+                    <RefreshCcw className="h-5 w-5 animate-spin" />
+                    <span className="text-xs">Loading transactions…</span>
+                  </div>
+                ) : (
+                  <div className="max-h-[60vh] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-950">
+                        <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                          {[
+                            "Date",
+                            "Type",
+                            "Item",
+                            "Location",
+                            "Qty",
+                            "Unit Cost",
+                            "Total Cost",
+                            "Batch",
+                          ].map((h, i) => (
+                            <TableHead
+                              key={h}
+                              className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 ${i >= 4 && i <= 6 ? "text-right" : ""}`}
+                            >
+                              {h}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {transactions.map((tx) => {
+                          const itemName =
+                            rawMaterials.find(
+                              (i) => i._id === idOf(tx.itemId),
+                            )?.name ||
+                            packagingItems.find(
+                              (i) => i._id === idOf(tx.itemId),
+                            )?.name ||
+                            products.find((i) => i._id === idOf(tx.itemId))
+                              ?.name ||
+                            otherProducts.find(
+                              (i) => i._id === idOf(tx.itemId),
+                            )?.name ||
+                            idOf(tx.itemId);
+                          const locName =
+                            factories.find(
+                              (f) => f._id === idOf(tx.locationId),
+                            )?.name ||
+                            warehouses.find(
+                              (w) => w._id === idOf(tx.locationId),
+                            )?.name ||
+                            idOf(tx.locationId);
+                          const typeTone =
+                            tx.transactionType === "purchase"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60"
+                              : tx.transactionType === "sale"
+                                ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60"
+                                : tx.transactionType === "transfer_in"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/60"
+                                  : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
+                          return (
+                            <TableRow
+                              key={tx._id}
+                              className="border-b border-slate-100 transition-colors hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-800/30"
+                            >
+                              <TableCell className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+                                {new Date(
+                                  tx.transactionDate,
+                                ).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell className="px-3 py-2">
+                                <span
+                                  className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold capitalize ${typeTone}`}
+                                >
+                                  {tx.transactionType}
+                                </span>
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-xs font-medium text-slate-900 dark:text-white">
+                                {itemName}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+                                {locName}
+                              </TableCell>
+                              <TableCell
+                                className={`px-3 py-2 text-right text-xs font-mono font-semibold ${
+                                  tx.quantity >= 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-rose-600 dark:text-rose-400"
                                 }`}
                               >
-                                {tx.transactionType}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-medium text-slate-800">
-                              {itemName}
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {locName}
-                            </TableCell>
+                                {tx.quantity > 0 ? "+" : ""}
+                                {tx.quantity}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-right text-xs text-slate-600 dark:text-slate-400">
+                                ৳ {tx.unitCost?.toFixed(2)}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-right text-xs font-medium text-slate-900 dark:text-white">
+                                ৳ {tx.totalCost?.toFixed(2)}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                {tx.batch || "-"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {transactions.length === 0 && (
+                          <TableRow>
                             <TableCell
-                              className={`text-right font-mono font-semibold ${
-                                tx.quantity >= 0
-                                  ? "text-emerald-600"
-                                  : "text-rose-600"
-                              }`}
+                              colSpan={8}
+                              className="py-14 text-center"
                             >
-                              {tx.quantity > 0 ? "+" : ""}
-                              {tx.quantity}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              ৳ {tx.unitCost?.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              ৳ {tx.totalCost?.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-500">
-                              {tx.batch || "-"}
+                              <div className="mx-auto max-w-sm">
+                                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                                  <BarChart3 className="h-6 w-6 text-slate-400" />
+                                </div>
+                                <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">
+                                  No transactions for this period
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  Try a different date range or item filter.
+                                </p>
+                              </div>
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                      {transactions.length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={8}
-                            className="py-12 text-center text-slate-400"
-                          >
-                            <BarChart3 className="h-10 w-10 mx-auto mb-2 text-slate-300" />
-                            No transactions found for this period.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ---------- Stock Movement ---------- */}
-        <TabsContent value="movement" className="mt-0">
-          <div className="space-y-4">
-            {movementData.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-amber-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-amber-100">
-                    <Layers className="h-5 w-5 text-amber-600" />
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
-                  <div>
-                    <div className="text-xs text-slate-500">
-                      Items with Movement
-                    </div>
-                    <div className="text-xl font-bold">
-                      {movementSummary.totalItems}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-100 p-4 flex items-center gap-3 shadow-sm">
-                  <div className="p-2 rounded-xl bg-slate-100">
-                    <ArrowRight className="h-5 w-5 text-slate-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">
-                      Net Change (all)
-                    </div>
-                    <div
-                      className={`text-xl font-bold ${
-                        movementSummary.totalNetChange >= 0
-                          ? "text-emerald-600"
-                          : "text-rose-600"
-                      }`}
-                    >
-                      {movementSummary.totalNetChange > 0 ? "+" : ""}
-                      {movementSummary.totalNetChange}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-end justify-self-end gap-1"
-                  onClick={exportMovementCSV}
-                >
-                  <Download className="h-4 w-4" /> Export
-                </Button>
+                )}
               </div>
-            )}
+            </div>
+          </TabsContent>
 
-            <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-sm overflow-hidden">
-              {movementData.length === 0 ? (
-                <div className="p-10 text-center text-slate-400">
-                  <TrendingUp className="h-10 w-10 mx-auto mb-2 text-slate-300" />
-                  Apply a date range to see stock movement.
-                </div>
-              ) : (
-                <div className="max-h-[60vh] overflow-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-white/90 backdrop-blur-sm">
-                      <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="text-right">Opening</TableHead>
-                        <TableHead className="text-right">In</TableHead>
-                        <TableHead className="text-right">Out</TableHead>
-                        <TableHead className="text-right">Net</TableHead>
-                        <TableHead className="text-right">Closing</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {movementData.map((m) => {
-                        const net = m.inward - m.outward;
-                        return (
-                          <TableRow
-                            key={`${m.itemId}_${m.locationId}`}
-                            className="hover:bg-amber-50/30 transition-colors"
-                          >
-                            <TableCell>
-                              <div className="font-medium text-slate-800">
-                                {m.itemName}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {m.sku} · {m.unit}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {m.locationName}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {m.opening}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-emerald-600 font-medium">
-                              +{m.inward}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-rose-600 font-medium">
-                              -{m.outward}
-                            </TableCell>
-                            <TableCell
-                              className={`text-right tabular-nums font-semibold ${
-                                net >= 0 ? "text-emerald-600" : "text-rose-600"
-                              }`}
-                            >
-                              {net > 0 ? "+" : ""}
-                              {net}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums font-bold text-indigo-600">
-                              {m.closing}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+          {/* ---------- Stock Movement ---------- */}
+          <TabsContent value="movement" className="mt-0">
+            <div className="space-y-4">
+              {movementData.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                  <StatCard
+                    icon={Layers}
+                    label="Items with Movement"
+                    value={movementSummary.totalItems}
+                    hint="Active in period"
+                    tone="amber"
+                  />
+                  <StatCard
+                    icon={ArrowRight}
+                    label="Net Change"
+                    value={`${movementSummary.totalNetChange > 0 ? "+" : ""}${movementSummary.totalNetChange}`}
+                    hint="Across all items"
+                    tone="green"
+                  />
+                  {canExport && (
+                    <div className="flex items-end justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportMovementCSV}
+                        className="h-9 gap-1.5"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                {movementData.length === 0 ? (
+                  <div className="p-14 text-center">
+                    <div className="mx-auto max-w-sm">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                        <TrendingUp className="h-6 w-6 text-slate-400" />
+                      </div>
+                      <p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">
+                        No movement data
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Apply a date range to see stock movement.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-[60vh] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-slate-50 dark:bg-slate-950">
+                        <TableRow className="border-b border-slate-200 dark:border-slate-800">
+                          {[
+                            "Item",
+                            "Location",
+                            "Opening",
+                            "In",
+                            "Out",
+                            "Net",
+                            "Closing",
+                          ].map((h, i) => (
+                            <TableHead
+                              key={h}
+                              className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 ${i >= 2 ? "text-right" : ""}`}
+                            >
+                              {h}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {movementData.map((m) => {
+                          const net = m.inward - m.outward;
+                          return (
+                            <TableRow
+                              key={`${m.itemId}_${m.locationId}`}
+                              className="border-b border-slate-100 transition-colors hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-800/30"
+                            >
+                              <TableCell className="px-3 py-2">
+                                <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                  {m.itemName}
+                                </div>
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                  {m.sku} · {m.unit}
+                                </div>
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+                                {m.locationName}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700 dark:text-slate-300">
+                                {m.opening}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-right text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+                                +{m.inward}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-right text-xs font-medium tabular-nums text-rose-600 dark:text-rose-400">
+                                -{m.outward}
+                              </TableCell>
+                              <TableCell
+                                className={`px-3 py-2 text-right text-xs font-semibold tabular-nums ${
+                                  net >= 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-rose-600 dark:text-rose-400"
+                                }`}
+                              >
+                                {net > 0 ? "+" : ""}
+                                {net}
+                              </TableCell>
+                              <TableCell className="px-3 py-2 text-right text-xs font-bold tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
+                                {m.closing}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

@@ -13,13 +13,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -39,7 +32,7 @@ import {
   Play,
   CheckCircle,
   Eye,
-  ChartLine,
+  LineChart,
   Factory as FactoryIcon,
   Filter as FilterIcon,
   CalendarRange,
@@ -48,10 +41,14 @@ import {
   ChevronUp,
   Clock,
   XCircle,
+  Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/* ---------- types ---------- */
+import Protected from "@/components/auth/Protected";
+import usePermissionCheck from "@/hooks/usePermissionCheck";
+
+/* =========================== Types =========================== */
 type RawMaterial = { _id: string; name: string; sku?: string; unit: string };
 type Factory = { _id: string; name: string; code?: string };
 type MaterialWIP = {
@@ -95,7 +92,14 @@ type DatePreset =
   | "this_year"
   | "";
 
-/* ---------- helpers ---------- */
+type SummaryData = {
+  activeCount?: number;
+  pendingCount?: number;
+  approvedCount?: number;
+  totalIssuedQuantity?: number;
+};
+
+/* =========================== Helpers =========================== */
 const nameOf = (maybe: any) => {
   if (!maybe) return "-";
   if (typeof maybe === "string") return maybe;
@@ -154,10 +158,14 @@ function getPresetRange(preset: DatePreset): { from: string; to: string } {
 
 function statusBadge(status: MaterialWIP["status"]) {
   const map: Record<string, string> = {
-    ACTIVE: "bg-slate-100 text-slate-700 border-slate-200",
-    PENDING_APPROVAL: "bg-amber-50 text-amber-700 border-amber-200",
-    APPROVED: "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30",
-    REJECTED: "bg-rose-50 text-rose-700 border-rose-200",
+    ACTIVE:
+      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    PENDING_APPROVAL:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
+    APPROVED:
+      "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30 dark:bg-[#3aa838]/15 dark:text-[#9bdd91] dark:border-[#3aa838]/40",
+    REJECTED:
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60",
   };
   const Icon = {
     ACTIVE: Play,
@@ -178,16 +186,35 @@ function statusBadge(status: MaterialWIP["status"]) {
   );
 }
 
-/* ---------------------------- Page ---------------------------- */
+/* =========================== Page (Protected) =========================== */
 export default function MaterialWipListPage() {
+  return (
+    <Protected
+      permissions={[
+        "materialwip.view",
+        "materialwip.create",
+        "materialwip.edit",
+        "materialwip.delete",
+      ]}
+    >
+      <MaterialWipListPageInner />
+    </Protected>
+  );
+}
+
+/* =========================== Inner =========================== */
+function MaterialWipListPageInner() {
   const router = useRouter();
+  const hasAccess = usePermissionCheck();
+  const canCreate = hasAccess({ permissions: "materialwip.create" });
+  const canEdit = hasAccess({ permissions: "materialwip.edit" });
 
   const [wips, setWips] = useState<MaterialWIP[]>([]);
   const [loading, setLoading] = useState(false);
   const [factories, setFactories] = useState<Factory[]>([]);
-  const [summary, setSummary] = useState<any>(null);
+  const [summary, setSummary] = useState<SummaryData | null>(null);
 
-  // filters
+  /* filters */
   const [search, setSearch] = useState("");
   const [factoryFilter, setFactoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -196,7 +223,7 @@ export default function MaterialWipListPage() {
   const [toDate, setToDate] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // pagination
+  /* pagination */
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(15);
   const [total, setTotal] = useState(0);
@@ -245,7 +272,6 @@ export default function MaterialWipListPage() {
 
   const hasAnyFilter = activeFilterCount > 0 || Boolean(search);
 
-  /* Date actions */
   const applyPreset = (preset: DatePreset) => {
     if (!preset) {
       setFromDate("");
@@ -278,48 +304,63 @@ export default function MaterialWipListPage() {
     setPage(1);
   };
 
+  /* =========================== Render =========================== */
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
-        {/* ============ HERO ============ */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+    <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950">
+      <div className="mx-auto w-full max-w-[1600px] p-3 md:p-6">
+        {/* ============ COMPACT HERO ============ */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
-              <FactoryIcon className="h-4 w-4 text-[#3aa838]" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10 text-[#3aa838]">
+              <FactoryIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-base font-semibold leading-tight">
+              <h1 className="text-base font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
                 Material WIP
               </h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
                 <div className="flex items-center gap-1">
-                  <span className="text-muted-foreground">Visible</span>
-                  <b className="tabular-nums text-slate-900">{wips.length}</b>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Visible
+                  </span>
+                  <b className="tabular-nums text-slate-900 dark:text-white">
+                    {wips.length}
+                  </b>
                 </div>
                 {summary && (
                   <>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-slate-300 dark:text-slate-600">
+                      ·
+                    </span>
                     <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground">Active</span>
-                      <b className="tabular-nums text-slate-900">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Active
+                      </span>
+                      <b className="tabular-nums text-slate-900 dark:text-white">
                         {summary.activeCount || 0}
                       </b>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground">Pending</span>
-                      <b className="tabular-nums text-amber-700">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Pending
+                      </span>
+                      <b className="tabular-nums text-amber-600 dark:text-amber-400">
                         {summary.pendingCount || 0}
                       </b>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground">Approved</span>
-                      <b className="tabular-nums text-[#2f8a2f]">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Approved
+                      </span>
+                      <b className="tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
                         {summary.approvedCount || 0}
                       </b>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground">Issued</span>
-                      <b className="tabular-nums text-slate-900">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Issued
+                      </span>
+                      <b className="tabular-nums text-slate-900 dark:text-white">
                         {Number(summary.totalIssuedQuantity || 0).toLocaleString()}
                       </b>
                     </div>
@@ -334,34 +375,36 @@ export default function MaterialWipListPage() {
               variant="outline"
               size="sm"
               onClick={() => router.push("/inventory/material-wip/report")}
-              className="h-9"
+              className="h-9 gap-1.5"
             >
-              <ChartLine className="mr-1.5 h-3.5 w-3.5" />
+              <LineChart className="h-3.5 w-3.5" />
               Report
             </Button>
-            <Button
-              size="sm"
-              onClick={() => router.push("/inventory/material-wip/create")}
-              className="h-9 bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
-            >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              New WIP
-            </Button>
+            {canCreate && (
+              <Button
+                size="sm"
+                onClick={() => router.push("/inventory/material-wip/create")}
+                className="h-9 gap-1.5 bg-[#3aa838] text-white shadow-sm shadow-[#3aa838]/20 hover:bg-[#2f8a2f]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New WIP
+              </Button>
+            )}
           </div>
         </div>
 
         {/* ============ FILTER BAR ============ */}
-        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-wrap items-center gap-2 px-3 py-2">
             <div className="relative w-full max-w-[240px]">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <Input
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
-                placeholder="Search material / ID..."
+                placeholder="Search material / ID…"
                 className="h-9 pl-8 text-sm"
               />
             </div>
@@ -372,7 +415,7 @@ export default function MaterialWipListPage() {
                 setFactoryFilter(e.target.value);
                 setPage(1);
               }}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="all">All factories</option>
               {factories.map((f) => (
@@ -388,7 +431,7 @@ export default function MaterialWipListPage() {
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="all">All status</option>
               <option value="ACTIVE">Active</option>
@@ -400,7 +443,7 @@ export default function MaterialWipListPage() {
             <select
               value={datePreset}
               onChange={(e) => applyPreset(e.target.value as DatePreset)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="">
                 {fromDate || toDate ? "Custom range" : "All dates"}
@@ -417,22 +460,22 @@ export default function MaterialWipListPage() {
               size="sm"
               onClick={() => setFiltersOpen((v) => !v)}
               className={cn(
-                "h-9",
+                "h-9 gap-1.5",
                 activeFilterCount > 0 &&
-                  "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]",
+                  "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f] dark:border-[#3aa838]/40 dark:bg-[#3aa838]/10 dark:text-[#9bdd91]",
               )}
             >
-              <FilterIcon className="mr-1.5 h-3.5 w-3.5" />
+              <FilterIcon className="h-3.5 w-3.5" />
               Filters
               {activeFilterCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
+                <span className="ml-0.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
                   {activeFilterCount}
                 </span>
               )}
               {filtersOpen ? (
-                <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
+                <ChevronUp className="h-3.5 w-3.5" />
               ) : (
-                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                <ChevronDown className="h-3.5 w-3.5" />
               )}
             </Button>
 
@@ -441,15 +484,15 @@ export default function MaterialWipListPage() {
                 variant="ghost"
                 size="sm"
                 onClick={clearAll}
-                className="h-9 text-slate-500"
+                className="h-9 gap-1 text-slate-500"
               >
-                <X className="mr-1 h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
                 Clear
               </Button>
             )}
 
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-xs text-muted-foreground tabular-nums">
+              <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                 {total} records
               </span>
               <Button
@@ -457,7 +500,7 @@ export default function MaterialWipListPage() {
                 size="sm"
                 onClick={() => fetchWips()}
                 disabled={loading}
-                className="h-9"
+                className="h-9 w-9 p-0"
                 title="Refresh"
               >
                 <RefreshCw
@@ -468,27 +511,29 @@ export default function MaterialWipListPage() {
           </div>
 
           {filtersOpen && (
-            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-3">
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/40 md:grid-cols-3">
               <div className="space-y-1">
-                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                  <CalendarRange className="h-3 w-3" /> From date
+                <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  <CalendarRange className="h-3 w-3 text-[#3aa838]" />
+                  From date
                 </label>
                 <Input
                   type="date"
                   value={fromDate}
                   onChange={(e) => onDateChange("from", e.target.value)}
-                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]/30"
                 />
               </div>
               <div className="space-y-1">
-                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                  <CalendarRange className="h-3 w-3" /> To date
+                <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  <CalendarRange className="h-3 w-3 text-[#3aa838]" />
+                  To date
                 </label>
                 <Input
                   type="date"
                   value={toDate}
                   onChange={(e) => onDateChange("to", e.target.value)}
-                  className="h-9 text-xs focus-visible:ring-[#3aa838]"
+                  className="h-9 text-xs focus-visible:ring-[#3aa838]/30"
                 />
               </div>
               <div className="flex items-end">
@@ -501,9 +546,9 @@ export default function MaterialWipListPage() {
                     setDatePreset("");
                     setPage(1);
                   }}
-                  className="h-9 w-full text-xs"
+                  className="h-9 w-full gap-1 text-xs"
                 >
-                  <X className="mr-1 h-3 w-3" />
+                  <X className="h-3 w-3" />
                   Clear dates
                 </Button>
               </div>
@@ -512,12 +557,12 @@ export default function MaterialWipListPage() {
         </div>
 
         {/* ============ TABLE ============ */}
-        <Card className="overflow-hidden border-slate-200 shadow-sm">
+        <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50 hover:bg-slate-50">
+                  <TableRow className="border-b border-slate-200 bg-slate-50/80 hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/50">
                     {[
                       "Date",
                       "Raw Material",
@@ -532,7 +577,7 @@ export default function MaterialWipListPage() {
                       <TableHead
                         key={h}
                         className={cn(
-                          "border-b border-slate-200 px-3 py-2.5 text-[10px] font-medium uppercase tracking-wide text-slate-600",
+                          "px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400",
                           ["Issued", "Consumed", "Remaining", "Gain/Loss"].includes(
                             h,
                           ) && "text-right",
@@ -541,7 +586,7 @@ export default function MaterialWipListPage() {
                         {h}
                       </TableHead>
                     ))}
-                    <TableHead className="border-b border-slate-200 px-3 py-2.5 text-right text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                    <TableHead className="px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Actions
                     </TableHead>
                   </TableRow>
@@ -550,23 +595,23 @@ export default function MaterialWipListPage() {
                   {loading ? (
                     <TableRow>
                       <TableCell colSpan={10} className="py-12 text-center">
-                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                        <div className="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                           <RefreshCw className="h-4 w-4 animate-spin" />
-                          Loading WIP records...
+                          Loading WIP records…
                         </div>
                       </TableCell>
                     </TableRow>
                   ) : wips.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={10} className="py-16 text-center">
-                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
-                          <div className="rounded-full bg-slate-100 p-3">
-                            <FactoryIcon className="h-6 w-6" />
+                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
+                          <div className="rounded-2xl bg-slate-100 p-3 dark:bg-slate-800">
+                            <Inbox className="h-6 w-6 text-slate-400" />
                           </div>
-                          <div className="text-sm font-medium text-slate-700">
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
                             No WIP records found
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
                             {hasAnyFilter
                               ? "Try widening the filters or date range."
                               : "Start a new WIP to get going."}
@@ -576,22 +621,23 @@ export default function MaterialWipListPage() {
                               size="sm"
                               variant="outline"
                               onClick={clearAll}
+                              className="h-8 gap-1.5 text-xs"
                             >
-                              <X className="mr-1.5 h-3.5 w-3.5" />
+                              <X className="h-3 w-3" />
                               Clear filters
                             </Button>
-                          ) : (
+                          ) : canCreate ? (
                             <Button
                               size="sm"
                               onClick={() =>
                                 router.push("/inventory/material-wip/create")
                               }
-                              className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                              className="h-8 gap-1.5 bg-[#3aa838] text-xs text-white hover:bg-[#2f8a2f]"
                             >
-                              <Plus className="mr-1.5 h-3.5 w-3.5" />
+                              <Plus className="h-3 w-3" />
                               Start New WIP
                             </Button>
-                          )}
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -603,27 +649,27 @@ export default function MaterialWipListPage() {
                       return (
                         <TableRow
                           key={wip._id}
-                          className="border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70"
+                          className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/30"
                         >
-                          <TableCell className="whitespace-nowrap px-3 py-2 text-xs text-slate-600 tabular-nums">
+                          <TableCell className="whitespace-nowrap px-3 py-2 text-xs text-slate-600 tabular-nums dark:text-slate-400">
                             {fmtDate(wip.date || wip.createdAt)}
                           </TableCell>
-                          <TableCell className="px-3 py-2 text-sm font-medium text-slate-900">
+                          <TableCell className="px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white">
                             {nameOf(wip.rawMaterialId)}
                           </TableCell>
-                          <TableCell className="px-3 py-2 text-xs text-slate-600">
+                          <TableCell className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
                             {nameOf(wip.factoryId)}
                           </TableCell>
-                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700 dark:text-slate-300">
                             {Number(wip.issuedQuantity || 0).toFixed(2)}
                           </TableCell>
-                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700 dark:text-slate-300">
                             {Number(wip.consumedQuantity || 0).toFixed(2)}
                           </TableCell>
-                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700">
+                          <TableCell className="px-3 py-2 text-right text-xs tabular-nums text-slate-700 dark:text-slate-300">
                             {Number(wip.remainingQuantity || 0).toFixed(2)}
                           </TableCell>
-                          <TableCell className="px-3 py-2 text-xs text-slate-600">
+                          <TableCell className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
                             {wip.unit}
                           </TableCell>
                           <TableCell className="px-3 py-2 text-right text-xs tabular-nums">
@@ -631,10 +677,10 @@ export default function MaterialWipListPage() {
                               className={cn(
                                 "font-semibold",
                                 netGainLoss > 0
-                                  ? "text-[#2f8a2f]"
+                                  ? "text-[#2f8a2f] dark:text-[#9bdd91]"
                                   : netGainLoss < 0
-                                    ? "text-rose-600"
-                                    : "text-slate-500",
+                                    ? "text-rose-600 dark:text-rose-400"
+                                    : "text-slate-500 dark:text-slate-400",
                               )}
                             >
                               {netGainLoss > 0 ? "+" : ""}
@@ -645,21 +691,20 @@ export default function MaterialWipListPage() {
                             {statusBadge(wip.status)}
                           </TableCell>
                           <TableCell className="px-3 py-2">
-                            <div className="flex items-center justify-end gap-0.5">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
                                 onClick={() =>
                                   router.push(
                                     `/inventory/material-wip/${wip._id}`,
                                   )
                                 }
                                 title="View"
+                                className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
                               >
                                 <Eye className="h-3.5 w-3.5" />
-                              </Button>
-                              {wip.status === "ACTIVE" && (
+                              </button>
+                              {canEdit && wip.status === "ACTIVE" && (
                                 <Button
                                   size="sm"
                                   onClick={() =>
@@ -667,13 +712,13 @@ export default function MaterialWipListPage() {
                                       `/inventory/material-wip/${wip._id}/produce`,
                                     )
                                   }
-                                  className="h-7 bg-[#3aa838] px-2 text-[11px] text-white hover:bg-[#2f8a2f]"
+                                  className="h-7 gap-1 bg-[#3aa838] px-2 text-[11px] text-white hover:bg-[#2f8a2f]"
                                 >
-                                  <Play className="mr-1 h-3 w-3" />
+                                  <Play className="h-3 w-3" />
                                   Produce
                                 </Button>
                               )}
-                              {wip.status === "PENDING_APPROVAL" && (
+                              {canEdit && wip.status === "PENDING_APPROVAL" && (
                                 <Button
                                   size="sm"
                                   onClick={() =>
@@ -681,9 +726,9 @@ export default function MaterialWipListPage() {
                                       `/inventory/material-wip/${wip._id}/produce`,
                                     )
                                   }
-                                  className="h-7 bg-amber-600 px-2 text-[11px] text-white hover:bg-amber-700"
+                                  className="h-7 gap-1 bg-amber-600 px-2 text-[11px] text-white hover:bg-amber-700"
                                 >
-                                  <CheckCircle className="mr-1 h-3 w-3" />
+                                  <CheckCircle className="h-3 w-3" />
                                   Approve
                                 </Button>
                               )}
@@ -699,17 +744,20 @@ export default function MaterialWipListPage() {
 
             {/* Pagination */}
             {total > 0 && (
-              <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
-                <div className="text-xs text-muted-foreground">
+              <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/40 md:flex-row md:items-center md:justify-between">
+                <div className="text-xs text-slate-500 dark:text-slate-400">
                   Showing{" "}
-                  <strong className="text-slate-900 tabular-nums">
+                  <strong className="text-slate-900 tabular-nums dark:text-white">
                     {(page - 1) * limit + 1}
                   </strong>
                   –
-                  <strong className="text-slate-900 tabular-nums">
+                  <strong className="text-slate-900 tabular-nums dark:text-white">
                     {Math.min(page * limit, total)}
                   </strong>{" "}
-                  of <strong className="text-slate-900">{total}</strong>
+                  of{" "}
+                  <strong className="text-slate-900 dark:text-white">
+                    {total}
+                  </strong>
                 </div>
                 <div className="flex items-center gap-2">
                   <select
@@ -718,7 +766,7 @@ export default function MaterialWipListPage() {
                       setLimit(Number(e.target.value));
                       setPage(1);
                     }}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+                    className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
                   >
                     {[10, 15, 25, 50].map((n) => (
                       <option key={n} value={n}>
@@ -729,20 +777,23 @@ export default function MaterialWipListPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8"
+                    className="h-8 w-8 p-0"
                     disabled={page <= 1}
                     onClick={() => setPage((p) => p - 1)}
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </Button>
-                  <span className="min-w-16 text-center text-xs text-muted-foreground">
-                    Page <strong className="text-slate-900">{page}</strong> /{" "}
-                    {totalPages}
+                  <span className="min-w-16 text-center text-xs text-slate-500 dark:text-slate-400">
+                    Page{" "}
+                    <strong className="text-slate-900 dark:text-white">
+                      {page}
+                    </strong>{" "}
+                    / {totalPages}
                   </span>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8"
+                    className="h-8 w-8 p-0"
                     disabled={page >= totalPages}
                     onClick={() => setPage((p) => p + 1)}
                   >

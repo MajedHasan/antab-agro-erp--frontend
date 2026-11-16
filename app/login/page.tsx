@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/store/store";
 import { loginUser, clearError } from "@/store/slices/userSlice";
@@ -11,6 +11,10 @@ import { toast } from "sonner";
 export default function LoginPage() {
   const router = useRouter();
   const dispatch = useDispatch<AppDispatch>();
+  const params = useSearchParams();
+  const from = params.get("from");
+  const target = from ? decodeURIComponent(from) : "/";
+  
 
   const { loading, error, success, isAuthenticated } = useSelector(
     (state: RootState) => state.user
@@ -24,7 +28,8 @@ export default function LoginPage() {
   }, [error, success]);
 
   useEffect(() => {
-    if (isAuthenticated) router.push("/"); // ✅ Redirect after login
+    // if (isAuthenticated) router.push("/"); // ✅ Redirect after login
+    if (isAuthenticated) router.replace(target); // ✅ Redirect after login
   }, [isAuthenticated, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

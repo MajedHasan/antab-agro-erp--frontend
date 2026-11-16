@@ -1,90 +1,189 @@
-import { User } from "@/store/slices/userSlice";
+/**
+ * Frontend RBAC — mirrors backend `authorize()` semantics.
+ *
+ * Permissions may arrive from the API as either:
+ *   - ["users.view", "roles.view"]                              (strings)
+ *   - [{ _id, name: "users.view", description }, ...]           (populated)
+ *
+ * Role may arrive as:
+ *   - "NSM"                                                     (string)
+ *   - { _id, name: "NSM", isSystem: false, permissions: [...] } (populated)
+ *   - undefined                                                 (not loaded)
+ *
+ * A user with `role.isSystem === true` (Super Admin) is granted EVERYTHING,
+ * matching the backend `getEffectivePermissions` -> ["*"] shortcut.
+ */
 
-export function getUserPermissions(user: User | null): string[] {
-  if (!user) return [];
-  // role may be a string name OR object with permissions
-  const role = (user as any).role;
-  if (!role) return [];
-  if (typeof role === "string") {
-    // We don't have per-role permissions on client; but if role string is Super Admin treat as all-permission
-    if (role.toLowerCase().includes("super")) {
-      return ["*"]; // wildcard
-    }
-    return []; // no detailed permissions known
-  }
-  // role is populated object
-  return Array.isArray(role.permissions) ? role.permissions : [];
-}
+export type RawPermission = string | { name?: string };
 
-export function hasPermission(user: User | null, required?: string | string[]) {
-  if (!required) return true; // nothing required
-  const requiredList = Array.isArray(required) ? required : [required];
+export type RoleShape = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  code?: string;
+  isSystem?: boolean;
+  permissions?: RawPermission[];
+};
 
-  // if user is super admin (role.name) grant all
-  const role = (user as any)?.role;
-  if (role) {
-    if (typeof role === "string" && role.toLowerCase().includes("super"))
-      return true;
-    if (role.name && role.name.toLowerCase().includes("super")) return true;
-    if (role.isSystem === true) return true;
-  }
+export type RbacUser = {
+  id?: string;
+  _id?: string;
+  email?: string;
+  name?: string;
+  role?: string | RoleShape;
+} | null;
 
-  const userPerms = getUserPermissions(user);
-  if (userPerms.includes("*")) return true;
+/* -------------------------------------------------------------
+ * Internal helpers
+ * ----------------------------------------------------------- */
 
-  return requiredList.every((r) => userPerms.includes(r));
-}
-
-export function hasAnyPermission(
-  user: User | null,
-  required?: string | string[]
-) {
-  if (!required) return true;
-  const requiredList = Array.isArray(required) ? required : [required];
-
-  const role = (user as any)?.role;
+function isSuperAdmin(role: string | RoleShape | undefined): boolean {
   if (!role) return false;
 
-  // super admin override
-  if (
-    (typeof role === "string" && role.toLowerCase().includes("super")) ||
-    (role.name && role.name.toLowerCase().includes("super")) ||
-    role.isSystem === true
-  ) {
+  if (typeof role === "string") {
+    return role.toLowerCase().includes("super");
+  }
+
+  if (role.isSystem === true) return true;
+  if (typeof role.name === "string" && role.name.toLowerCase().includes("super")) {
     return true;
   }
-
-  const userPerms = getUserPermissions(user);
-  if (userPerms.includes("*")) return true;
-
-  return requiredList.some((r) => userPerms.includes(r));
+  return false;
 }
 
-export function hasRole(user: User | null, roles?: string | string[]) {
-  if (!roles) return true;
+function normalizePermissions(role: string | RoleShape | undefined): string[] {
+  if (!role || typeof role === "string") return [];
+
+  const raw = role.permissions;
+  if (!Array.isArray(raw)) return [];
+
+  const out: string[] = [];
+  for (const p of raw) {
+    if (typeof p === "string" && p.length > 0) out.push(p);
+    else if (p && typeof p === "object" && typeof p.name === "string" && p.name) {
+      out.push(p.name);
+    }
+  }
+  return out;
+}
+
+function matches(granted: string, required: string): boolean {
+  if (granted === "*") return true;
+  if (granted === required) return true;
+
+  // "sales.*" grants "sales.view", "sales.create", ...
+  if (granted.endsWith(".*")) {
+    const prefix = granted.slice(0, -1); // keeps trailing dot
+    return required.startsWith(prefix);
+  }
+  return false;
+}
+
+function toArray(v?: string | string[]): string[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+/* -------------------------------------------------------------
+ * Public API
+ * ----------------------------------------------------------- */
+
+/**
+ * Effective permissions of the user.
+ * Returns `["*"]` for Super Admin so `.includes("*")` behaves consistently.
+ */
+export function getUserPermissions(user: RbacUser): string[] {
+  if (!user) return [];
+  const role = user.role;
+  if (isSuperAdmin(role)) return ["*"];
+  return normalizePermissions(role);
+}
+
+/**
+ * All requested permissions must be granted. Wildcards honored.
+ */
+export function hasPermission(user: RbacUser, required?: string | string[]): boolean {
+  const list = toArray(required);
+  if (list.length === 0) return true;
+
   if (!user) return false;
-  const want = Array.isArray(roles) ? roles : [roles];
-  const role = (user as any)?.role;
-  const roleName = typeof role === "string" ? role : role?.name;
-  if (!roleName) return false;
-  return want.some((r) => roleName.toLowerCase() === r.toLowerCase());
+  if (isSuperAdmin(user.role)) return true;
+
+  const granted = getUserPermissions(user);
+  if (granted.includes("*")) return true;
+
+  return list.every((r) => granted.some((g) => matches(g, r)));
 }
 
-export function canAccess(
-  user: User | null,
-  opts: {
-    roles?: string[];
-    permissions?: string | string[];
-    match?: "any" | "all"; // <— NEW
-  }
-) {
-  if (opts.roles && !hasRole(user, opts.roles)) return false;
-  if (opts.permissions) {
-    const mode = opts.match || "any";
+/**
+ * Any one requested permission is enough. Wildcards honored.
+ */
+export function hasAnyPermission(user: RbacUser, required?: string | string[]): boolean {
+  const list = toArray(required);
+  if (list.length === 0) return true;
 
-    if (mode === "any" && !hasAnyPermission(user, opts.permissions))
-      return false;
-    if (mode === "all" && !hasPermission(user, opts.permissions)) return false;
+  if (!user) return false;
+  if (isSuperAdmin(user.role)) return true;
+
+  const granted = getUserPermissions(user);
+  if (granted.includes("*")) return true;
+
+  return list.some((r) => granted.some((g) => matches(g, r)));
+}
+
+function roleNameOf(user: RbacUser): string {
+  if (!user) return "";
+  const role = user.role;
+  if (!role) return "";
+  if (typeof role === "string") return role;
+  return role.name || role.code || "";
+}
+
+export function hasRole(user: RbacUser, roles?: string | string[]): boolean {
+  const list = toArray(roles);
+  if (list.length === 0) return true;
+  const name = roleNameOf(user);
+  if (!name) return false;
+  return list.some((r) => r.toLowerCase() === name.toLowerCase());
+}
+
+export function hasAllRoles(user: RbacUser, roles?: string | string[]): boolean {
+  const list = toArray(roles);
+  if (list.length === 0) return true;
+  const name = roleNameOf(user);
+  if (!name) return false;
+  return list.every((r) => r.toLowerCase() === name.toLowerCase());
+}
+
+/**
+ * Combined role + permission gate.
+ *
+ * - `match: "any"` (default): role-any AND permission-any
+ * - `match: "all"`:           role-all AND permission-all
+ */
+export function canAccess(
+  user: RbacUser,
+  opts: {
+    roles?: string | string[];
+    permissions?: string | string[];
+    match?: "any" | "all";
+  } = {},
+): boolean {
+  const mode = opts.match ?? "any";
+
+  if (opts.roles && opts.roles.length) {
+    const ok =
+      mode === "all" ? hasAllRoles(user, opts.roles) : hasRole(user, opts.roles);
+    if (!ok) return false;
   }
+
+  if (opts.permissions && opts.permissions.length) {
+    const ok =
+      mode === "all"
+        ? hasPermission(user, opts.permissions)
+        : hasAnyPermission(user, opts.permissions);
+    if (!ok) return false;
+  }
+
   return true;
 }

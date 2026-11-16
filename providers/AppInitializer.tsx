@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useRouter, usePathname } from "next/navigation";
+
 import { fetchCurrentUser, bypassLogin } from "@/store/slices/userSlice";
 import { RootState, AppDispatch } from "@/store/store";
 
 const BYPASS_AUTH = process.env.NEXT_PUBLIC_BYPASS_AUTH === "true";
+
+const PUBLIC_PATHS = new Set(["/login", "/unauthorized", "/not-found"]);
 
 export default function AppInitializer() {
   const dispatch = useDispatch<AppDispatch>();
@@ -14,22 +17,14 @@ export default function AppInitializer() {
   const pathname = usePathname();
 
   const { isAuthenticated, loading, accessToken } = useSelector(
-    (state: RootState) => state.user
+    (state: RootState) => state.user,
   );
 
-  const [initLoading, setInitLoading] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
-  // Wait until client renders & localStorage is available
   useEffect(() => {
     setHydrated(true);
   }, []);
-
-  useEffect(() => {
-    if (hydrated) {
-      setInitLoading(false);
-    }
-  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -39,36 +34,39 @@ export default function AppInitializer() {
       return;
     }
 
-    // only fetch if token exists
     if (accessToken) {
       dispatch(fetchCurrentUser());
     }
-  }, [hydrated]);
+  }, [hydrated, accessToken, dispatch]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || BYPASS_AUTH) return;
+    if (loading) return;
 
-    if (!BYPASS_AUTH && !loading) {
-      // user not logged in and not on login page → redirect
-      if (!loading && !isAuthenticated && pathname !== "/login") {
-        // ALSO ensure we have no tokens left
-        const hasToken =
-          localStorage.getItem("accessToken") ||
-          localStorage.getItem("refreshToken");
+    if (!isAuthenticated && !PUBLIC_PATHS.has(pathname)) {
+      const hasToken =
+        localStorage.getItem("accessToken") ||
+        localStorage.getItem("refreshToken");
 
-        if (!hasToken) {
-          router.replace("/login");
-        }
+      if (!hasToken) {
+        const qs =
+          typeof window !== "undefined"
+            ? window.location.search.replace(/^\?/, "")
+            : "";
+        const from = pathname + (qs ? `?${qs}` : "");
+        router.replace(`/login?from=${encodeURIComponent(from)}`);
       }
-
-      // user logged in but at login page → send to dashboard
-      else if (isAuthenticated && pathname === "/login") {
-        router.replace("/");
-      }
+    } else if (isAuthenticated && pathname === "/login") {
+      // After login, send back to intended destination if present
+      const qs =
+        typeof window !== "undefined"
+          ? window.location.search.replace(/^\?/, "")
+          : "";
+      const params = new URLSearchParams(qs);
+      const from = params.get("from");
+      router.replace(from ? decodeURIComponent(from) : "/");
     }
-  }, [hydrated, loading, isAuthenticated, pathname]);
-
-  if (initLoading) return null;
+  }, [hydrated, loading, isAuthenticated, pathname, router]);
 
   return null;
 }

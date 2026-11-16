@@ -1,6 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -33,11 +38,24 @@ import {
   CircleDashed,
   CheckCircle2,
   AlertTriangle,
+  FileSearch,
+  Inbox,
+  Building2,
+  Banknote,
 } from "lucide-react";
 import { toast } from "sonner";
+
 import WorkOrderViewDialog from "./_components/WorkOrderViewDialog";
 import WorkOrderAddEditDialog from "./_components/WorkOrderAddEditDialog";
+import Protected from "@/components/auth/Protected";
+import usePermissionCheck from "@/hooks/usePermissionCheck";
+import type {
+  ItemForm,
+  WorkOrderItemType,
+  WorkOrderView,
+} from "./_components/workOrderShared";
 
+/* =========================== Local types =========================== */
 type Supplier = { _id: string; supplierName?: string; name?: string };
 type Warehouse = { _id: string; name?: string };
 type LookupItem = {
@@ -49,12 +67,6 @@ type LookupItem = {
   purchasePrice?: number;
 };
 
-type WorkOrderItemType =
-  | "RawMaterial"
-  | "PackagingItem"
-  | "Product"
-  | "OtherProduct";
-
 type WorkOrderStatus =
   | "Pending"
   | "Processing"
@@ -64,51 +76,7 @@ type WorkOrderStatus =
   | "Cancelled"
   | string;
 
-type ItemForm = {
-  itemType?: WorkOrderItemType;
-  itemId?: string | LookupItem;
-  name?: string;
-  description?: string;
-  quantity?: number;
-  unit?: string;
-  unitPrice?: number;
-  lineTotal?: number;
-  remarks?: string;
-  _id?: string;
-};
-
-type WorkOrderForm = {
-  _id?: string;
-  workOrderNo?: string;
-  subject?: string;
-  reference?: string;
-  attention?: string;
-  salutation?: string;
-  supplier?: string | Supplier;
-  warehouseOrFactory?: string | Warehouse;
-  issueDate?: string;
-  expectedDeliveryDate?: string;
-  items?: ItemForm[];
-  status?: WorkOrderStatus;
-  notes?: string;
-  terms?: string;
-  selectedTemplateId?: string | null;
-  discountPercent?: number;
-  taxPercent?: number;
-  subTotal?: number;
-  discountAmount?: number;
-  taxTotal?: number;
-  grandTotal?: number;
-  footerNote?: string;
-  createdBy?: string;
-  updatedBy?: string;
-  approvedBy?: string;
-  cancelReason?: string;
-  cancelledBy?: string;
-  cancelledAt?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
+type WorkOrderForm = WorkOrderView;
 
 type TermsTemplate = { _id?: string; title: string; content: string };
 
@@ -120,6 +88,7 @@ type WorkOrderListResponse = {
   limit?: number;
 };
 
+/* =========================== Constants =========================== */
 const NONE = "none";
 const PAGE_SIZES = [10, 15, 25, 50];
 const STATUS_OPTIONS: WorkOrderStatus[] = [
@@ -142,7 +111,7 @@ type WorkflowAction = (typeof ACTION_ORDER)[number];
 
 const STATUS_META: Record<
   string,
-  { label: string; icon: any; pill: string; dot: string }
+  { label: string; icon: React.ElementType; pill: string; dot: string }
 > = {
   Pending: {
     label: "Pending",
@@ -182,6 +151,7 @@ const STATUS_META: Record<
   },
 };
 
+/* =========================== Helpers =========================== */
 function getId(v?: any) {
   return !v ? "" : typeof v === "string" ? v : (v._id ?? "");
 }
@@ -198,6 +168,7 @@ function formatCurrency(n?: number | null) {
 
 function formatDate(v?: string | Date | null) {
   if (!v) return "-";
+  if (typeof v !== "string" && !(v instanceof Date)) return "-";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
 }
@@ -210,8 +181,12 @@ function labelOfWarehouse(v: any) {
   return v?.name || "-";
 }
 
-function useLookupMap<T extends { _id: string }>(items: T[]) {
-  return useMemo(() => new Map(items.map((item) => [item._id, item])), [items]);
+function useLookupMap<T extends { _id?: string }>(items: T[]) {
+  return useMemo(() => {
+    const m = new Map<string, T>();
+    for (const item of items) if (item._id) m.set(item._id, item);
+    return m;
+  }, [items]);
 }
 
 function computeTotals(
@@ -221,28 +196,24 @@ function computeTotals(
 ) {
   const cloned = items.map((it) => ({ ...it }));
   let subTotal = 0;
-
   for (const item of cloned) {
     const line = n2(Number(item.quantity || 0) * Number(item.unitPrice || 0));
     item.lineTotal = line;
     subTotal = n2(subTotal + line);
   }
-
   const discountAmount = n2(subTotal * (Number(discountPercent || 0) / 100));
   const taxedBase = n2(subTotal - discountAmount);
   const taxTotal = n2(taxedBase * (Number(taxPercent || 0) / 100));
   const grandTotal = n2(taxedBase + taxTotal);
-
   return { items: cloned, subTotal, discountAmount, taxTotal, grandTotal };
 }
 
-function normalizeWorkOrder(doc: WorkOrderForm) {
+function normalizeWorkOrder(doc: WorkOrderForm): WorkOrderForm {
   const totals = computeTotals(
     doc.items || [],
     Number(doc.discountPercent || 0),
     Number(doc.taxPercent || 0),
   );
-
   return { ...doc, ...totals };
 }
 
@@ -297,29 +268,28 @@ function getStatusMeta(status?: string) {
 }
 
 function StatusBadge({ status }: { status?: string }) {
-  if (!status) return <span className="text-sm text-muted-foreground">-</span>;
+  if (!status) return <span className="text-xs text-slate-400">-</span>;
   const meta = getStatusMeta(status);
   const Icon = meta.icon;
-
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${meta.pill}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${meta.pill}`}
     >
-      <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-      <Icon className="h-3.5 w-3.5" />
+      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      <Icon className="h-3 w-3" />
       {meta.label}
     </span>
   );
 }
 
 function WorkflowTracker({ status }: { status?: string }) {
-  const index = FLOW.findIndex((s) => s === status) + 1;
+  const index = FLOW.findIndex((s) => s === status);
   const cancelled = status === "Cancelled";
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-muted-foreground">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           Workflow
         </span>
         <StatusBadge status={status} />
@@ -329,38 +299,35 @@ function WorkflowTracker({ status }: { status?: string }) {
         {FLOW.map((step, i) => {
           const active = !cancelled && i <= index;
           const current = !cancelled && i === index;
-
           return (
             <div key={step} className="flex flex-col items-center gap-1">
               <div
                 className={[
-                  "flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold transition-all",
+                  "flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-bold transition-all",
                   active
                     ? current
-                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      ? "border-[#3aa838] bg-[#3aa838] text-white shadow-sm shadow-[#3aa838]/30"
                       : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
                     : "border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500",
                 ].join(" ")}
               >
                 {i + 1}
               </div>
-
-              {i < FLOW.length && (
+              {i < FLOW.length - 1 && (
                 <div
                   className={[
-                    "h-1 w-full rounded-full",
+                    "h-0.5 w-full rounded-full",
                     !cancelled && i < index
                       ? "bg-emerald-400"
                       : "bg-slate-200 dark:bg-slate-800",
                   ].join(" ")}
                 />
               )}
-
               <span
                 className={[
-                  "text-center text-[10px] leading-tight",
+                  "text-center text-[9px] leading-tight",
                   active
-                    ? "font-medium text-slate-700 dark:text-slate-200"
+                    ? "font-semibold text-slate-700 dark:text-slate-200"
                     : "text-slate-400 dark:text-slate-500",
                 ].join(" ")}
               >
@@ -372,8 +339,8 @@ function WorkflowTracker({ status }: { status?: string }) {
       </div>
 
       {cancelled && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-          Cancelled work orders stop the workflow immediately.
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[10px] text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+          Cancelled — workflow locked.
         </div>
       )}
     </div>
@@ -385,13 +352,13 @@ function getNextAction(
 ): { key: WorkflowAction; label: string } | null {
   switch (status) {
     case "Pending":
-      return { key: "processing", label: "Start Processing" };
+      return { key: "processing", label: "Start" };
     case "Processing":
-      return { key: "review", label: "Send to Review" };
+      return { key: "review", label: "Review" };
     case "UnderReview":
       return { key: "approve", label: "Approve" };
     case "Approved":
-      return { key: "complete", label: "Mark Completed" };
+      return { key: "complete", label: "Complete" };
     default:
       return null;
   }
@@ -408,19 +375,30 @@ function getAllowed(status?: string) {
 }
 
 function MiniStat({
+  icon: Icon,
   label,
   value,
   hint,
 }: {
+  icon: React.ElementType;
   label: string;
   value: React.ReactNode;
   hint: string;
 }) {
   return (
-    <div className="rounded-2xl border bg-card/70 p-4 shadow-sm">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="mt-2 text-2xl font-bold tracking-tight">{value}</div>
-      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+      </div>
+      <div className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+        {value}
+      </div>
+      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{hint}</p>
     </div>
   );
 }
@@ -432,6 +410,8 @@ function MobileCard({
   onDelete,
   onAction,
   onCancel,
+  canEdit,
+  canDelete,
 }: {
   wo: WorkOrderForm;
   onView: (wo: WorkOrderForm) => void;
@@ -439,100 +419,125 @@ function MobileCard({
   onDelete: (id?: string) => void;
   onAction: (wo: WorkOrderForm, action: WorkflowAction) => void;
   onCancel: (wo: WorkOrderForm) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const nextAction = getNextAction(wo.status);
   const allowed = getAllowed(wo.status);
 
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-base font-semibold">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
               {wo.workOrderNo || "Work Order"}
             </h3>
             <StatusBadge status={wo.status} />
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             {wo.subject || "-"}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-muted-foreground">Total</p>
-          <p className="text-lg font-semibold">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total</p>
+          <p className="text-base font-bold text-slate-900 dark:text-white">
             {formatCurrency(wo.grandTotal)}
           </p>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-xs text-muted-foreground">Supplier</p>
-          <p className="mt-1 font-medium">{labelOfSupplier(wo.supplier)}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-slate-950/40">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Supplier</p>
+          <p className="mt-0.5 truncate font-medium text-slate-900 dark:text-slate-100">
+            {labelOfSupplier(wo.supplier)}
+          </p>
         </div>
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-xs text-muted-foreground">Warehouse</p>
-          <p className="mt-1 font-medium">
+        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-slate-950/40">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Warehouse</p>
+          <p className="mt-0.5 truncate font-medium text-slate-900 dark:text-slate-100">
             {labelOfWarehouse(wo.warehouseOrFactory)}
           </p>
         </div>
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-xs text-muted-foreground">Issue</p>
-          <p className="mt-1 font-medium">{formatDate(wo.issueDate)}</p>
+        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-slate-950/40">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Issue</p>
+          <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
+            {formatDate(wo.issueDate)}
+          </p>
         </div>
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-xs text-muted-foreground">Expected</p>
-          <p className="mt-1 font-medium">
+        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-slate-950/40">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Expected</p>
+          <p className="mt-0.5 font-medium text-slate-900 dark:text-slate-100">
             {formatDate(wo.expectedDeliveryDate)}
           </p>
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-3">
         <WorkflowTracker status={wo.status} />
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={() => onView(wo)}>
-          <Eye className="mr-2 h-4 w-4" />
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <Button size="sm" variant="outline" onClick={() => onView(wo)} className="h-8 gap-1 text-xs">
+          <Eye className="h-3 w-3" />
           View
         </Button>
 
-        {allowed.edit && (
-          <Button size="sm" variant="outline" onClick={() => onEdit(wo)}>
-            <Edit className="mr-2 h-4 w-4" />
+        {canEdit && allowed.edit && (
+          <Button size="sm" variant="outline" onClick={() => onEdit(wo)} className="h-8 gap-1 text-xs">
+            <Edit className="h-3 w-3" />
             Edit
           </Button>
         )}
 
-        {nextAction && (
-          <Button size="sm" onClick={() => onAction(wo, nextAction.key)}>
-            <ArrowRight className="mr-2 h-4 w-4" />
+        {canEdit && nextAction && (
+          <Button size="sm" onClick={() => onAction(wo, nextAction.key)} className="h-8 gap-1 bg-[#3aa838] text-xs text-white hover:bg-[#2f8a2f]">
+            <ArrowRight className="h-3 w-3" />
             {nextAction.label}
           </Button>
         )}
 
-        {allowed.cancel && (
-          <Button size="sm" variant="ghost" onClick={() => onCancel(wo)}>
-            <X className="mr-2 h-4 w-4" />
+        {canEdit && allowed.cancel && (
+          <Button size="sm" variant="ghost" onClick={() => onCancel(wo)} className="h-8 gap-1 text-xs text-amber-600">
+            <X className="h-3 w-3" />
             Cancel
           </Button>
         )}
 
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => onDelete(wo._id)}
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Delete
-        </Button>
+        {canDelete && (
+          <Button size="sm" variant="ghost" onClick={() => onDelete(wo._id)} className="h-8 gap-1 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30">
+            <Trash2 className="h-3 w-3" />
+            Delete
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
+/* =========================== Page (Protected) =========================== */
 export default function WorkOrdersPage() {
+  return (
+    <Protected
+      permissions={[
+        "workorder.view",
+        "workorder.create",
+        "workorder.edit",
+        "workorder.delete",
+      ]}
+    >
+      <WorkOrdersPageInner />
+    </Protected>
+  );
+}
+
+function WorkOrdersPageInner() {
+  const hasAccess = usePermissionCheck();
+  const canCreate = hasAccess({ permissions: "workorder.create" });
+  const canEdit = hasAccess({ permissions: "workorder.edit" });
+  const canDelete = hasAccess({ permissions: "workorder.delete" });
+
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [templates, setTemplates] = useState<TermsTemplate[]>([]);
@@ -546,9 +551,7 @@ export default function WorkOrdersPage() {
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [filterSupplier, setFilterSupplier] = useState<string | null>(null);
-  const [filterWarehouseOrFactory, setFilterWarehouseOrFactory] = useState<
-    string | null
-  >(null);
+  const [filterWarehouseOrFactory, setFilterWarehouseOrFactory] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -571,13 +574,11 @@ export default function WorkOrdersPage() {
 
   const loadLookups = useCallback(async () => {
     try {
-      const [supplierRes, warehouseRes, templateRes] = await Promise.allSettled(
-        [
-          api.get("/supplier", { params: { limit: 1000 } }),
-          api.get("/warehouses", { params: { limit: 1000 } }),
-          api.get("/settings/workorder-terms"),
-        ],
-      );
+      const [supplierRes, warehouseRes, templateRes] = await Promise.allSettled([
+        api.get("/supplier", { params: { limit: 1000 } }),
+        api.get("/warehouses", { params: { limit: 1000 } }),
+        api.get("/settings/workorder-terms"),
+      ]);
 
       setSuppliers(
         supplierRes.status === "fulfilled"
@@ -814,14 +815,16 @@ export default function WorkOrdersPage() {
         label: "Visible Orders",
         value: workOrders.length,
         hint: `${total} total results`,
+        icon: Inbox,
       },
-      { label: "Pending", value: pending, hint: "Waiting to start" },
-      { label: "In Progress", value: inProgress, hint: "Active workflow" },
-      { label: "Completed", value: completed, hint: "Finished successfully" },
+      { label: "Pending", value: pending, hint: "Waiting to start", icon: Clock3 },
+      { label: "In Progress", value: inProgress, hint: "Active workflow", icon: CircleDashed },
+      { label: "Completed", value: completed, hint: "Finished successfully", icon: CheckCircle2 },
       {
         label: "Visible Value",
         value: formatCurrency(value),
         hint: `${templates.length} templates loaded`,
+        icon: Banknote,
       },
     ];
   }, [workOrders, total, templates.length]);
@@ -835,25 +838,29 @@ export default function WorkOrdersPage() {
   };
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div className="rounded-[2rem] border bg-gradient-to-br from-background via-background to-muted/30 p-5 shadow-sm">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
+    <div className="space-y-5 p-4 md:p-6">
+      {/* HERO */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:p-6">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-[#3aa838]/5 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-emerald-500/5 blur-3xl" />
+
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border bg-muted/60 px-3 py-1 text-xs font-semibold text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                <Building2 className="h-2.5 w-2.5" />
                 Operations
               </span>
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
-                Workflow-first UI
-              </span>
-              <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-200">
-                Fast approval flow
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/5 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#2f8a2f] dark:border-[#3aa838]/30 dark:bg-[#3aa838]/10 dark:text-[#9bdd91]">
+                Workflow-first
               </span>
             </div>
 
             <div>
-              <h2 className="text-3xl font-bold tracking-tight">Work Orders</h2>
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">
+                Work Orders
+              </h1>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
                 A high-visibility workspace for creating, monitoring, and
                 driving work orders through every stage.
               </p>
@@ -863,33 +870,47 @@ export default function WorkOrdersPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
+              size="sm"
               onClick={loadWorkOrders}
               disabled={loading}
+              className="h-9 gap-1.5"
             >
-              <RefreshCw
-                className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
-              />
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             <Button
               variant="outline"
+              size="sm"
               onClick={clearFilters}
               disabled={!hasFilters}
+              className="h-9 gap-1.5"
             >
-              <FilterX className="mr-2 h-4 w-4" />
+              <FilterX className="h-3.5 w-3.5" />
               Clear
+              {activeFilterCount > 0 && (
+                <span className="ml-0.5 rounded-full bg-[#3aa838] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
             </Button>
-            <Button onClick={onCreate} className="shadow-sm">
-              <Plus className="mr-2 h-4 w-4" />
-              Create Work Order
-            </Button>
+            {canCreate && (
+              <Button
+                size="sm"
+                onClick={onCreate}
+                className="h-9 gap-1.5 bg-[#3aa838] text-white shadow-sm shadow-[#3aa838]/20 hover:bg-[#2f8a2f]"
+              >
+                <Plus className="h-4 w-4" />
+                Create Work Order
+              </Button>
+            )}
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="relative mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {stats.map((s) => (
             <MiniStat
               key={s.label}
+              icon={s.icon}
               label={s.label}
               value={s.value}
               hint={s.hint}
@@ -898,114 +919,120 @@ export default function WorkOrdersPage() {
         </div>
       </div>
 
-      <div className="rounded-[2rem] border bg-card shadow-sm">
-        <div className="border-b p-4 md:p-5">
-          <div className="grid gap-3 xl:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_auto] xl:items-center">
-            <div className="flex items-center gap-3 rounded-2xl border bg-muted/30 px-3 py-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search work order no, subject, reference, status"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-              />
-            </div>
+      {/* FILTER BAR */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="grid gap-2 xl:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_auto] xl:items-center">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search work order no, subject, reference, status"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="h-10 pl-9"
+            />
+          </div>
 
-            <Select
-              value={filterSupplier ?? NONE}
-              onValueChange={(v) => setFilterSupplier(v === NONE ? null : v)}
-            >
-              <SelectTrigger className="h-11 rounded-2xl">
-                <SelectValue placeholder="Supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>All Suppliers</SelectItem>
-                {suppliers.map((s) => (
-                  <SelectItem key={s._id} value={s._id}>
-                    {labelOfSupplier(s)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Select
+            value={filterSupplier ?? NONE}
+            onValueChange={(v) => setFilterSupplier(v === NONE ? null : v)}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder="Supplier" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>All Suppliers</SelectItem>
+              {suppliers.map((s) => (
+                <SelectItem key={s._id} value={s._id}>
+                  {labelOfSupplier(s)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-            <Select
-              value={filterWarehouseOrFactory ?? NONE}
-              onValueChange={(v) =>
-                setFilterWarehouseOrFactory(v === NONE ? null : v)
-              }
-            >
-              <SelectTrigger className="h-11 rounded-2xl">
-                <SelectValue placeholder="Warehouse / Factory" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>All Warehouses</SelectItem>
-                {warehouses.map((w) => (
-                  <SelectItem key={w._id} value={w._id}>
-                    {labelOfWarehouse(w)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Select
+            value={filterWarehouseOrFactory ?? NONE}
+            onValueChange={(v) =>
+              setFilterWarehouseOrFactory(v === NONE ? null : v)
+            }
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder="Warehouse / Factory" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>All Warehouses</SelectItem>
+              {warehouses.map((w) => (
+                <SelectItem key={w._id} value={w._id}>
+                  {labelOfWarehouse(w)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-            <Select
-              value={filterStatus ?? NONE}
-              onValueChange={(v) => setFilterStatus(v === NONE ? null : v)}
-            >
-              <SelectTrigger className="h-11 rounded-2xl">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>All Status</SelectItem>
-                {STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {getStatusMeta(s).label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Select
+            value={filterStatus ?? NONE}
+            onValueChange={(v) => setFilterStatus(v === NONE ? null : v)}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>All Status</SelectItem>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {getStatusMeta(s).label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-            <div className="flex items-center justify-between gap-2 xl:justify-end">
-              <span className="text-sm text-muted-foreground">
-                {activeFilterCount
-                  ? `${activeFilterCount} filter(s)`
-                  : "No filters"}
-              </span>
-              <Button onClick={onCreate} className="xl:hidden">
-                <Plus className="mr-2 h-4 w-4" />
+          <div className="flex items-center justify-end gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {activeFilterCount ? `${activeFilterCount} filter(s)` : "No filters"}
+            </span>
+            {canCreate && (
+              <Button onClick={onCreate} size="sm" className="h-10 gap-1.5 bg-[#3aa838] text-white hover:bg-[#2f8a2f] xl:hidden">
+                <Plus className="h-4 w-4" />
                 Create
               </Button>
-            </div>
+            )}
           </div>
         </div>
+      </div>
 
-        <div className="p-4 md:p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
+      {/* TABLE CARD */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-medium">Live Work Orders</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Live Work Orders</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Every row shows the active workflow stage in a visual tracker.
               </p>
             </div>
             {loadingDetail && (
-              <div className="rounded-full border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">
-                Loading detail...
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Loading detail…
               </div>
             )}
           </div>
+        </div>
 
-          <div className="hidden overflow-hidden rounded-2xl border md:block">
+        <div>
+          {/* Desktop */}
+          <div className="hidden md:block">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead className="w-[56px]">#</TableHead>
-                    <TableHead>Work Order</TableHead>
-                    <TableHead>Parties</TableHead>
-                    <TableHead>Dates</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead className="min-w-[260px]">Workflow</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[320px]">Actions</TableHead>
+                  <TableRow className="border-b border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/50">
+                    <TableHead className="w-[56px] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">#</TableHead>
+                    <TableHead className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Work Order</TableHead>
+                    <TableHead className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Parties</TableHead>
+                    <TableHead className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</TableHead>
+                    <TableHead className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total</TableHead>
+                    <TableHead className="min-w-[260px] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Workflow</TableHead>
+                    <TableHead className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</TableHead>
+                    <TableHead className="w-[320px] px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -1015,105 +1042,119 @@ export default function WorkOrdersPage() {
                     const allowed = getAllowed(w.status);
 
                     return (
-                      <TableRow key={w._id || i} className="align-top">
-                        <TableCell className="font-medium">
+                      <TableRow
+                        key={w._id || i}
+                        className="align-top transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/30"
+                      >
+                        <TableCell className="px-4 py-3 align-middle text-xs font-medium text-slate-400">
                           {(page - 1) * limit + i + 1}
                         </TableCell>
 
-                        <TableCell>
-                          <div className="font-semibold">
-                            {w.workOrderNo || "-"}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {w.reference || "-"}
-                          </div>
-                          <div className="mt-2 max-w-[220px] truncate text-sm text-muted-foreground">
-                            {w.subject || "-"}
-                          </div>
+                        <TableCell className="px-4 py-3 align-middle">
+                          <button type="button" onClick={() => onView(w)} className="text-left">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {w.workOrderNo || "-"}
+                            </div>
+                            <div className="mt-0.5 text-[10px] font-mono text-slate-400">
+                              {w.reference || "-"}
+                            </div>
+                            <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-500 dark:text-slate-400">
+                              {w.subject || "-"}
+                            </div>
+                          </button>
                         </TableCell>
 
-                        <TableCell>
-                          <div className="font-medium">
+                        <TableCell className="px-4 py-3 align-middle">
+                          <div className="text-xs font-medium text-slate-900 dark:text-slate-100">
                             {getSupplierName(w.supplier)}
                           </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
+                          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400">
+                            <Building2 className="h-2.5 w-2.5" />
                             {getWarehouseName(w.warehouseOrFactory)}
                           </div>
-                          <div className="mt-2 text-xs text-muted-foreground">
-                            {w.items?.length || 0} item(s)
+                          <div className="mt-0.5 text-[10px] text-slate-400">
+                            {w.items?.length || 0} item{(w.items?.length || 0) === 1 ? "" : "s"}
                           </div>
                         </TableCell>
 
-                        <TableCell>
-                          <div>{formatDate(w.issueDate)}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
+                        <TableCell className="px-4 py-3 align-middle">
+                          <div className="text-xs text-slate-900 dark:text-slate-100">
+                            {formatDate(w.issueDate)}
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
                             Expected: {formatDate(w.expectedDeliveryDate)}
                           </div>
                         </TableCell>
 
-                        <TableCell className="font-semibold">
+                        <TableCell className="px-4 py-3 align-middle text-sm font-bold text-slate-900 dark:text-white">
                           {formatCurrency(w.grandTotal)}
                         </TableCell>
 
-                        <TableCell className="min-w-[260px]">
+                        <TableCell className="min-w-[260px] px-4 py-3 align-middle">
                           <WorkflowTracker status={w.status} />
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="px-4 py-3 align-middle">
                           <StatusBadge status={w.status} />
                         </TableCell>
 
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
+                        <TableCell className="px-4 py-3 align-middle">
+                          <div className="flex flex-wrap justify-end gap-1.5">
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => onView(w)}
+                              className="h-7 gap-1 px-2 text-[10px]"
                             >
-                              <Eye className="mr-2 h-4 w-4" />
+                              <Eye className="h-3 w-3" />
                               View
                             </Button>
 
-                            {allowed.edit && (
+                            {canEdit && allowed.edit && (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => onEdit(w)}
+                                className="h-7 gap-1 px-2 text-[10px]"
                               >
-                                <Edit className="mr-2 h-4 w-4" />
+                                <Edit className="h-3 w-3" />
                                 Edit
                               </Button>
                             )}
 
-                            {nextAction && (
+                            {canEdit && nextAction && (
                               <Button
                                 size="sm"
                                 onClick={() => onAction(w, nextAction.key)}
+                                className="h-7 gap-1 bg-[#3aa838] px-2 text-[10px] text-white hover:bg-[#2f8a2f]"
                               >
-                                <ArrowRight className="mr-2 h-4 w-4" />
+                                <ArrowRight className="h-3 w-3" />
                                 {nextAction.label}
                               </Button>
                             )}
 
-                            {allowed.cancel && (
+                            {canEdit && allowed.cancel && (
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => onCancel(w)}
+                                className="h-7 gap-1 px-2 text-[10px] text-amber-600"
                               >
-                                <X className="mr-2 h-4 w-4" />
+                                <X className="h-3 w-3" />
                                 Cancel
                               </Button>
                             )}
 
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => onDelete(w._id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onDelete(w._id)}
+                                className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1122,22 +1163,30 @@ export default function WorkOrdersPage() {
 
                   {!workOrders.length && (
                     <TableRow>
-                      <TableCell colSpan={8} className="py-10 text-center">
-                        <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <TableCell colSpan={8} className="py-12 text-center">
+                        <div className="flex flex-col items-center justify-center gap-2 text-slate-500 dark:text-slate-400">
                           {loading ? (
                             <>
                               <RefreshCw className="h-5 w-5 animate-spin" />
-                              <span>Loading work orders...</span>
+                              <span className="text-xs">Loading work orders…</span>
                             </>
                           ) : (
                             <>
-                              <span className="font-medium text-foreground">
+                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                                <FileSearch className="h-6 w-6 text-slate-400" />
+                              </div>
+                              <span className="text-sm font-semibold text-slate-900 dark:text-white">
                                 No work orders found
                               </span>
-                              <span className="text-sm">
-                                Adjust filters or create a new work order to
-                                begin.
+                              <span className="max-w-sm text-xs">
+                                Adjust filters or create a new work order to begin.
                               </span>
+                              {canCreate && (
+                                <Button size="sm" onClick={onCreate} className="mt-2 h-8 gap-1 bg-[#3aa838] text-xs text-white hover:bg-[#2f8a2f]">
+                                  <Plus className="h-3 w-3" />
+                                  Create Work Order
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1149,7 +1198,8 @@ export default function WorkOrdersPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:hidden">
+          {/* Mobile */}
+          <div className="grid gap-3 p-3 md:hidden">
             {workOrders.map((w) => (
               <MobileCard
                 key={w._id}
@@ -1159,18 +1209,24 @@ export default function WorkOrdersPage() {
                 onDelete={onDelete}
                 onAction={onAction}
                 onCancel={onCancel}
+                canEdit={canEdit}
+                canDelete={canDelete}
               />
             ))}
 
             {!workOrders.length && (
-              <div className="rounded-2xl border p-8 text-center text-sm text-muted-foreground">
-                {loading ? "Loading work orders..." : "No work orders found"}
+              <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center dark:border-slate-800">
+                <FileSearch className="mx-auto h-6 w-6 text-slate-400" />
+                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                  {loading ? "Loading work orders…" : "No work orders found"}
+                </p>
               </div>
             )}
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="text-sm text-muted-foreground">
+          {/* Pagination */}
+          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
               {total === 0
                 ? "No records"
                 : `Showing ${(page - 1) * limit + 1} - ${Math.min(page * limit, total)} of ${total}`}
@@ -1183,7 +1239,7 @@ export default function WorkOrdersPage() {
                   setLimit(Number(e.target.value));
                   setPage(1);
                 }}
-                className="h-10 rounded-xl border bg-background px-3 text-sm outline-none"
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900"
               >
                 {PAGE_SIZES.map((n) => (
                   <option key={n} value={n}>
@@ -1197,16 +1253,20 @@ export default function WorkOrdersPage() {
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
                   variant="outline"
+                  size="sm"
+                  className="h-8"
                 >
                   Prev
                 </Button>
-                <div className="min-w-24 rounded-xl border bg-muted/30 px-3 py-2 text-center text-sm">
+                <div className="min-w-[70px] rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center text-xs font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
                   {page} / {totalPages}
                 </div>
                 <Button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
                   variant="outline"
+                  size="sm"
+                  className="h-8"
                 >
                   Next
                 </Button>
@@ -1216,6 +1276,7 @@ export default function WorkOrdersPage() {
         </div>
       </div>
 
+      {/* DIALOGS */}
       {viewing && (
         <WorkOrderViewDialog viewing={viewing} setViewing={setViewing} />
       )}
