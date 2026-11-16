@@ -47,7 +47,11 @@ import {
   Filter as FilterIcon,
   ChevronDown,
   ChevronUp,
+  Inbox,
 } from "lucide-react";
+
+import Protected from "@/components/auth/Protected";
+import usePermissionCheck from "@/hooks/usePermissionCheck";
 
 import SalesOrderBulkImport from "./_components/SalesOrderBulkImport";
 
@@ -195,14 +199,22 @@ function getPresetRange(preset: DatePreset): { from: string; to: string } {
 
 function StatusBadge({ status }: { status: OrderStatus }) {
   const styles: Record<OrderStatus, string> = {
-    PENDING_AM: "bg-slate-100 text-slate-700 border-slate-200",
-    PENDING_RM: "bg-slate-100 text-slate-700 border-slate-200",
-    PENDING_NSM: "bg-slate-100 text-slate-700 border-slate-200",
-    PENDING_FULFILLMENT: "bg-amber-50 text-amber-700 border-amber-200",
-    IN_SHIPPING: "bg-amber-50 text-amber-700 border-amber-200",
-    DELIVERED: "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30",
-    REJECTED: "bg-rose-50 text-rose-700 border-rose-200",
-    CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
+    PENDING_AM:
+      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    PENDING_RM:
+      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    PENDING_NSM:
+      "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    PENDING_FULFILLMENT:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
+    IN_SHIPPING:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60",
+    DELIVERED:
+      "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30 dark:bg-[#3aa838]/15 dark:text-[#9bdd91] dark:border-[#3aa838]/40",
+    REJECTED:
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60",
+    CANCELLED:
+      "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60",
   };
   return (
     <span
@@ -214,11 +226,12 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 }
 
 function PaymentBadge({ method }: { method?: PaymentMethod }) {
-  if (!method) return <span className="text-xs text-muted-foreground">-</span>;
+  if (!method)
+    return <span className="text-xs text-slate-400 dark:text-slate-500">-</span>;
   const styles =
     method === "CREDIT"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30";
+      ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60"
+      : "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30 dark:bg-[#3aa838]/15 dark:text-[#9bdd91] dark:border-[#3aa838]/40";
   return (
     <span
       className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${styles}`}
@@ -229,7 +242,7 @@ function PaymentBadge({ method }: { method?: PaymentMethod }) {
 }
 
 /* =====================================================
-   LOOKUP SELECT (used inside expanded filter panel)
+   LOOKUP SELECT
 ===================================================== */
 
 function LookupSelect({
@@ -284,9 +297,13 @@ function LookupSelect({
           type="button"
           variant="outline"
           disabled={disabled}
-          className="h-9 w-full justify-between overflow-hidden bg-white text-xs"
+          className="h-9 w-full justify-between overflow-hidden bg-white text-xs font-normal transition-colors hover:border-slate-300 dark:bg-slate-900 dark:hover:border-slate-700"
         >
-          <span className="truncate">{selectedLabel || placeholder}</span>
+          <span
+            className={`truncate ${selectedLabel ? "text-slate-900 dark:text-white" : "text-slate-400"}`}
+          >
+            {selectedLabel || placeholder}
+          </span>
           <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -299,7 +316,7 @@ function LookupSelect({
           />
           <CommandList>
             <CommandEmpty>
-              {loading ? "Loading..." : "No result found."}
+              {loading ? "Loading…" : "No result found."}
             </CommandEmpty>
             <CommandGroup>
               {options.map((opt) => (
@@ -313,14 +330,14 @@ function LookupSelect({
                   }}
                 >
                   <Check
-                    className={`mr-2 h-4 w-4 ${
+                    className={`mr-2 h-4 w-4 text-[#3aa838] ${
                       opt.value === value ? "opacity-100" : "opacity-0"
                     }`}
                   />
                   <div className="min-w-0">
                     <div className="truncate font-medium">{opt.label}</div>
                     {opt.description ? (
-                      <div className="truncate text-xs text-muted-foreground">
+                      <div className="truncate text-xs text-slate-500 dark:text-slate-400">
                         {opt.description}
                       </div>
                     ) : null}
@@ -336,11 +353,33 @@ function LookupSelect({
 }
 
 /* =====================================================
-   MAIN LIST PAGE
+   PAGE (PROTECTED)
 ===================================================== */
 
 export default function SalesOrderListPage() {
+  return (
+    <Protected
+      permissions={[
+        "sales.view",
+        "sales.create",
+        "sales.edit",
+        "sales.delete",
+      ]}
+    >
+      <SalesOrderListPageInner />
+    </Protected>
+  );
+}
+
+/* =====================================================
+   INNER
+===================================================== */
+
+function SalesOrderListPageInner() {
   const router = useRouter();
+  const hasAccess = usePermissionCheck();
+  const canCreate = hasAccess({ permissions: "sales.create" });
+  const canEdit = hasAccess({ permissions: "sales.edit" });
 
   const [loading, setLoading] = useState(false);
   const [refreshingAction, setRefreshingAction] = useState<string | null>(null);
@@ -359,12 +398,10 @@ export default function SalesOrderListPage() {
   const [dealerFilter, setDealerFilter] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");
 
-  // Date range
   const [datePreset, setDatePreset] = useState<DatePreset>("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  // Collapsible secondary filters
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [dealerMeta, setDealerMeta] = useState<LookupOption | null>(null);
@@ -542,15 +579,27 @@ export default function SalesOrderListPage() {
   =================================================== */
 
   const openView = (id: string) => router.push(`/sales/list/${id}`);
-  const openEdit = (id: string) => router.push(`/sales/list/${id}/edit`);
-  const openInvoice = (orderId: string) => router.push(`/sales/list/${orderId}`);
-  const handleDeliver = (orderId: string) => router.push(`/sales-orders/${orderId}`);
+  const openEdit = (id: string) => {
+    if (!canEdit) {
+      toast.error("You don't have permission to edit sales orders");
+      return;
+    }
+    router.push(`/sales/list/${id}/edit`);
+  };
+  const openInvoice = (orderId: string) =>
+    router.push(`/sales/list/${orderId}`);
+  const handleDeliver = (orderId: string) =>
+    router.push(`/sales-orders/${orderId}`);
 
   /* ===================================================
      ORDER ACTIONS
   =================================================== */
 
   const handleCancel = async (orderId: string) => {
+    if (!canEdit) {
+      toast.error("You don't have permission to cancel sales orders");
+      return;
+    }
     if (!confirm("Cancel this sales order?")) return;
     setRefreshingAction(orderId);
     try {
@@ -559,7 +608,9 @@ export default function SalesOrderListPage() {
       await loadOrders();
     } catch (err: any) {
       toast.error(
-        err?.response?.data?.message || err?.message || "Failed to cancel order.",
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to cancel order.",
       );
     } finally {
       setRefreshingAction(null);
@@ -567,6 +618,10 @@ export default function SalesOrderListPage() {
   };
 
   const handleShip = async (orderId: string) => {
+    if (!canEdit) {
+      toast.error("You don't have permission to ship sales orders");
+      return;
+    }
     if (!confirm("Create invoice and move this order to fulfillment?")) return;
     setRefreshingAction(orderId);
     try {
@@ -575,7 +630,9 @@ export default function SalesOrderListPage() {
       await loadOrders();
     } catch (err: any) {
       toast.error(
-        err?.response?.data?.message || err?.message || "Failed to ship order.",
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to ship order.",
       );
     } finally {
       setRefreshingAction(null);
@@ -588,9 +645,9 @@ export default function SalesOrderListPage() {
 
   if (showBulkImport) {
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950">
         <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center gap-3">
               <Button
                 type="button"
@@ -606,8 +663,10 @@ export default function SalesOrderListPage() {
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <div>
-                <h1 className="text-base font-semibold">Bulk Sales Order Import</h1>
-                <p className="text-xs text-muted-foreground">
+                <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+                  Bulk Sales Order Import
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Upload and validate multiple sales orders from an Excel file.
                 </p>
               </div>
@@ -621,8 +680,9 @@ export default function SalesOrderListPage() {
                 setPage(1);
                 void loadOrders();
               }}
+              className="h-9 gap-1.5 text-xs"
             >
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+              <ArrowLeft className="h-3.5 w-3.5" />
               Back
             </Button>
           </div>
@@ -637,34 +697,39 @@ export default function SalesOrderListPage() {
   =================================================== */
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950">
       <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
         {/* =============================================
-            COMPACT HERO — title + inline stats + actions
+            COMPACT HERO
         ============================================= */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
-              <ShoppingCart className="h-4 w-4 text-[#3aa838]" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10 text-[#3aa838] dark:bg-[#3aa838]/15 dark:text-[#9bdd91]">
+              <ShoppingCart className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-base font-semibold leading-tight">Sales Orders</h1>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                <span>
-                  <b className="text-slate-900 tabular-nums">{orders.length}</b> visible
+              <h1 className="text-base font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+                Sales Orders
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                <span className="text-slate-500 dark:text-slate-400">
+                  <b className="tabular-nums text-slate-900 dark:text-white">
+                    {orders.length}
+                  </b>{" "}
+                  visible
                 </span>
-                <span className="text-[#3aa838]">
+                <span className="text-[#3aa838] dark:text-[#9bdd91]">
                   <b className="tabular-nums">{summary.delivered}</b> delivered
                 </span>
-                <span className="text-amber-600">
+                <span className="text-amber-600 dark:text-amber-400">
                   <b className="tabular-nums">{summary.pending}</b> pending
                 </span>
-                <span className="text-[#3aa838]">
+                <span className="text-[#3aa838] dark:text-[#9bdd91]">
                   <b className="tabular-nums">{summary.invoiced}</b> invoiced
                 </span>
-                <span className="text-slate-300">·</span>
-                <span>
-                  <b className="text-slate-900 tabular-nums">
+                <span className="text-slate-300 dark:text-slate-600">·</span>
+                <span className="text-slate-500 dark:text-slate-400">
+                  <b className="tabular-nums text-slate-900 dark:text-white">
                     ৳ {money(summary.grand)}
                   </b>{" "}
                   page total
@@ -679,35 +744,43 @@ export default function SalesOrderListPage() {
               variant="outline"
               size="sm"
               onClick={() => void loadOrders()}
+              className="h-9 w-9 p-0"
               title="Refresh"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              />
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowBulkImport(true)}
-            >
-              <Upload className="mr-1.5 h-3.5 w-3.5" />
-              Bulk
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => router.push("/sales/create")}
-              className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
-            >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              New
-            </Button>
+            {canCreate && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBulkImport(true)}
+                className="h-9 gap-1.5 text-xs"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Bulk
+              </Button>
+            )}
+            {canCreate && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => router.push("/sales/create")}
+                className="h-9 gap-1.5 bg-[#3aa838] text-xs text-white shadow-sm shadow-[#3aa838]/20 hover:bg-[#2f8a2f]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New
+              </Button>
+            )}
           </div>
         </div>
 
         {/* =============================================
             COMPACT FILTER BAR (collapsible)
         ============================================= */}
-        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-wrap items-center gap-2 px-3 py-2">
             <Input
               value={search}
@@ -715,7 +788,7 @@ export default function SalesOrderListPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search order no..."
+              placeholder="Search order no…"
               className="h-9 w-full max-w-[240px] text-sm"
             />
 
@@ -725,7 +798,7 @@ export default function SalesOrderListPage() {
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="">All statuses</option>
               <option value="PENDING_AM">Pending AM</option>
@@ -744,7 +817,7 @@ export default function SalesOrderListPage() {
                 setPaymentFilter(e.target.value);
                 setPage(1);
               }}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="">All payments</option>
               <option value="CASH">Cash</option>
@@ -754,7 +827,7 @@ export default function SalesOrderListPage() {
             <select
               value={datePreset}
               onChange={(e) => applyPreset(e.target.value as DatePreset)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="">
                 {fromDate || toDate ? "Custom range" : "All dates"}
@@ -771,23 +844,23 @@ export default function SalesOrderListPage() {
               variant="outline"
               size="sm"
               onClick={() => setFiltersOpen((v) => !v)}
-              className={`h-9 ${
+              className={`h-9 gap-1.5 ${
                 activeFilterCount > 0
-                  ? "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]"
+                  ? "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f] dark:border-[#3aa838]/40 dark:bg-[#3aa838]/10 dark:text-[#9bdd91]"
                   : ""
               }`}
             >
-              <FilterIcon className="mr-1.5 h-3.5 w-3.5" />
+              <FilterIcon className="h-3.5 w-3.5" />
               Filters
               {activeFilterCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
+                <span className="ml-0.5 rounded-full bg-[#3aa838] px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">
                   {activeFilterCount}
                 </span>
               )}
               {filtersOpen ? (
-                <ChevronUp className="ml-1.5 h-3.5 w-3.5" />
+                <ChevronUp className="h-3.5 w-3.5" />
               ) : (
-                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                <ChevronDown className="h-3.5 w-3.5" />
               )}
             </Button>
 
@@ -797,23 +870,23 @@ export default function SalesOrderListPage() {
                 variant="ghost"
                 size="sm"
                 onClick={clearFilters}
-                className="h-9 text-slate-500"
+                className="h-9 gap-1 text-slate-500 dark:text-slate-400"
               >
-                <X className="mr-1 h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
                 Clear
               </Button>
             )}
 
-            <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+            <div className="ml-auto text-xs text-slate-500 tabular-nums dark:text-slate-400">
               {total} records
             </div>
           </div>
 
           {/* Expanded filters */}
           {filtersOpen && (
-            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-4">
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/40 md:grid-cols-4">
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   From date
                 </label>
                 <Input
@@ -824,7 +897,7 @@ export default function SalesOrderListPage() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   To date
                 </label>
                 <Input
@@ -835,7 +908,7 @@ export default function SalesOrderListPage() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Dealer
                 </label>
                 <LookupSelect
@@ -844,11 +917,11 @@ export default function SalesOrderListPage() {
                   onPick={setDealer}
                   fetchOptions={fetchDealers}
                   placeholder="Search dealer"
-                  searchPlaceholder="Type dealer name or phone..."
+                  searchPlaceholder="Type dealer name or phone…"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-600">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Warehouse
                 </label>
                 <LookupSelect
@@ -857,7 +930,7 @@ export default function SalesOrderListPage() {
                   onPick={setWarehouse}
                   fetchOptions={fetchWarehouses}
                   placeholder="Search warehouse"
-                  searchPlaceholder="Type warehouse name..."
+                  searchPlaceholder="Type warehouse name…"
                 />
               </div>
             </div>
@@ -867,11 +940,11 @@ export default function SalesOrderListPage() {
         {/* =============================================
             TABLE
         ============================================= */}
-        <Card className="overflow-hidden border-slate-200 shadow-sm">
+        <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-left">
+                <thead className="sticky top-0 z-10 bg-slate-50/80 dark:bg-slate-950/50">
                   <tr>
                     {[
                       "Order No",
@@ -883,15 +956,15 @@ export default function SalesOrderListPage() {
                     ].map((h) => (
                       <th
                         key={h}
-                        className="border-b border-slate-200 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wide text-slate-600"
+                        className="border-b border-slate-200 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400"
                       >
                         {h}
                       </th>
                     ))}
-                    <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                    <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
                       Total
                     </th>
-                    <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                    <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
                       Actions
                     </th>
                   </tr>
@@ -901,9 +974,9 @@ export default function SalesOrderListPage() {
                   {loading ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-16 text-center">
-                        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                        <div className="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                           <Loader2 className="h-4 w-4 animate-spin" />
-                          Loading sales orders...
+                          Loading sales orders…
                         </div>
                       </td>
                     </tr>
@@ -916,7 +989,9 @@ export default function SalesOrderListPage() {
                         order.customerId?._id ||
                         "-";
                       const warehouseName =
-                        order.warehouseId?.name || order.warehouseId?._id || "-";
+                        order.warehouseId?.name ||
+                        order.warehouseId?._id ||
+                        "-";
                       const invoiceExists =
                         typeof order.invoiceId === "object"
                           ? !!order.invoiceId?._id || !!order.invoiceId?.id
@@ -928,37 +1003,39 @@ export default function SalesOrderListPage() {
                         "PENDING_NSM",
                         "PENDING_FULFILLMENT",
                       ];
-                      const canEdit = editableStatuses.includes(order.status);
-                      const canShip = order.status === "PENDING_FULFILLMENT";
-                      const canDeliver = order.status === "IN_SHIPPING";
-                      const canCancel = !["DELIVERED", "CANCELLED"].includes(
-                        order.status,
-                      );
+                      const canEditRow =
+                        canEdit && editableStatuses.includes(order.status);
+                      const canShipRow =
+                        canEdit && order.status === "PENDING_FULFILLMENT";
+                      const canDeliverRow = order.status === "IN_SHIPPING";
+                      const canCancelRow =
+                        canEdit &&
+                        !["DELIVERED", "CANCELLED"].includes(order.status);
                       const isBusy = refreshingAction === order._id;
 
                       return (
                         <tr
                           key={order._id}
-                          className="border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70"
+                          className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/30"
                         >
-                          <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-900">
+                          <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-900 dark:text-white">
                             {order.orderNo}
                           </td>
 
                           <td className="px-3 py-2">
-                            <div className="text-sm font-medium text-slate-900">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">
                               {dealerName}
                             </div>
-                            <div className="text-[11px] text-muted-foreground">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
                               {order.customerId?.phoneNumber || ""}
                             </div>
                           </td>
 
-                          <td className="px-3 py-2 text-xs text-slate-700">
+                          <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                             {warehouseName}
                           </td>
 
-                          <td className="px-3 py-2 text-xs text-slate-600 tabular-nums">
+                          <td className="px-3 py-2 text-xs text-slate-600 tabular-nums dark:text-slate-400">
                             {fmtDate(order.orderDate || order.createdAt)}
                           </td>
 
@@ -968,16 +1045,16 @@ export default function SalesOrderListPage() {
 
                           <td className="px-3 py-2">
                             <StatusBadge status={order.status} />
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
+                            <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
                               {order.isInvoiced ? "Invoiced" : "Not invoiced"}
                             </div>
                           </td>
 
                           <td className="px-3 py-2 text-right">
-                            <div className="text-sm font-semibold tabular-nums text-slate-900">
+                            <div className="text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
                               ৳ {money(order.grandTotal)}
                             </div>
-                            <div className="text-[10px] text-muted-foreground">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
                               Bonus: {Number(order.totalBonusQty || 0)}
                             </div>
                           </td>
@@ -995,7 +1072,7 @@ export default function SalesOrderListPage() {
                                 <Eye className="h-3.5 w-3.5" />
                               </Button>
 
-                              {canEdit && (
+                              {canEditRow && (
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -1021,42 +1098,42 @@ export default function SalesOrderListPage() {
                                 </Button>
                               )}
 
-                              {canShip && (
+                              {canShipRow && (
                                 <Button
                                   type="button"
                                   variant="outline"
                                   size="sm"
                                   onClick={() => void handleShip(order._id)}
                                   disabled={isBusy}
-                                  className="h-7 border-[#3aa838]/40 px-2 text-[11px] text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f]"
+                                  className="h-7 gap-1 border-[#3aa838]/40 px-2 text-[11px] text-[#2f8a2f] hover:bg-[#3aa838]/5 hover:text-[#2f8a2f] dark:border-[#3aa838]/40 dark:text-[#9bdd91] dark:hover:bg-[#3aa838]/10"
                                 >
                                   {isBusy ? (
-                                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    <Loader2 className="h-3 w-3 animate-spin" />
                                   ) : (
-                                    <ReceiptText className="mr-1 h-3 w-3" />
+                                    <ReceiptText className="h-3 w-3" />
                                   )}
                                   Ship
                                 </Button>
                               )}
 
-                              {canDeliver && (
+                              {canDeliverRow && (
                                 <Button
                                   type="button"
                                   size="sm"
                                   onClick={() => handleDeliver(order._id)}
-                                  className="h-7 bg-[#3aa838] px-2 text-[11px] text-white hover:bg-[#2f8a2f]"
+                                  className="h-7 gap-1 bg-[#3aa838] px-2 text-[11px] text-white hover:bg-[#2f8a2f]"
                                 >
-                                  <Truck className="mr-1 h-3 w-3" />
+                                  <Truck className="h-3 w-3" />
                                   Deliver
                                 </Button>
                               )}
 
-                              {canCancel && (
+                              {canCancelRow && (
                                 <Button
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                  className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30"
                                   onClick={() => void handleCancel(order._id)}
                                   disabled={isBusy}
                                   title="Cancel"
@@ -1076,14 +1153,14 @@ export default function SalesOrderListPage() {
                   ) : (
                     <tr>
                       <td colSpan={8} className="px-4 py-16 text-center">
-                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
-                          <div className="rounded-full bg-slate-100 p-3">
-                            <ShoppingCart className="h-6 w-6" />
+                        <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
+                          <div className="rounded-2xl bg-slate-100 p-3 dark:bg-slate-800">
+                            <Inbox className="h-6 w-6 text-slate-400" />
                           </div>
-                          <div className="text-sm font-medium text-slate-700">
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
                             No sales orders found
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
                             {hasAnyFilter
                               ? "Try widening the filters or date range."
                               : "Create your first order to get started."}
@@ -1093,20 +1170,21 @@ export default function SalesOrderListPage() {
                               size="sm"
                               variant="outline"
                               onClick={clearFilters}
+                              className="h-8 gap-1.5 text-xs"
                             >
-                              <X className="mr-1.5 h-3.5 w-3.5" />
+                              <X className="h-3 w-3" />
                               Clear filters
                             </Button>
-                          ) : (
+                          ) : canCreate ? (
                             <Button
                               size="sm"
                               onClick={() => router.push("/sales/create")}
-                              className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
+                              className="h-8 gap-1.5 bg-[#3aa838] text-xs text-white hover:bg-[#2f8a2f]"
                             >
-                              <Plus className="mr-1.5 h-3.5 w-3.5" />
+                              <Plus className="h-3 w-3" />
                               New Order
                             </Button>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -1121,18 +1199,21 @@ export default function SalesOrderListPage() {
             PAGINATION
         ============================================= */}
         <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
             {total > 0 ? (
               <>
                 Showing{" "}
-                <strong className="text-slate-900">
+                <strong className="text-slate-900 dark:text-white tabular-nums">
                   {(page - 1) * limit + 1}
                 </strong>
                 –
-                <strong className="text-slate-900">
+                <strong className="text-slate-900 dark:text-white tabular-nums">
                   {Math.min(page * limit, total)}
                 </strong>{" "}
-                of <strong className="text-slate-900">{total}</strong>
+                of{" "}
+                <strong className="text-slate-900 dark:text-white">
+                  {total}
+                </strong>
               </>
             ) : (
               <>No records</>
@@ -1146,7 +1227,7 @@ export default function SalesOrderListPage() {
                 setLimit(Number(e.target.value));
                 setPage(1);
               }}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
             >
               <option value="10">10 / page</option>
               <option value="15">15 / page</option>
@@ -1165,9 +1246,12 @@ export default function SalesOrderListPage() {
               Prev
             </Button>
 
-            <div className="min-w-20 text-center text-xs text-muted-foreground">
-              Page <strong className="text-slate-900">{page}</strong> /{" "}
-              {totalPages}
+            <div className="min-w-20 text-center text-xs text-slate-500 dark:text-slate-400">
+              Page{" "}
+              <strong className="text-slate-900 dark:text-white tabular-nums">
+                {page}
+              </strong>{" "}
+              / {totalPages}
             </div>
 
             <Button

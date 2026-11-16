@@ -1,6 +1,7 @@
+// src/app/login/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/store/store";
@@ -8,16 +9,16 @@ import { loginUser, clearError } from "@/store/slices/userSlice";
 import { AtSymbolIcon, LockClosedIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 
-export default function LoginPage() {
+/* --------------------------- Inner content (uses useSearchParams) --------------------------- */
+function LoginContent() {
   const router = useRouter();
   const dispatch = useDispatch<AppDispatch>();
   const params = useSearchParams();
   const from = params.get("from");
   const target = from ? decodeURIComponent(from) : "/";
-  
 
   const { loading, error, success, isAuthenticated } = useSelector(
-    (state: RootState) => state.user
+    (state: RootState) => state.user,
   );
 
   const [form, setForm] = useState({ email: "", password: "" });
@@ -28,9 +29,8 @@ export default function LoginPage() {
   }, [error, success]);
 
   useEffect(() => {
-    // if (isAuthenticated) router.push("/"); // ✅ Redirect after login
-    if (isAuthenticated) router.replace(target); // ✅ Redirect after login
-  }, [isAuthenticated, router]);
+    if (isAuthenticated) router.replace(target);
+  }, [isAuthenticated, router, target]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -45,7 +45,7 @@ export default function LoginPage() {
     }
 
     dispatch(
-      loginUser({ method: "email", email: form.email, password: form.password })
+      loginUser({ method: "email", email: form.email, password: form.password }),
     );
   };
 
@@ -117,5 +117,23 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+/* --------------------------- Suspense wrapper (default export) --------------------------- */
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#16351d] flex items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-3 text-white">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span className="text-sm text-white/70">Loading…</span>
+          </div>
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 // src/app/unauthorized/page.tsx
 "use client";
 
-import React, { useCallback, useMemo } from "react";
+import React, { Suspense, useCallback, useMemo } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useSelector } from "react-redux";
 
@@ -26,13 +26,11 @@ import { Badge } from "@/components/ui/badge";
 import type { RootState } from "@/store/store";
 
 /* --------------------------- Config --------------------------- */
-// Change these two env vars to match your app
 const LOGIN_PATH = process.env.NEXT_PUBLIC_LOGIN_PATH || "/login";
 const DASHBOARD_PATH = process.env.NEXT_PUBLIC_DASHBOARD_PATH || "/";
 const SUPPORT_EMAIL =
   process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "support@antabagro.com";
 
-/* --------------------------- Types --------------------------- */
 /* --------------------------- Types --------------------------- */
 export type UserRole = string | { name?: string; code?: string };
 
@@ -50,8 +48,8 @@ function roleLabel(role: UserRole | null | undefined): string {
   return role.name || role.code || "—";
 }
 
-/* --------------------------- Page --------------------------- */
-export default function UnauthorizedPage() {
+/* --------------------------- Inner content (uses useSearchParams) --------------------------- */
+function UnauthorizedContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -322,6 +320,24 @@ export default function UnauthorizedPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* --------------------------- Suspense wrapper (default export) --------------------------- */
+export default function UnauthorizedPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-[#3aa838]" />
+            <span className="text-sm text-slate-500">Loading…</span>
+          </div>
+        </div>
+      }
+    >
+      <UnauthorizedContent />
+    </Suspense>
   );
 }
 
