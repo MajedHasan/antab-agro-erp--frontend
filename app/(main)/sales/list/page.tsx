@@ -589,7 +589,7 @@ function SalesOrderListPageInner() {
   const openInvoice = (orderId: string) =>
     router.push(`/sales/list/${orderId}`);
   const handleDeliver = (orderId: string) =>
-    router.push(`/sales-orders/${orderId}`);
+    router.push(`/sales/list/${orderId}/edit`);
 
   /* ===================================================
      ORDER ACTIONS

@@ -32,20 +32,24 @@ import {
   Filter as FilterIcon,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   X,
   Eye,
   Ban,
   Loader2,
   CheckCircle2,
-  Wallet,
   FileText,
   Clock,
   AlertTriangle,
   Plus,
   CalendarRange,
   DollarSign,
-  Printer,
+  Search,
 } from "lucide-react";
+
+import Protected from "@/components/auth/Protected";
+import usePermissionCheck from "@/hooks/usePermissionCheck";
 
 /* ---------------- Types ---------------- */
 type InvoicePayment = {
@@ -167,20 +171,20 @@ function PaymentStatusBadge({ status }: { status?: string }) {
   const s = (status || "").toUpperCase();
   if (s === "PAID") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2f8a2f]">
+      <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2f8a2f] dark:border-[#3aa838]/40 dark:bg-[#3aa838]/15 dark:text-[#9bdd91]">
         <CheckCircle2 className="h-3 w-3" /> Paid
       </span>
     );
   }
   if (s === "PARTIAL") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
         <AlertTriangle className="h-3 w-3" /> Partial
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+    <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
       <Clock className="h-3 w-3" /> Unpaid
     </span>
   );
@@ -190,33 +194,33 @@ function InvoiceStatusBadge({ status }: { status?: string }) {
   const s = (status || "").toUpperCase();
   if (s === "ACTIVE") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2f8a2f]">
+      <span className="inline-flex items-center gap-1 rounded-full border border-[#3aa838]/30 bg-[#3aa838]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2f8a2f] dark:border-[#3aa838]/40 dark:bg-[#3aa838]/15 dark:text-[#9bdd91]">
         Active
       </span>
     );
   }
   if (s === "CANCELLED") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
         Cancelled
       </span>
     );
   }
   if (s === "REFUNDED") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
         Refunded
       </span>
     );
   }
   return (
-    <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+    <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
       {status || "—"}
     </span>
   );
 }
 
-/* ---------------- Small stat pill in hero ---------------- */
+/* ---------------- Hero stat pill ---------------- */
 function HeroStat({
   label,
   value,
@@ -227,10 +231,10 @@ function HeroStat({
   tone?: "slate" | "green" | "amber" | "rose";
 }) {
   const cls = {
-    slate: "text-slate-600",
-    green: "text-[#2f8a2f]",
-    amber: "text-amber-700",
-    rose: "text-rose-700",
+    slate: "text-slate-600 dark:text-slate-300",
+    green: "text-[#2f8a2f] dark:text-[#9bdd91]",
+    amber: "text-amber-700 dark:text-amber-300",
+    rose: "text-rose-700 dark:text-rose-300",
   }[tone];
   return (
     <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px]">
@@ -240,10 +244,28 @@ function HeroStat({
   );
 }
 
-/* ---------------- Page ---------------- */
+/* ---------------- Page (Protected) ---------------- */
 export default function SalesInvoicesPage() {
+  return (
+    <Protected
+      permissions={[
+        "sales.view",
+        "sales.create",
+        "sales.edit",
+        "sales.delete",
+      ]}
+    >
+      <SalesInvoicesPageInner />
+    </Protected>
+  );
+}
+
+/* ---------------- Inner ---------------- */
+function SalesInvoicesPageInner() {
   const { format } = useClientDateFormatter();
   const currentUser = useSelector((s: RootState) => s.user.currentUser);
+  const hasAccess = usePermissionCheck();
+  const canEdit = hasAccess({ permissions: "sales.edit" });
 
   /* list state */
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
@@ -256,14 +278,16 @@ export default function SalesInvoicesPage() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const qTimer = useRef<number | null>(null);
 
-  /* 🆕 date range */
+  /* date range */
   const [datePreset, setDatePreset] = useState<DatePreset>("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   /* preview & modals */
-  const [previewInvoice, setPreviewInvoice] = useState<SalesInvoice | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<SalesInvoice | null>(
+    null,
+  );
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const [paymentModal, setPaymentModal] = useState<{
@@ -288,7 +312,6 @@ export default function SalesInvoicesPage() {
       if (paymentStatusFilter && paymentStatusFilter !== "ALL")
         params.paymentStatus = paymentStatusFilter;
       if (statusFilter && statusFilter !== "ALL") params.status = statusFilter;
-      // 🆕 date range
       if (fromDate) params.fromDate = fromDate;
       if (toDate) params.toDate = toDate;
 
@@ -321,7 +344,8 @@ export default function SalesInvoicesPage() {
         totalBonusQty: r.totalBonusQty ?? r.total_bonus_qty,
         paymentStatus: r.paymentStatus ?? r.payment_status,
         paidAmount: r.paidAmount ?? r.paid_amount ?? 0,
-        balanceAmount: r.balanceAmount ?? r.balance_amount ?? r.grandTotal ?? 0,
+        balanceAmount:
+          r.balanceAmount ?? r.balance_amount ?? r.grandTotal ?? 0,
         payments: r.payments ?? [],
         status: r.status,
         createdAt: r.createdAt,
@@ -454,6 +478,10 @@ export default function SalesInvoicesPage() {
     if (!paymentMethod) return toast.error("Select payment method");
     if (!paymentAmount || Number(paymentAmount) <= 0)
       return toast.error("Enter a positive amount");
+    if (!canEdit) {
+      toast.error("You don't have permission to record payments");
+      return;
+    }
 
     setActionLoadingFor(invoiceId);
     try {
@@ -485,6 +513,10 @@ export default function SalesInvoicesPage() {
 
   /* ---------------- Cancel ---------------- */
   async function cancelInvoice(invoiceId: string) {
+    if (!canEdit) {
+      toast.error("You don't have permission to cancel invoices");
+      return;
+    }
     if (
       !confirm("Cancel this invoice? This action is reversible only by admin.")
     )
@@ -552,16 +584,16 @@ export default function SalesInvoicesPage() {
 
   /* ---------------- Render ---------------- */
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
+    <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950">
+      <div className="mx-auto w-full max-w-[1600px] p-3 md:p-4">
         {/* ================= HERO ================= */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
               <Receipt className="h-4 w-4 text-[#3aa838]" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-base font-semibold leading-tight">
+              <h1 className="text-base font-semibold leading-tight text-slate-900 dark:text-white">
                 Sales Invoices
               </h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -592,6 +624,7 @@ export default function SalesInvoicesPage() {
               size="sm"
               onClick={() => fetchInvoices(page, limit)}
               title="Refresh"
+              className="h-8 w-8 p-0"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
@@ -600,22 +633,26 @@ export default function SalesInvoicesPage() {
               variant="outline"
               size="sm"
               onClick={() => exportCSV()}
+              className="h-8 gap-1.5 text-xs"
             >
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+              <Download className="h-3.5 w-3.5" />
               Export
             </Button>
           </div>
         </div>
 
         {/* ================= FILTER BAR ================= */}
-        <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-            <Input
-              placeholder="Search invoice / order / customer..."
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="h-9 w-full max-w-[260px] text-sm"
-            />
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Search invoice / order / customer…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="h-9 w-full pl-9 text-sm md:w-[260px]"
+              />
+            </div>
 
             <Select
               value={paymentStatusFilter}
@@ -658,7 +695,7 @@ export default function SalesInvoicesPage() {
             <select
               value={datePreset}
               onChange={(e) => applyPreset(e.target.value as DatePreset)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900"
             >
               <option value="">
                 {fromDate || toDate ? "Custom range" : "All dates"}
@@ -675,7 +712,7 @@ export default function SalesInvoicesPage() {
               variant="outline"
               size="sm"
               onClick={() => setFiltersOpen((v) => !v)}
-              className={`h-9 ${
+              className={`h-9 text-xs ${
                 activeFilterCount > 0
                   ? "border-[#3aa838]/40 bg-[#3aa838]/5 text-[#2f8a2f]"
                   : ""
@@ -701,7 +738,7 @@ export default function SalesInvoicesPage() {
                 variant="ghost"
                 size="sm"
                 onClick={clearAll}
-                className="h-9 text-slate-500"
+                className="h-9 text-xs text-slate-500"
               >
                 <X className="mr-1 h-3.5 w-3.5" />
                 Clear
@@ -714,9 +751,9 @@ export default function SalesInvoicesPage() {
           </div>
 
           {filtersOpen && (
-            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 md:grid-cols-3">
+            <div className="grid gap-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/40 md:grid-cols-3">
               <div className="space-y-1">
-                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-400">
                   <CalendarRange className="h-3 w-3" /> From date
                 </label>
                 <Input
@@ -727,7 +764,7 @@ export default function SalesInvoicesPage() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-400">
                   <CalendarRange className="h-3 w-3" /> To date
                 </label>
                 <Input
@@ -754,10 +791,10 @@ export default function SalesInvoicesPage() {
         </div>
 
         {/* ================= TABLE ================= */}
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50 text-left">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left dark:bg-slate-950/60">
                 <tr>
                   {[
                     "Invoice",
@@ -769,32 +806,31 @@ export default function SalesInvoicesPage() {
                   ].map((h) => (
                     <th
                       key={h}
-                      className="border-b border-slate-200 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wide text-slate-600"
+                      className="border-b border-slate-200 px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400"
                     >
                       {h}
                     </th>
                   ))}
-                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                    Total
-                  </th>
-                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                    Paid
-                  </th>
-                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                    Balance
-                  </th>
-                  <th className="border-b border-slate-200 px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                    Actions
-                  </th>
+                  {["Total", "Paid", "Balance", "Actions"].map((h) => (
+                    <th
+                      key={h}
+                      className="border-b border-slate-200 px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {loading &&
                   Array.from({ length: Math.min(limit, 6) }).map((_, i) => (
-                    <tr key={i} className="animate-pulse border-b border-slate-100">
+                    <tr
+                      key={i}
+                      className="animate-pulse border-b border-slate-100 dark:border-slate-800"
+                    >
                       {Array.from({ length: 10 }).map((__, j) => (
                         <td key={j} className="px-3 py-3">
-                          <div className="h-4 w-full max-w-[100px] rounded bg-slate-100" />
+                          <div className="h-4 w-full max-w-[100px] rounded bg-slate-100 dark:bg-slate-800" />
                         </td>
                       ))}
                     </tr>
@@ -804,10 +840,10 @@ export default function SalesInvoicesPage() {
                   <tr>
                     <td colSpan={10} className="px-4 py-16 text-center">
                       <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-muted-foreground">
-                        <div className="rounded-full bg-slate-100 p-3">
-                          <Receipt className="h-6 w-6" />
+                        <div className="rounded-full bg-slate-100 p-3 dark:bg-slate-800">
+                          <Receipt className="h-6 w-6 text-slate-400" />
                         </div>
-                        <div className="text-sm font-medium text-slate-700">
+                        <div className="text-sm font-medium text-slate-900 dark:text-white">
                           No invoices found
                         </div>
                         <div className="text-xs">
@@ -820,8 +856,9 @@ export default function SalesInvoicesPage() {
                             size="sm"
                             variant="outline"
                             onClick={clearAll}
+                            className="h-8 gap-1.5 text-xs"
                           >
-                            <X className="mr-1.5 h-3.5 w-3.5" />
+                            <X className="h-3 w-3" />
                             Clear filters
                           </Button>
                         )}
@@ -835,17 +872,19 @@ export default function SalesInvoicesPage() {
                     const isBusy = actionLoadingFor === inv._id;
                     const canPay =
                       (inv.paymentStatus || "").toUpperCase() !== "PAID" &&
-                      (inv.status || "").toUpperCase() === "ACTIVE";
+                      (inv.status || "").toUpperCase() === "ACTIVE" &&
+                      canEdit;
                     const canCancel =
-                      (inv.status || "").toUpperCase() === "ACTIVE";
+                      (inv.status || "").toUpperCase() === "ACTIVE" &&
+                      canEdit;
 
                     return (
                       <tr
                         key={inv._id}
-                        className="border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70"
+                        className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/40"
                       >
                         <td className="px-3 py-2">
-                          <div className="font-mono text-xs font-semibold text-slate-900">
+                          <div className="font-mono text-xs font-semibold text-slate-900 dark:text-white">
                             {inv.invoiceNo ?? shortId(inv._id)}
                           </div>
                           <div className="mt-0.5">
@@ -853,17 +892,15 @@ export default function SalesInvoicesPage() {
                           </div>
                         </td>
 
-                        <td className="px-3 py-2 text-xs text-slate-700">
+                        <td className="px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
                           {inv.orderId
-                            ? inv.orderId.orderNo ?? String(inv.orderId)
+                            ? (inv.orderId.orderNo ?? String(inv.orderId))
                             : "—"}
                         </td>
 
                         <td className="px-3 py-2 text-sm">
-                          <div className="font-medium text-slate-900">
-                            {inv.customerId?.name ??
-                              inv.customerId ??
-                              "—"}
+                          <div className="font-medium text-slate-900 dark:text-white">
+                            {inv.customerId?.name ?? inv.customerId ?? "—"}
                           </div>
                           {inv.customerId?.phoneNumber && (
                             <div className="text-[11px] text-muted-foreground">
@@ -872,7 +909,7 @@ export default function SalesInvoicesPage() {
                           )}
                         </td>
 
-                        <td className="px-3 py-2 text-xs text-slate-600 tabular-nums">
+                        <td className="px-3 py-2 text-xs text-slate-600 tabular-nums dark:text-slate-400">
                           {format(inv.invoiceDate)}
                         </td>
 
@@ -884,11 +921,11 @@ export default function SalesInvoicesPage() {
                           <PaymentStatusBadge status={inv.paymentStatus} />
                         </td>
 
-                        <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">
+                        <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
                           ৳ {fmtCurrency(inv.grandTotal)}
                         </td>
 
-                        <td className="px-3 py-2 text-right text-xs tabular-nums text-[#2f8a2f]">
+                        <td className="px-3 py-2 text-right text-xs tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
                           ৳ {fmtCurrency(inv.paidAmount)}
                         </td>
 
@@ -896,8 +933,8 @@ export default function SalesInvoicesPage() {
                           <span
                             className={
                               Number(inv.balanceAmount || 0) > 0
-                                ? "font-semibold text-rose-600"
-                                : "text-slate-500"
+                                ? "font-semibold text-rose-600 dark:text-rose-400"
+                                : "text-slate-500 dark:text-slate-400"
                             }
                           >
                             ৳ {fmtCurrency(inv.balanceAmount)}
@@ -940,7 +977,7 @@ export default function SalesInvoicesPage() {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                className="h-7 w-7 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30"
                                 onClick={() => cancelInvoice(inv._id)}
                                 disabled={isBusy}
                                 title="Cancel"
@@ -962,19 +999,22 @@ export default function SalesInvoicesPage() {
           </div>
 
           {/* Pagination */}
-          <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/40 md:flex-row md:items-center md:justify-between">
             <div className="text-xs text-muted-foreground">
               {total > 0 ? (
                 <>
                   Showing{" "}
-                  <strong className="text-slate-900">
+                  <strong className="text-slate-900 dark:text-white">
                     {(page - 1) * limit + 1}
                   </strong>
                   –
-                  <strong className="text-slate-900">
+                  <strong className="text-slate-900 dark:text-white">
                     {Math.min(page * limit, total)}
                   </strong>{" "}
-                  of <strong className="text-slate-900">{total}</strong>
+                  of{" "}
+                  <strong className="text-slate-900 dark:text-white">
+                    {total}
+                  </strong>
                 </>
               ) : (
                 <>No records</>
@@ -989,7 +1029,7 @@ export default function SalesInvoicesPage() {
                   setPage(1);
                   fetchInvoices(1, Number(e.target.value));
                 }}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-[#3aa838]"
+                className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#3aa838]/40 focus:ring-2 focus:ring-[#3aa838]/10 dark:border-slate-800 dark:bg-slate-900"
               >
                 <option value={10}>10 / page</option>
                 <option value={15}>15 / page</option>
@@ -1001,7 +1041,7 @@ export default function SalesInvoicesPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8"
+                className="h-8 w-8 p-0"
                 onClick={() => {
                   if (page > 1) {
                     setPage(page - 1);
@@ -1010,19 +1050,22 @@ export default function SalesInvoicesPage() {
                 }}
                 disabled={page === 1}
               >
-                Prev
+                <ChevronLeft className="h-3.5 w-3.5" />
               </Button>
 
               <div className="min-w-20 text-center text-xs text-muted-foreground">
-                Page <strong className="text-slate-900">{page}</strong> /{" "}
-                {totalPages}
+                Page{" "}
+                <strong className="text-slate-900 dark:text-white">
+                  {page}
+                </strong>{" "}
+                / {totalPages}
               </div>
 
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8"
+                className="h-8 w-8 p-0"
                 onClick={() => {
                   if (page < totalPages) {
                     setPage(page + 1);
@@ -1031,7 +1074,7 @@ export default function SalesInvoicesPage() {
                 }}
                 disabled={page === totalPages}
               >
-                Next
+                <ChevronRight className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
@@ -1044,7 +1087,10 @@ export default function SalesInvoicesPage() {
             if (!open) setPreviewInvoice(null);
           }}
         >
-          <DialogContent className="!max-w-[95vw] !h-[95vh] mx-auto">
+          <DialogContent
+            className="!max-w-[95vw] !h-[95vh] mx-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+            aria-describedby={undefined}
+          >
             <DialogHeader>
               <DialogTitle>
                 Invoice{" "}
@@ -1055,12 +1101,12 @@ export default function SalesInvoicesPage() {
             <div className="mt-4 grid h-full grid-cols-1 gap-4 overflow-y-auto md:grid-cols-3">
               {/* Left: items + payments */}
               <div className="md:col-span-2">
-                <div className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <FileText className="h-3.5 w-3.5" />
+                <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <FileText className="h-3.5 w-3.5 text-[#3aa838]" />
                     Customer
                   </div>
-                  <div className="mt-1 text-base font-semibold">
+                  <div className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
                     {previewInvoice?.customerId?.name ??
                       previewInvoice?.customerId ??
                       "—"}
@@ -1073,25 +1119,23 @@ export default function SalesInvoicesPage() {
                 </div>
 
                 <div className="mt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Items
                   </div>
-                  <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50">
+                      <thead className="bg-slate-50 dark:bg-slate-950/60">
                         <tr>
-                          <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                            Product
-                          </th>
-                          <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                            Qty
-                          </th>
-                          <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                            Price
-                          </th>
-                          <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                            Total
-                          </th>
+                          {["Product", "Qty", "Price", "Total"].map((h, i) => (
+                            <th
+                              key={h}
+                              className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 ${
+                                i >= 1 ? "text-right" : "text-left"
+                              }`}
+                            >
+                              {h}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
@@ -1099,7 +1143,7 @@ export default function SalesInvoicesPage() {
                           (it: any, idx: number) => (
                             <tr
                               key={idx}
-                              className="border-t border-slate-100"
+                              className="border-t border-slate-100 dark:border-slate-800"
                             >
                               <td className="px-3 py-2">
                                 {it.productId?.name ?? it.name ?? "—"}
@@ -1125,20 +1169,20 @@ export default function SalesInvoicesPage() {
                 </div>
 
                 <div className="mt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Payments
                   </div>
-                  <div className="max-h-48 overflow-auto rounded-lg border border-slate-200 p-2">
+                  <div className="max-h-48 overflow-auto rounded-xl border border-slate-200 p-2 dark:border-slate-800">
                     {previewLoading && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading...
+                        Loading…
                       </div>
                     )}
                     {!previewLoading &&
                       (!previewInvoice?.payments ||
                         previewInvoice.payments.length === 0) && (
-                        <div className="py-4 text-center text-sm text-muted-foreground">
+                        <div className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
                           No payments recorded
                         </div>
                       )}
@@ -1147,28 +1191,28 @@ export default function SalesInvoicesPage() {
                         (p: InvoicePayment, i: number) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between border-b border-slate-100 py-2 last:border-b-0"
+                            className="flex items-center justify-between border-b border-slate-100 py-2 last:border-b-0 dark:border-slate-800"
                           >
                             <div className="flex items-center gap-2">
                               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#3aa838]/10">
                                 <DollarSign className="h-3.5 w-3.5 text-[#3aa838]" />
                               </div>
                               <div>
-                                <div className="text-sm font-medium">
+                                <div className="text-xs font-medium">
                                   {p.method}
                                 </div>
                                 {p.referenceNo && (
-                                  <div className="text-xs text-muted-foreground">
+                                  <div className="text-[10px] text-muted-foreground">
                                     {p.referenceNo}
                                   </div>
                                 )}
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-semibold tabular-nums text-[#2f8a2f]">
+                              <div className="text-xs font-semibold tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
                                 ৳ {fmtCurrency(p.amount)}
                               </div>
-                              <div className="text-xs text-muted-foreground">
+                              <div className="text-[10px] text-muted-foreground">
                                 {format(p.paymentDate)}
                               </div>
                             </div>
@@ -1181,46 +1225,52 @@ export default function SalesInvoicesPage() {
 
               {/* Right: totals + actions */}
               <div className="space-y-3">
-                <div className="rounded-lg border border-[#3aa838]/20 bg-[#3aa838]/5 p-4">
-                  <div className="text-xs font-medium uppercase tracking-wide text-[#2f8a2f]">
+                <div className="rounded-xl border border-[#3aa838]/20 bg-[#3aa838]/5 p-4 dark:border-[#3aa838]/30 dark:bg-[#3aa838]/10">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f8a2f] dark:text-[#9bdd91]">
                     Total
                   </div>
-                  <div className="mt-1 text-2xl font-extrabold tabular-nums text-[#2f8a2f]">
+                  <div className="mt-1 text-2xl font-extrabold tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
                     ৳ {fmtCurrency(previewInvoice?.grandTotal)}
                   </div>
-                  <div className="mt-1 text-[11px] text-[#2f8a2f]/80">
+                  <div className="mt-1 text-[10px] text-[#2f8a2f]/80 dark:text-[#9bdd91]/80">
                     Sub: {fmtCurrency(previewInvoice?.subTotal)} · Tax:{" "}
                     {fmtCurrency(previewInvoice?.totalTax)}
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 p-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Status
                   </div>
                   <div className="space-y-2">
                     <div>
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-[10px] text-muted-foreground">
                         Invoice
                       </div>
                       <InvoiceStatusBadge status={previewInvoice?.status} />
                     </div>
                     <div>
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-[10px] text-muted-foreground">
                         Payment
                       </div>
-                      <PaymentStatusBadge status={previewInvoice?.paymentStatus} />
+                      <PaymentStatusBadge
+                        status={previewInvoice?.paymentStatus}
+                      />
                     </div>
-                    <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2 text-xs">
+                    <div className="grid grid-cols-2 gap-2 border-t border-slate-200 pt-2 text-xs dark:border-slate-800">
                       <div>
-                        <div className="text-muted-foreground">Paid</div>
-                        <div className="font-semibold tabular-nums text-[#2f8a2f]">
+                        <div className="text-[10px] text-muted-foreground">
+                          Paid
+                        </div>
+                        <div className="font-semibold tabular-nums text-[#2f8a2f] dark:text-[#9bdd91]">
                           ৳ {fmtCurrency(previewInvoice?.paidAmount)}
                         </div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Balance</div>
-                        <div className="font-semibold tabular-nums text-rose-600">
+                        <div className="text-[10px] text-muted-foreground">
+                          Balance
+                        </div>
+                        <div className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
                           ৳ {fmtCurrency(previewInvoice?.balanceAmount)}
                         </div>
                       </div>
@@ -1228,11 +1278,13 @@ export default function SalesInvoicesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 p-4">
+                <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
                   <div className="flex flex-col gap-2">
                     {previewInvoice &&
-                      previewInvoice.paymentStatus !== "PAID" &&
-                      previewInvoice.status === "ACTIVE" && (
+                      previewInvoice.paymentStatus?.toUpperCase() !==
+                        "PAID" &&
+                      previewInvoice.status?.toUpperCase() === "ACTIVE" &&
+                      canEdit && (
                         <Button
                           className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                           onClick={() =>
@@ -1244,16 +1296,18 @@ export default function SalesInvoicesPage() {
                         </Button>
                       )}
 
-                    {previewInvoice && previewInvoice.status === "ACTIVE" && (
-                      <Button
-                        variant="outline"
-                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                        onClick={() => cancelInvoice(previewInvoice._id)}
-                      >
-                        <Ban className="mr-1.5 h-4 w-4" />
-                        Cancel Invoice
-                      </Button>
-                    )}
+                    {previewInvoice &&
+                      previewInvoice.status?.toUpperCase() === "ACTIVE" &&
+                      canEdit && (
+                        <Button
+                          variant="outline"
+                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30"
+                          onClick={() => cancelInvoice(previewInvoice._id)}
+                        >
+                          <Ban className="mr-1.5 h-4 w-4" />
+                          Cancel Invoice
+                        </Button>
+                      )}
 
                     <Button
                       variant="ghost"
@@ -1281,14 +1335,19 @@ export default function SalesInvoicesPage() {
             if (!open) closePaymentDialog();
           }}
         >
-          <DialogContent className="!max-w-md">
+          <DialogContent
+            className="!max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+            aria-describedby={undefined}
+          >
             <DialogHeader>
               <DialogTitle>Add Payment</DialogTitle>
             </DialogHeader>
 
             <div className="space-y-3">
               <div>
-                <Label>Amount</Label>
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Amount
+                </Label>
                 <Input
                   placeholder="Amount"
                   value={paymentAmount === "" ? "" : String(paymentAmount)}
@@ -1297,16 +1356,19 @@ export default function SalesInvoicesPage() {
                     if (v === "") setPaymentAmount("");
                     else setPaymentAmount(Number(v));
                   }}
+                  className="mt-1"
                 />
               </div>
 
               <div>
-                <Label>Method</Label>
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Method
+                </Label>
                 <Select
                   value={paymentMethod}
                   onValueChange={(v) => setPaymentMethod(v)}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="mt-1 w-full">
                     <SelectValue placeholder="Select method" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1320,11 +1382,14 @@ export default function SalesInvoicesPage() {
               </div>
 
               <div>
-                <Label>Reference (optional)</Label>
+                <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Reference (optional)
+                </Label>
                 <Input
                   placeholder="Reference number"
                   value={paymentReference}
                   onChange={(e) => setPaymentReference(e.target.value)}
+                  className="mt-1"
                 />
               </div>
             </div>
@@ -1339,7 +1404,7 @@ export default function SalesInvoicesPage() {
                   disabled={actionLoadingFor !== null}
                   className="bg-[#3aa838] text-white hover:bg-[#2f8a2f]"
                 >
-                  {actionLoadingFor ? "Processing..." : "Submit Payment"}
+                  {actionLoadingFor ? "Processing…" : "Submit Payment"}
                 </Button>
               </div>
             </DialogFooter>

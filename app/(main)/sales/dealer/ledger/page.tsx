@@ -18,6 +18,7 @@ import {
   CalendarRange,
   X,
   RefreshCw,
+  Info,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,8 @@ type LedgerData = {
     totalSales: number;
     totalPayments: number;
     totalCommission: number;
-    totalCommissionEffect: number;
+    totalAddCommission: number;
+    totalDeductCommission: number;
     totalCredited: number;
     totalReturns: number;
     closingBalance: number;
@@ -274,12 +276,13 @@ function DealerSearchSelect({
 }
 
 /* --------------------------- Summary strip --------------------------- */
-type SummaryColor = "slate" | "green" | "greenDark";
+type SummaryColor = "slate" | "green" | "greenDark" | "amber";
 
 const summaryBorderMap: Record<SummaryColor, string> = {
   slate: "border-l-slate-400",
   green: "border-l-[#3aa838]",
   greenDark: "border-l-[#2f8a2f]",
+  amber: "border-l-amber-500",
 };
 
 function LedgerSummaryCard({
@@ -352,10 +355,10 @@ function CommissionBadge({ entry }: { entry: LedgerEntry }) {
   }
 
   const isAdd = direction === "ADD";
-  const sign = isAdd ? "+" : "−";
+  const sign = isAdd ? "+" : "";
   const cls = isAdd
     ? "bg-[#3aa838]/10 text-[#2f8a2f] border-[#3aa838]/30"
-    : "bg-rose-50 text-rose-700 border-rose-200";
+    : "bg-amber-50 text-amber-700 border-amber-200";
   const rateLabel =
     calcMode === "PERCENT" ? `${rate}%` : calcMode === "FLAT" ? "flat" : "";
 
@@ -363,10 +366,19 @@ function CommissionBadge({ entry }: { entry: LedgerEntry }) {
     <div className="mt-0.5">
       <span
         className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
-        title={`Source: ${entry.commissionSource || "unknown"}`}
+        title={
+          isAdd
+            ? `Add commission — reduces dealer due (${entry.commissionSource || "unknown"})`
+            : `Deduct commission — paid to salesperson, dealer AR unaffected (${entry.commissionSource || "unknown"})`
+        }
       >
         {sign}৳ {money(amount)}
         {rateLabel && <span className="opacity-70">({rateLabel})</span>}
+        {!isAdd && (
+          <span className="ml-0.5 rounded bg-amber-200/70 px-1 text-[9px] font-bold uppercase tracking-wide">
+            DEDUCT
+          </span>
+        )}
       </span>
     </div>
   );
@@ -499,10 +511,10 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
 
   if (entry.type === "PAYMENT") {
     const commAmount = Number(d.commission) || 0;
-    const commEff = Number(d.commissionEffect) || 0;
     const commDir = String(d.commissionDirection || "ADD");
     const commMode = String(d.commissionCalcMode || "NONE");
     const commRate = Number(d.commissionRate) || 0;
+    const isAdd = commDir === "ADD";
 
     return (
       <div className="space-y-3">
@@ -537,40 +549,39 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
             <div className="text-xs">
               <div className="text-muted-foreground">Direction</div>
               <div>
-                {commDir === "ADD" ? (
+                {isAdd ? (
                   <span className="rounded bg-[#3aa838]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#2f8a2f]">
                     ADDED
                   </span>
                 ) : (
-                  <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-800">
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
                     DEDUCTED
                   </span>
                 )}
               </div>
             </div>
             <div className="text-xs">
-              <div className="text-muted-foreground">Total Credit</div>
+              <div className="text-muted-foreground">Dealer AR Credit</div>
               <div className="font-bold text-[#2f8a2f]">
                 ৳ {money(d.totalCredit)}
               </div>
             </div>
           </div>
 
-          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
-            <strong>Debug:</strong> source=
-            <code>{d.commissionSource || "none"}</code>
-            {" · "}calcMode=<code>{commMode}</code>
-            {" · "}direction=<code>{commDir}</code>
-            {" · "}effect=
-            <code>
-              {commEff >= 0 ? "+" : ""}
-              {money(commEff)}
-            </code>
-            {d.commissionRaw != null && (
-              <div className="mt-0.5 text-[10px] text-amber-700">
-                raw: <code>{JSON.stringify(d.commissionRaw)}</code> · flag=
-                <code>{String(d.deductCommissionFlag)}</code>
-              </div>
+          <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-700">
+            <strong>Calculation:</strong>{" "}
+            {isAdd ? (
+              <>
+                Cash ৳{money(d.taka)} + ADD commission ৳{money(commAmount)} ={" "}
+                <b>৳{money(d.totalCredit)} credit</b> to dealer AR
+              </>
+            ) : (
+              <>
+                Cash ৳{money(d.taka)} → <b>৳{money(d.totalCredit)} credit</b>{" "}
+                to dealer AR · ৳{money(commAmount)} DEDUCT commission is paid
+                out separately (salesperson / third party) and{" "}
+                <b>does not change the dealer&apos;s balance</b>
+              </>
             )}
           </div>
         </div>
@@ -633,7 +644,7 @@ function ExpandedDetails({ entry }: { entry: LedgerEntry }) {
   );
 }
 
-/* --------------------------- Print helpers (unchanged) --------------------------- */
+/* --------------------------- Print helpers --------------------------- */
 function buildSummaryPrintHtml(data: LedgerData): string {
   const { dealer, summary, entries } = data;
   const rows = entries
@@ -672,7 +683,8 @@ function buildSummaryPrintHtml(data: LedgerData): string {
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Opening</div><div style="font-weight:700;">৳ ${money(summary.openingBalance)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Sales</div><div style="font-weight:700;">৳ ${money(summary.totalSales)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Payments</div><div style="font-weight:700;">৳ ${money(summary.totalPayments)}</div></div>
-    <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Commission</div><div style="font-weight:700;">৳ ${money(summary.totalCommission)}</div></div>
+    <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Add Comm.</div><div style="font-weight:700;">৳ ${money(summary.totalAddCommission)}</div></div>
+    <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Deduct Comm.</div><div style="font-weight:700;">৳ ${money(summary.totalDeductCommission)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Returns</div><div style="font-weight:700;">৳ ${money(summary.totalReturns)}</div></div>
     <div style="flex:1;background:#fff;border-radius:10px;padding:10px;"><div style="font-size:10px;text-transform:uppercase;color:#64748b;">Due</div><div style="font-weight:700;">৳ ${money(summary.closingBalance)}</div></div>
   </div>
@@ -721,7 +733,6 @@ function buildDetailedPrintHtml(data: LedgerData): string {
         const commDir = e.details.commissionDirection || "ADD";
         const commMode = e.details.commissionCalcMode || "NONE";
         const commRate = e.details.commissionRate || 0;
-        const commSrc = e.details.commissionSource || "none";
         detailsHtml = `<div style="font-size:9px;color:#475569;margin-top:2px;">
           MR: ${e.details.mrNo || "—"} · Invoice: ${e.details.invoiceNo || "—"} · Mode: ${e.details.paymentMode || "—"} · Bank: ${e.details.bank || "—"} · Cheque: ${e.details.chequeNo || "—"}
         </div>
@@ -729,8 +740,7 @@ function buildDetailedPrintHtml(data: LedgerData): string {
           Cash: ৳ ${money(e.details.taka)} ·
           Commission: ৳ ${money(comm)} ${commMode === "PERCENT" && commRate ? `(${commRate}%)` : ""} ·
           Direction: ${commDir} ·
-          Total credit: ৳ ${money(e.details.totalCredit)}
-          <span style="color:#94a3b8;"> (src: ${commSrc})</span>
+          Dealer AR credit: ৳ ${money(e.details.totalCredit)}
         </div>`;
       } else {
         const items = (e.details.items || [])
@@ -860,7 +870,6 @@ export default function DealerLedgerPage() {
       return n;
     });
 
-  /* ------------------- Date preset actions ------------------- */
   const applyPreset = (preset: DatePreset) => {
     if (!preset) {
       setStartDate("");
@@ -910,10 +919,14 @@ export default function DealerLedgerPage() {
     email: "info@antabagro.com",
   };
 
+  const hasDeductCommission =
+    !!data && (data.summary.totalDeductCommission ?? 0) > 0;
+  const hasAddCommission = !!data && (data.summary.totalAddCommission ?? 0) > 0;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-7xl p-3 md:p-4">
-        {/* ============ COMPACT HERO ============ */}
+        {/* HERO */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#3aa838]/10">
@@ -994,7 +1007,7 @@ export default function DealerLedgerPage() {
           </div>
         </div>
 
-        {/* ============ FILTER BAR ============ */}
+        {/* FILTER BAR */}
         <div className="mb-3 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center gap-2 px-3 py-2">
             <div className="w-full max-w-[280px]">
@@ -1108,69 +1121,86 @@ export default function DealerLedgerPage() {
           )}
         </div>
 
-        {/* ============ SUMMARY STRIP ============ */}
+        {/* SUMMARY STRIP */}
         {data && (
-          <div className="mb-3 flex flex-col gap-1.5 lg:flex-row lg:items-stretch lg:gap-1.5">
-            <LedgerSummaryCard
-              label="Opening"
-              value={money(data.summary.openingBalance)}
-              color="slate"
-            />
-            <OperatorBadge op="+" />
-            <LedgerSummaryCard
-              label="Total Sales"
-              value={money(data.summary.totalSales)}
-              color="green"
-            />
-            <OperatorBadge op="−" />
-            <LedgerSummaryCard
-              label="Total Payments"
-              value={money(data.summary.totalPayments)}
-              hint="cash only"
-              color="greenDark"
-            />
-            <OperatorBadge
-              op={data.summary.totalCommissionEffect >= 0 ? "−" : "+"}
-            />
-            <LedgerSummaryCard
-              label="Total Commission"
-              value={money(data.summary.totalCommission)}
-              hint={
-                data.summary.totalCommissionEffect >= 0
-                  ? "credited"
-                  : "deducted"
-              }
-              color="greenDark"
-            />
-            <OperatorBadge op="−" />
-            <LedgerSummaryCard
-              label="Total Returns"
-              value={money(data.summary.totalReturns)}
-              color="greenDark"
-            />
-            <OperatorBadge op="=" />
-            <LedgerSummaryCard
-              label="Current Due"
-              value={money(data.summary.closingBalance)}
-              hint={`Limit: ৳ ${money(data.dealer.creditLimit)}`}
-              color="green"
-              highlight
-            />
-          </div>
+          <>
+            <div className="mb-1.5 flex flex-col gap-1.5 lg:flex-row lg:items-stretch lg:gap-1.5">
+              <LedgerSummaryCard
+                label="Opening"
+                value={money(data.summary.openingBalance)}
+                color="slate"
+              />
+              <OperatorBadge op="+" />
+              <LedgerSummaryCard
+                label="Total Sales"
+                value={money(data.summary.totalSales)}
+                color="green"
+              />
+              <OperatorBadge op="−" />
+              <LedgerSummaryCard
+                label="Cash Payments"
+                value={money(data.summary.totalPayments)}
+                hint="cash only"
+                color="greenDark"
+              />
+
+              {hasAddCommission && (
+                <>
+                  <OperatorBadge op="−" />
+                  <LedgerSummaryCard
+                    label="ADD Commission"
+                    value={money(data.summary.totalAddCommission)}
+                    hint="credited · reduces due"
+                    color="greenDark"
+                  />
+                </>
+              )}
+
+              <OperatorBadge op="−" />
+              <LedgerSummaryCard
+                label="Total Returns"
+                value={money(data.summary.totalReturns)}
+                color="greenDark"
+              />
+              <OperatorBadge op="=" />
+              <LedgerSummaryCard
+                label="Current Due"
+                value={money(data.summary.closingBalance)}
+                hint={`Limit: ৳ ${money(data.dealer.creditLimit)}`}
+                color="green"
+                highlight
+              />
+            </div>
+
+            {/* DEDUCT commission info card (doesn't affect the math above) */}
+            {hasDeductCommission && (
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div>
+                  <b>DEDUCT commission: ৳ {money(data.summary.totalDeductCommission)}</b>{" "}
+                  — deducted from the collection and paid out separately
+                  (salesperson / third party). This amount does <b>not</b> change
+                  the dealer&apos;s outstanding balance, so it is intentionally
+                  excluded from the strip above.
+                </div>
+              </div>
+            )}
+          </>
         )}
 
-        {/* ============ DUE MISMATCH ============ */}
+        {/* DUE MISMATCH */}
         {data && data.summary.dueMismatch !== 0 && (
-          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <strong>Note:</strong> stored due{" "}
-            <code>৳ {money(data.summary.storedDue)}</code> differs from computed{" "}
-            <code>৳ {money(data.summary.closingBalance)}</code> (diff{" "}
-            <code>৳ {money(data.summary.dueMismatch)}</code>). The stored value
-            doesn&apos;t include commission — the ledger shown here does.
+          <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+            <strong>⚠ Stored currentDue is out of sync with the ledger.</strong>{" "}
+            Stored <code>৳ {money(data.summary.storedDue)}</code> · Ledger{" "}
+            <code>৳ {money(data.summary.closingBalance)}</code> · Diff{" "}
+            <code>৳ {money(data.summary.dueMismatch)}</code>. Run the collection
+            voucher reconciler, or verify the payment service correctly applies
+            ADD commission (not DEDUCT) to <code>dealer.currentDue</code>.
           </div>
         )}
 
-        {/* ============ TABLE ============ */}
+        {/* TABLE */}
         <Card className="overflow-hidden border-slate-200 shadow-sm">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -1296,7 +1326,7 @@ export default function DealerLedgerPage() {
           </CardContent>
         </Card>
 
-        {/* ============ PAGINATION ============ */}
+        {/* PAGINATION */}
         {data && data.pagination.total > 0 && (
           <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
